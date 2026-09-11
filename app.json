@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "StudyBolt",
+    "slug": "studybolt",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.studybolt.app"
+    },
+    "android": {
+      "package": "com.studybolt.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#F4F8FF"
+      }
+    },
+    "web": {
+      "bundler": "metro"
+    }
+  }
+}
