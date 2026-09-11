@@ -1,0 +1,141 @@
+import React from 'react';
+import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+
+import { Card, Header, Icon, IconName, Pill, PrimaryButton, Screen, SectionHeader } from '../components/ui';
+import { useStudyBolt } from '../StudyBoltContext';
+import { ThemePreference } from '../models';
+import { learningEvidence } from '../data/learningScience';
+
+const THEMES: Array<{ id: ThemePreference; label: string; icon: IconName }> = [
+  { id: 'system', label: 'System', icon: 'cellphone' },
+  { id: 'light', label: 'Light', icon: 'weather-sunny' },
+  { id: 'dark', label: 'Dark', icon: 'weather-night' },
+];
+
+export function ProfileScreen() {
+  const { colors, state, setTheme } = useStudyBolt();
+  return (
+    <Screen>
+      <Header title="Profile" right={<Pill label="Guest" tone="neutral" />} />
+      <View style={styles.profileTop}>
+        <View style={[styles.avatar, { backgroundColor: colors.primarySoft }]}><Text style={[styles.avatarText, { color: colors.primary }]}>H</Text></View>
+        <Text style={[styles.title, { color: colors.text }]}>Your StudyBolt</Text>
+        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Studying locally as a guest</Text>
+      </View>
+
+      <Card style={[styles.syncCard, { backgroundColor: colors.primarySoft }]}>
+        <View style={styles.syncRow}>
+          <View style={[styles.syncIcon, { backgroundColor: colors.primary }]}><Icon name="cloud-sync" color="#FFFFFF" size={22} /></View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.syncTitle, { color: colors.text }]}>Save materials everywhere</Text>
+            <Text style={[styles.syncText, { color: colors.textSecondary }]}>Account sync becomes available when the private Supabase backend is connected.</Text>
+          </View>
+        </View>
+        <PrimaryButton label="Account setup required" icon="lock-outline" disabled onPress={() => undefined} style={styles.syncButton} />
+      </Card>
+
+      <SectionHeader title="Appearance" />
+      <Card style={styles.themeCard}>
+        <View style={styles.themeOptions}>
+          {THEMES.map((theme) => {
+            const selected = state.theme === theme.id;
+            return (
+              <Pressable
+                key={theme.id}
+                onPress={() => setTheme(theme.id)}
+                style={[styles.themeOption, { backgroundColor: selected ? colors.primarySoft : colors.card, borderColor: selected ? colors.primary : colors.border }]}
+              >
+                <Icon name={theme.icon} size={20} color={selected ? colors.primary : colors.textMuted} />
+                <Text style={[styles.themeLabel, { color: selected ? colors.primary : colors.textSecondary }]}>{theme.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <Text style={[styles.themeHint, { color: colors.textMuted }]}>Night mode uses deep navy surfaces, soft text, and restrained accents for comfortable low-light reading.</Text>
+      </Card>
+
+      <SectionHeader title="Study preferences" />
+      <Card style={styles.settingsCard}>
+        <Setting icon="bell-outline" title="Reminders" detail={state.plan.remindersEnabled ? 'Enabled in current plan' : 'Off'} />
+        <Setting icon="speedometer" title="Playback speed" detail="1.0× default" />
+        <Setting icon="timer-outline" title="Focus timer" detail="25 min focus · 5 min break" />
+        <Setting icon="download-circle-outline" title="Offline study" detail={`${state.decks.length} packs stored locally`} last />
+      </Card>
+
+      <SectionHeader title="About" />
+      <Card style={styles.settingsCard}>
+        <Setting icon="shield-lock-outline" title="Privacy" detail="Private by design" />
+        <Setting icon="lifebuoy" title="Help & support" detail="Setup documentation included" />
+        <Setting icon="information-outline" title="StudyBolt" detail="Version 1.0.0" last />
+      </Card>
+
+      <SectionHeader title="Learning approach" action="Primary research" />
+      <Card style={styles.evidenceCard}>
+        {learningEvidence.map((item, index) => (
+          <Pressable
+            key={item.principle}
+            accessibilityRole="link"
+            onPress={() => void Linking.openURL(item.url)}
+            style={[styles.evidenceRow, index < learningEvidence.length - 1 && { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }]}
+          >
+            <View style={[styles.evidenceIcon, { backgroundColor: index === 1 ? colors.mintSoft : colors.primarySoft }]}>
+              <Icon name={index === 0 ? 'brain' : index === 1 ? 'calendar-refresh' : 'flask-outline'} size={19} color={index === 1 ? colors.mint : colors.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.evidenceTitle, { color: colors.text }]}>{item.principle}</Text>
+              <Text style={[styles.evidenceText, { color: colors.textSecondary }]}>{item.application}</Text>
+              <Text style={[styles.evidenceSource, { color: colors.primary }]}>{item.source}</Text>
+            </View>
+            <Icon name="open-in-new" size={16} color={colors.textMuted} />
+          </Pressable>
+        ))}
+      </Card>
+      <Text style={[styles.footer, { color: colors.textMuted }]}>Small steps. Big futures. ⚡</Text>
+    </Screen>
+  );
+}
+
+function Setting({ icon, title, detail, last = false }: { icon: IconName; title: string; detail: string; last?: boolean }) {
+  const { colors } = useStudyBolt();
+  return (
+    <View style={[styles.setting, !last && { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }]}>
+      <View style={[styles.settingIcon, { backgroundColor: colors.cardStrong }]}><Icon name={icon} size={20} color={colors.primary} /></View>
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.settingTitle, { color: colors.text }]}>{title}</Text>
+        <Text style={[styles.settingDetail, { color: colors.textMuted }]}>{detail}</Text>
+      </View>
+      <Icon name="check-circle-outline" color={colors.textMuted} />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  profileTop: { alignItems: 'center', paddingVertical: 17 },
+  avatar: { width: 70, height: 70, borderRadius: 35, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { fontSize: 26, fontWeight: '900' },
+  title: { fontSize: 24, fontWeight: '900', marginTop: 12, letterSpacing: -0.6 },
+  subtitle: { fontSize: 12, marginTop: 3 },
+  syncCard: { marginTop: 6 },
+  syncRow: { flexDirection: 'row', gap: 12, alignItems: 'center' },
+  syncIcon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  syncTitle: { fontSize: 14, fontWeight: '800' },
+  syncText: { fontSize: 11, lineHeight: 16, marginTop: 3 },
+  syncButton: { minHeight: 46, marginTop: 14 },
+  themeCard: { padding: 12 },
+  themeOptions: { flexDirection: 'row', gap: 8 },
+  themeOption: { flex: 1, borderRadius: 13, borderWidth: 1, alignItems: 'center', paddingVertical: 13, gap: 5 },
+  themeLabel: { fontSize: 11, fontWeight: '800' },
+  themeHint: { fontSize: 10, lineHeight: 15, marginTop: 12, paddingHorizontal: 3 },
+  settingsCard: { paddingVertical: 1 },
+  setting: { minHeight: 67, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  settingIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  settingTitle: { fontSize: 13, fontWeight: '700' },
+  settingDetail: { fontSize: 10, marginTop: 3 },
+  footer: { textAlign: 'center', fontSize: 11, fontWeight: '700', marginTop: 26 },
+  evidenceCard: { paddingVertical: 1 },
+  evidenceRow: { minHeight: 88, flexDirection: 'row', alignItems: 'center', gap: 11 },
+  evidenceIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  evidenceTitle: { fontSize: 12, fontWeight: '800' },
+  evidenceText: { fontSize: 10, lineHeight: 14, marginTop: 2 },
+  evidenceSource: { fontSize: 9, fontWeight: '700', marginTop: 4 },
+});
