@@ -1,4 +1,4 @@
-import { StudyPack } from '../models';
+import type { StudyPack } from '../models';
 
 export interface MasteryBreakdown {
   overall: number;

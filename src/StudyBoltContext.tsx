@@ -1,8 +1,9 @@
-import React, { createContext, ReactNode, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useColorScheme } from 'react-native';
 
 import { initialState } from './data/mockStudyPacks';
-import { StudyBoltState, StudyPack, StudyPlan, ThemePreference } from './models';
+import type { StudyBoltState, StudyPack, StudyPlan, ThemePreference } from './models';
 import { loadStudyBoltState, saveStudyBoltState } from './services/persistence';
 import { AppColors, resolveColors } from './theme';
 
@@ -11,6 +12,8 @@ interface StudyBoltContextValue {
   colors: AppColors;
   hydrated: boolean;
   setTheme: (theme: ThemePreference) => void;
+  completeOnboarding: () => void;
+  resetLocalData: () => void;
   updateDeck: (deckId: string, updater: (deck: StudyPack) => StudyPack) => void;
   addDeck: (deck: StudyPack) => void;
   setPlan: (plan: StudyPlan) => void;
@@ -47,6 +50,8 @@ export function StudyBoltProvider({ children }: { children: ReactNode }) {
       hydrated,
       colors: resolveColors(state.theme, systemScheme),
       setTheme: (theme) => setState((current) => ({ ...current, theme })),
+      completeOnboarding: () => setState((current) => ({ ...current, hasCompletedOnboarding: true })),
+      resetLocalData: () => setState({ ...initialState, hasCompletedOnboarding: true }),
       updateDeck: (deckId, updater) =>
         setState((current) => ({
           ...current,

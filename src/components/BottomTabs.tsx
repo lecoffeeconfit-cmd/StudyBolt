@@ -3,7 +3,8 @@ import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useStudyBolt } from '../StudyBoltContext';
-import { Icon, IconName } from './ui';
+import { Icon } from './ui';
+import type { IconName } from './ui';
 
 export type MainTab = 'home' | 'library' | 'planner' | 'stats' | 'profile';
 

@@ -3,9 +3,10 @@ import React from 'react';
 import { Alert, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useStudyBolt } from '../StudyBoltContext';
-import { ImportAsset, StudyPack } from '../models';
+import type { ImportAsset, StudyPack } from '../models';
 import { calculateMastery } from '../services/mastery';
 import { Card, Header, Icon, Pill, ProgressBar, Screen, SectionHeader } from '../components/ui';
+import { useAuth } from '../AuthContext';
 
 export function HomeScreen({
   onOpenDeck,
@@ -15,6 +16,8 @@ export function HomeScreen({
   onImport: (asset: ImportAsset) => void;
 }) {
   const { colors, state, setTheme } = useStudyBolt();
+  const { user } = useAuth();
+  const avatarInitial = (user?.email?.[0] ?? 'H').toUpperCase();
 
   const pickDocument = async () => {
     try {
@@ -50,7 +53,7 @@ export function HomeScreen({
               <Icon name={colors.mode === 'dark' ? 'weather-sunny' : 'weather-night'} size={19} color={colors.mode === 'dark' ? colors.warning : colors.primary} />
             </Pressable>
             <View style={[styles.avatar, { backgroundColor: colors.mintSoft }]}>
-              <Text style={styles.avatarText}>H</Text>
+              <Text style={styles.avatarText}>{avatarInitial}</Text>
             </View>
           </View>
         }

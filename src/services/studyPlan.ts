@@ -1,4 +1,4 @@
-import { StudyPack, StudyPlan, StudyPlanDay } from '../models';
+import type { StudyPack, StudyPlan, StudyPlanDay } from '../models';
 import { calculateMastery } from './mastery';
 
 const TARGET_DAYS: Record<StudyPlan['target'], number> = {

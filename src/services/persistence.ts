@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { StudyBoltState } from '../models';
+import type { StudyBoltState } from '../models';
 import { initialState } from '../data/mockStudyPacks';
 
 const STORAGE_KEY = '@studybolt/state/v1';

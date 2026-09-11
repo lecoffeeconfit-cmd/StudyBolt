@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 
 import { Card, Header, Icon, Pill, PrimaryButton, ProgressBar, Screen, SectionHeader } from '../components/ui';
 import { useStudyBolt } from '../StudyBoltContext';
-import { StudyPlan } from '../models';
+import type { StudyPlan } from '../models';
 import { buildStudyPlan } from '../services/studyPlan';
 
 const TARGETS: Array<{ id: StudyPlan['target']; label: string; detail: string }> = [

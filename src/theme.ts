@@ -1,6 +1,6 @@
 import { ColorSchemeName } from 'react-native';
 
-import { ThemePreference } from './models';
+import type { ThemePreference } from './models';
 
 export interface AppColors {
   mode: 'light' | 'dark';

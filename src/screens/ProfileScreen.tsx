@@ -1,10 +1,12 @@
 import React from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { Card, Header, Icon, IconName, Pill, PrimaryButton, Screen, SectionHeader } from '../components/ui';
+import { Card, Header, Icon, Pill, PrimaryButton, Screen, SectionHeader } from '../components/ui';
+import type { IconName } from '../components/ui';
 import { useStudyBolt } from '../StudyBoltContext';
-import { ThemePreference } from '../models';
+import type { ThemePreference } from '../models';
 import { learningEvidence } from '../data/learningScience';
+import { useAuth } from '../AuthContext';
 
 const THEMES: Array<{ id: ThemePreference; label: string; icon: IconName }> = [
   { id: 'system', label: 'System', icon: 'cellphone' },
@@ -12,26 +14,28 @@ const THEMES: Array<{ id: ThemePreference; label: string; icon: IconName }> = [
   { id: 'dark', label: 'Dark', icon: 'weather-night' },
 ];
 
-export function ProfileScreen() {
+export function ProfileScreen({ onOpenOnboarding, onOpenAuth, onManageAccount, onOpenLegal }: { onOpenOnboarding: () => void; onOpenAuth: () => void; onManageAccount: () => void; onOpenLegal: () => void }) {
   const { colors, state, setTheme } = useStudyBolt();
+  const { user } = useAuth();
+  const initial = (user?.email?.[0] ?? 'H').toUpperCase();
   return (
     <Screen>
-      <Header title="Profile" right={<Pill label="Guest" tone="neutral" />} />
+      <Header title="Profile" right={<Pill label={user ? 'Signed in' : 'Guest'} tone={user ? 'mint' : 'neutral'} />} />
       <View style={styles.profileTop}>
-        <View style={[styles.avatar, { backgroundColor: colors.primarySoft }]}><Text style={[styles.avatarText, { color: colors.primary }]}>H</Text></View>
-        <Text style={[styles.title, { color: colors.text }]}>Your StudyBolt</Text>
-        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Studying locally as a guest</Text>
+        <View style={[styles.avatar, { backgroundColor: colors.primarySoft }]}><Text style={[styles.avatarText, { color: colors.primary }]}>{initial}</Text></View>
+        <Text style={[styles.title, { color: colors.text }]}>{user ? 'Account ready' : 'Your StudyBolt'}</Text>
+        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{user?.email ?? 'Studying locally as a guest'}</Text>
       </View>
 
       <Card style={[styles.syncCard, { backgroundColor: colors.primarySoft }]}>
         <View style={styles.syncRow}>
           <View style={[styles.syncIcon, { backgroundColor: colors.primary }]}><Icon name="cloud-sync" color="#FFFFFF" size={22} /></View>
           <View style={{ flex: 1 }}>
-            <Text style={[styles.syncTitle, { color: colors.text }]}>Save materials everywhere</Text>
-            <Text style={[styles.syncText, { color: colors.textSecondary }]}>Account sync becomes available when the private Supabase backend is connected.</Text>
+            <Text style={[styles.syncTitle, { color: colors.text }]}>{user ? 'Account & security' : 'Save materials everywhere'}</Text>
+            <Text style={[styles.syncText, { color: colors.textSecondary }]}>{user ? 'Change your email, reset your password, or manage your account.' : 'Sign in to keep your account and future synced materials protected.'}</Text>
           </View>
         </View>
-        <PrimaryButton label="Account setup required" icon="lock-outline" disabled onPress={() => undefined} style={styles.syncButton} />
+        <PrimaryButton label={user ? 'Manage account' : 'Sign in or create account'} icon={user ? 'shield-account-outline' : 'login'} onPress={user ? onManageAccount : onOpenAuth} style={styles.syncButton} />
       </Card>
 
       <SectionHeader title="Appearance" />
@@ -64,7 +68,19 @@ export function ProfileScreen() {
 
       <SectionHeader title="About" />
       <Card style={styles.settingsCard}>
-        <Setting icon="shield-lock-outline" title="Privacy" detail="Private by design" />
+        <Pressable
+          accessibilityRole="button"
+          onPress={onOpenOnboarding}
+          style={[styles.setting, { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }]}
+        >
+          <View style={[styles.settingIcon, { backgroundColor: colors.cardStrong }]}><Icon name="compass-outline" size={20} color={colors.primary} /></View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.settingTitle, { color: colors.text }]}>Quick tour</Text>
+            <Text style={[styles.settingDetail, { color: colors.textMuted }]}>Replay the StudyBolt introduction</Text>
+          </View>
+          <Icon name="chevron-right" color={colors.textMuted} />
+        </Pressable>
+        <Setting icon="shield-lock-outline" title="Privacy & terms" detail="Review your legal documents" onPress={onOpenLegal} />
         <Setting icon="lifebuoy" title="Help & support" detail="Setup documentation included" />
         <Setting icon="information-outline" title="StudyBolt" detail="Version 1.0.0" last />
       </Card>
@@ -95,18 +111,21 @@ export function ProfileScreen() {
   );
 }
 
-function Setting({ icon, title, detail, last = false }: { icon: IconName; title: string; detail: string; last?: boolean }) {
+function Setting({ icon, title, detail, last = false, onPress }: { icon: IconName; title: string; detail: string; last?: boolean; onPress?: () => void }) {
   const { colors } = useStudyBolt();
-  return (
-    <View style={[styles.setting, !last && { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }]}>
+  const content = (
+    <>
       <View style={[styles.settingIcon, { backgroundColor: colors.cardStrong }]}><Icon name={icon} size={20} color={colors.primary} /></View>
       <View style={{ flex: 1 }}>
         <Text style={[styles.settingTitle, { color: colors.text }]}>{title}</Text>
         <Text style={[styles.settingDetail, { color: colors.textMuted }]}>{detail}</Text>
       </View>
-      <Icon name="check-circle-outline" color={colors.textMuted} />
-    </View>
+      <Icon name={onPress ? 'chevron-right' : 'check-circle-outline'} color={colors.textMuted} />
+    </>
   );
+  const style = [styles.setting, !last && { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }];
+  if (!onPress) return <View style={style}>{content}</View>;
+  return <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [style, pressed && { opacity: 0.65 }]}>{content}</Pressable>;
 }
 
 const styles = StyleSheet.create({

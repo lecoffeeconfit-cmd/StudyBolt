@@ -1,4 +1,4 @@
-import { StudyBoltState, StudyPack } from '../models';
+import type { StudyBoltState, StudyPack } from '../models';
 
 const biology: StudyPack = {
   id: 'biology-cells',
@@ -211,6 +211,7 @@ export const initialState: StudyBoltState = {
     supportingDeck('biology-genetics', 'biology-101', 'Biology 101', 'Intro to Genetics', 'Chapter 6', 31, '🧬', '#39BFA3', 4),
   ],
   theme: 'system',
+  hasCompletedOnboarding: false,
   plan: {
     target: 'two-days',
     remindersEnabled: true,

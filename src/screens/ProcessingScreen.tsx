@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon, Pill, PrimaryButton, ProgressBar } from '../components/ui';
 import { useStudyBolt } from '../StudyBoltContext';
-import { ImportAsset, StudyPack } from '../models';
+import type { ImportAsset, StudyPack } from '../models';
 import { processDocument, StudyBoltProcessingError, validateImport } from '../services/documentProcessor';
 
 const STAGES = [

@@ -4,12 +4,11 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Card, Header, Icon, IconName, Pill, PrimaryButton, ProgressBar, SectionHeader } from '../components/ui';
+import { Card, Header, Icon, Pill, PrimaryButton, ProgressBar, SectionHeader } from '../components/ui';
+import type { IconName } from '../components/ui';
 import { useStudyBolt } from '../StudyBoltContext';
-import { FlashcardConfidence, StudyPack } from '../models';
+import type { FlashcardConfidence, StudyPack, StudyTool } from '../models';
 import { calculateMastery } from '../services/mastery';
-
-export type StudyTool = 'overview' | 'notes' | 'flashcards' | 'quiz' | 'audio';
 
 const TABS: Array<{ id: StudyTool; label: string }> = [
   { id: 'overview', label: 'Overview' },

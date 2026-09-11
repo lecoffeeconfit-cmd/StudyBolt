@@ -1,6 +1,7 @@
 export type ThemePreference = 'system' | 'light' | 'dark';
 export type FlashcardConfidence = 'new' | 'learning' | 'known';
 export type QuizQuestionType = 'multiple-choice' | 'true-false';
+export type StudyTool = 'overview' | 'notes' | 'flashcards' | 'quiz' | 'audio';
 
 export interface SourceReference {
   sectionId: string;
@@ -84,6 +85,7 @@ export interface StudyPlan {
 export interface StudyBoltState {
   decks: StudyPack[];
   theme: ThemePreference;
+  hasCompletedOnboarding: boolean;
   plan: StudyPlan;
   focusMinutes: number;
   streakDays: number;

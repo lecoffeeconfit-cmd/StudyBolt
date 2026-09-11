@@ -1,4 +1,4 @@
-import { ImportAsset, StudyPack } from '../models';
+import type { ImportAsset, StudyPack } from '../models';
 
 const ALLOWED_EXTENSIONS = ['pdf', 'ppt', 'pptx'];
 

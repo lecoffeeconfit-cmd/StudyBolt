@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Card, Header, Icon, Pill, PrimaryButton, Screen, SectionHeader } from '../components/ui';
 import { useStudyBolt } from '../StudyBoltContext';
-import { StudyPack } from '../models';
+import type { StudyPack } from '../models';
 import { calculateCourseMastery, calculateMastery } from '../services/mastery';
 
 export function LibraryScreen({ onOpenDeck, onCreateReview }: { onOpenDeck: (deck: StudyPack) => void; onCreateReview: (deckIds: string[]) => void }) {

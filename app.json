@@ -2,6 +2,7 @@
   "expo": {
     "name": "StudyBolt",
     "slug": "studybolt",
+    "scheme": "studybolt",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
