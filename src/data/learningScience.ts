@@ -19,9 +19,15 @@ export const learningEvidence: LearningEvidence[] = [
     url: 'https://pubmed.ncbi.nlm.nih.gov/16719566/',
   },
   {
-    principle: 'High-utility techniques',
-    application: 'StudyBolt emphasizes practice testing and spaced review.',
-    source: 'Dunlosky et al., 2013',
-    url: 'https://doi.org/10.1177/1529100612453266',
+    principle: 'Successive relearning',
+    application: 'Retention is credited only after successful recall on different days—not after one exposure.',
+    source: 'Vaughn, Dunlosky & Rawson, 2016',
+    url: 'https://pubmed.ncbi.nlm.nih.gov/27027887/',
+  },
+  {
+    principle: 'Calibrated confidence',
+    application: 'Self-ratings are blended with observed quiz performance and never treated as proof by themselves.',
+    source: 'Fleming & Lau, 2014',
+    url: 'https://pubmed.ncbi.nlm.nih.gov/25076880/',
   },
 ];

@@ -23,6 +23,7 @@ export function combineStudyPacks(decks: StudyPack[]): StudyPack {
     flashcards: decks.flatMap((deck) => deck.flashcards.map((card) => ({ ...card, id: `${deck.id}-${card.id}`, confidence: 'new' as const }))),
     quiz: decks.flatMap((deck) => deck.quiz.map((question) => ({ ...question, id: `${deck.id}-${question.id}` }))),
     quizAttempts: [],
+    testAttempts: [],
     reviewedNoteIds: [],
     audioPosition: 0,
     studyMinutes: 0,

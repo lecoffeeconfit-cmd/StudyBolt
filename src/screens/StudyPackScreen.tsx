@@ -6,8 +6,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Card, Header, Icon, Pill, PrimaryButton, ProgressBar, SectionHeader } from '../components/ui';
 import type { IconName } from '../components/ui';
+import { StudyPackShareSheet } from '../components/StudyPackShareSheet';
 import { useStudyBolt } from '../StudyBoltContext';
-import type { FlashcardConfidence, StudyPack, StudyTool } from '../models';
+import type { FlashcardConfidence, QuizAnswerRecord, QuizQuestionCount, StudyPack, StudyTool } from '../models';
+import { buildAssessment, getAssessmentCoverage } from '../services/assessment';
+import type { AssessmentKind } from '../services/assessment';
 import { calculateMastery } from '../services/mastery';
 
 const TABS: Array<{ id: StudyTool; label: string }> = [
@@ -20,19 +23,26 @@ const TABS: Array<{ id: StudyTool; label: string }> = [
 
 export function StudyPackScreen({
   deckId,
+  deckOverride,
+  shared = false,
+  onSaveShared,
   initialTool = 'overview',
   onBack,
   onPlan,
 }: {
   deckId: string;
+  deckOverride?: StudyPack;
+  shared?: boolean;
+  onSaveShared?: () => void;
   initialTool?: StudyTool;
   onBack: () => void;
-  onPlan: () => void;
+  onPlan: (deckId: string) => void;
 }) {
   const { colors, state } = useStudyBolt();
   const insets = useSafeAreaInsets();
   const [tool, setTool] = useState<StudyTool>(initialTool);
-  const deck = state.decks.find((item) => item.id === deckId);
+  const [shareVisible, setShareVisible] = useState(false);
+  const deck = deckOverride ?? state.decks.find((item) => item.id === deckId);
 
   if (!deck) {
     return (
@@ -47,31 +57,58 @@ export function StudyPackScreen({
   return (
     <View style={[styles.page, { backgroundColor: colors.background, paddingTop: insets.top + 5 }]}>
       <View style={styles.horizontalPadding}>
-        <Header title={deck.courseName} subtitle={deck.title} onBack={onBack} right={<Pill label="Offline" tone="mint" />} />
+        <Header
+          title={deck.courseName}
+          subtitle={deck.title}
+          onBack={onBack}
+          right={
+            <View style={styles.headerRightRow}>
+              {!shared ? (
+                <Pressable accessibilityRole="button" accessibilityLabel="Share Study Pack" onPress={() => setShareVisible(true)} style={[styles.shareButton, { backgroundColor: colors.primarySoft }]}>
+                  <Icon name="share-variant" size={19} color={colors.primary} />
+                </Pressable>
+              ) : null}
+              <Pill label={shared ? 'Shared' : 'Offline'} tone={shared ? 'purple' : 'mint'} />
+            </View>
+          }
+        />
       </View>
+      {shared && onSaveShared ? (
+        <Card style={[styles.sharedBanner, { backgroundColor: colors.purpleSoft, borderColor: `${colors.purple}44` }]}>
+          <View style={[styles.sharedBannerIcon, { backgroundColor: colors.card }]}><Icon name="account-multiple-outline" size={20} color={colors.purple} /></View>
+          <View style={styles.sharedBannerCopy}>
+            <Text style={[styles.sharedBannerTitle, { color: colors.text }]}>Shared Study Pack</Text>
+            <Text style={[styles.sharedBannerText, { color: colors.textSecondary }]}>Preview the material, then save your own copy to track progress.</Text>
+          </View>
+          <Pressable accessibilityRole="button" onPress={onSaveShared} style={[styles.sharedSaveButton, { backgroundColor: colors.purple }]}>
+            <Text style={styles.sharedSaveText}>Save copy</Text>
+          </Pressable>
+        </Card>
+      ) : null}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabs} style={[styles.tabScroller, { borderBottomColor: colors.border }]}>
         {TABS.map((tab) => {
           const active = tool === tab.id;
           return (
             <Pressable key={tab.id} onPress={() => setTool(tab.id)} style={[styles.tab, active && { backgroundColor: colors.primary }]}>
-              <Text style={[styles.tabText, { color: active ? '#FFFFFF' : colors.textSecondary }]}>{tab.label}</Text>
+              <Text style={[styles.tabText, { color: active ? colors.primaryText : colors.textSecondary }]}>{tab.label}</Text>
             </Pressable>
           );
         })}
       </ScrollView>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {tool === 'overview' ? <Overview deck={deck} onTool={setTool} onPlan={onPlan} /> : null}
-        {tool === 'notes' ? <Notes deck={deck} /> : null}
-        {tool === 'flashcards' ? <Flashcards deck={deck} /> : null}
-        {tool === 'quiz' ? <Quiz deck={deck} /> : null}
-        {tool === 'audio' ? <AudioPlayer deck={deck} /> : null}
+        {tool === 'overview' ? <Overview deck={deck} onTool={setTool} onPlan={() => onPlan(deck.id)} shared={shared} /> : null}
+        {tool === 'notes' ? <Notes deck={deck} readOnly={shared} /> : null}
+        {tool === 'flashcards' ? <Flashcards deck={deck} readOnly={shared} /> : null}
+        {tool === 'quiz' ? <Quiz deck={deck} readOnly={shared} /> : null}
+        {tool === 'audio' ? <AudioPlayer deck={deck} readOnly={shared} /> : null}
       </ScrollView>
+      {!shared ? <StudyPackShareSheet deck={deck} visible={shareVisible} onClose={() => setShareVisible(false)} /> : null}
     </View>
   );
 }
 
-function Overview({ deck, onTool, onPlan }: { deck: StudyPack; onTool: (tool: StudyTool) => void; onPlan: () => void }) {
-  const { colors } = useStudyBolt();
+function Overview({ deck, onTool, onPlan, shared }: { deck: StudyPack; onTool: (tool: StudyTool) => void; onPlan: () => void; shared?: boolean }) {
+  const { colors, state } = useStudyBolt();
   const mastery = calculateMastery(deck);
   return (
     <>
@@ -86,6 +123,13 @@ function Overview({ deck, onTool, onPlan }: { deck: StudyPack; onTool: (tool: St
           <Text style={[styles.deckSubtitle, { color: colors.textSecondary }]}>{deck.subtitle}</Text>
         </View>
       </View>
+
+      {shared ? (
+        <View style={[styles.previewHint, { backgroundColor: colors.primarySoft }]}>
+          <Icon name="eye-outline" size={18} color={colors.primary} />
+          <Text style={[styles.previewHintText, { color: colors.textSecondary }]}>You’re viewing a read-only preview. Save a copy to make it yours.</Text>
+        </View>
+      ) : null}
 
       <Card style={[styles.masteryCard, { backgroundColor: colors.mode === 'dark' ? colors.primarySoft : '#EEF5FF' }]}>
         <View style={styles.masteryTop}>
@@ -102,7 +146,7 @@ function Overview({ deck, onTool, onPlan }: { deck: StudyPack; onTool: (tool: St
       <View style={styles.toolGrid}>
         <ToolCard icon="note-text-outline" title="Simplified Notes" detail={`${deck.notes.length} clear sections`} color={colors.primary} background={colors.primarySoft} onPress={() => onTool('notes')} />
         <ToolCard icon="cards-outline" title="Flashcards" detail={`${deck.flashcards.length} active recall cards`} color={colors.purple} background={colors.purpleSoft} onPress={() => onTool('flashcards')} />
-        <ToolCard icon="clipboard-text-outline" title="Practice Quiz" detail={`${deck.quiz.length} source-based questions`} color={colors.mint} background={colors.mintSoft} onPress={() => onTool('quiz')} />
+        <ToolCard icon="clipboard-text-outline" title="Quiz & Full Test" detail={`${state.quizQuestionCount} practice questions + cumulative test`} color={colors.mint} background={colors.mintSoft} onPress={() => onTool('quiz')} />
         <ToolCard icon="headphones" title="Audio Review" detail="Original or quick review" color="#A45FEB" background={colors.purpleSoft} onPress={() => onTool('audio')} />
       </View>
 
@@ -125,16 +169,18 @@ function Overview({ deck, onTool, onPlan }: { deck: StudyPack; onTool: (tool: St
         ))}
       </View>
 
-      <Card style={[styles.planCard, { backgroundColor: colors.mintSoft }]}>
-        <View style={[styles.planIcon, { backgroundColor: colors.mint }]}><Icon name="calendar-check" color="#FFFFFF" /></View>
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.planTitle, { color: colors.text }]}>Need to learn this fast?</Text>
-          <Text style={[styles.planText, { color: colors.textSecondary }]}>Build a realistic plan for tomorrow, two days, or one week.</Text>
-        </View>
-        <Pressable accessibilityRole="button" onPress={onPlan} style={[styles.planAction, { backgroundColor: colors.card }]}>
-          <Icon name="arrow-right" color={colors.mint} />
-        </Pressable>
-      </Card>
+      {!shared ? (
+        <Card style={[styles.planCard, { backgroundColor: colors.mintSoft }]}>
+          <View style={[styles.planIcon, { backgroundColor: colors.mint }]}><Icon name="calendar-check" color={colors.primaryText} /></View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.planTitle, { color: colors.text }]}>Need to learn this fast?</Text>
+            <Text style={[styles.planText, { color: colors.textSecondary }]}>Build a guided route for this PowerPoint or your entire class.</Text>
+          </View>
+          <Pressable accessibilityRole="button" onPress={onPlan} style={[styles.planAction, { backgroundColor: colors.card }]}>
+            <Icon name="arrow-right" color={colors.mint} />
+          </Pressable>
+        </Card>
+      ) : null}
     </>
   );
 }
@@ -151,15 +197,20 @@ function ToolCard({ icon, title, detail, color, background, onPress }: { icon: I
   );
 }
 
-function Notes({ deck }: { deck: StudyPack }) {
-  const { colors, updateDeck } = useStudyBolt();
+function Notes({ deck, readOnly = false }: { deck: StudyPack; readOnly?: boolean }) {
+  const { colors, recordStudyEvent, updateDeck } = useStudyBolt();
   const mastery = calculateMastery(deck);
-  const toggleReviewed = (noteId: string) => updateDeck(deck.id, (current) => ({
-    ...current,
-    reviewedNoteIds: current.reviewedNoteIds.includes(noteId)
-      ? current.reviewedNoteIds.filter((id) => id !== noteId)
-      : [...current.reviewedNoteIds, noteId],
-  }));
+  const toggleReviewed = (noteId: string) => {
+    if (readOnly) return;
+    const wasReviewed = deck.reviewedNoteIds.includes(noteId);
+    updateDeck(deck.id, (current) => ({
+      ...current,
+      reviewedNoteIds: current.reviewedNoteIds.includes(noteId)
+        ? current.reviewedNoteIds.filter((id) => id !== noteId)
+        : [...current.reviewedNoteIds, noteId],
+    }));
+    if (!wasReviewed) recordStudyEvent({ type: 'note-review', deckId: deck.id, courseId: deck.courseId, noteId, durationMinutes: 3 });
+  };
   return (
     <>
       <View style={styles.toolHeadingRow}>
@@ -202,13 +253,20 @@ function Notes({ deck }: { deck: StudyPack }) {
                   </View>
                 </View>
               ) : null}
-              <Pressable
-                onPress={() => toggleReviewed(note.id)}
-                style={[styles.reviewedButton, { backgroundColor: reviewed ? colors.mintSoft : colors.cardStrong }]}
-              >
-                <Icon name={reviewed ? 'check-circle' : 'checkbox-blank-circle-outline'} size={18} color={reviewed ? colors.mint : colors.textMuted} />
-                <Text style={[styles.reviewedText, { color: reviewed ? colors.mint : colors.textSecondary }]}>{reviewed ? 'Reviewed' : 'Mark reviewed'}</Text>
-              </Pressable>
+              {readOnly ? (
+                <View style={[styles.reviewedButton, { backgroundColor: colors.cardStrong }]}>
+                  <Icon name="eye-outline" size={18} color={colors.textMuted} />
+                  <Text style={[styles.reviewedText, { color: colors.textMuted }]}>Preview only</Text>
+                </View>
+              ) : (
+                <Pressable
+                  onPress={() => toggleReviewed(note.id)}
+                  style={[styles.reviewedButton, { backgroundColor: reviewed ? colors.mintSoft : colors.cardStrong }]}
+                >
+                  <Icon name={reviewed ? 'check-circle' : 'checkbox-blank-circle-outline'} size={18} color={reviewed ? colors.mint : colors.textMuted} />
+                  <Text style={[styles.reviewedText, { color: reviewed ? colors.mint : colors.textSecondary }]}>{reviewed ? 'Reviewed' : 'Mark reviewed'}</Text>
+                </Pressable>
+              )}
             </Card>
           );
         })}
@@ -217,8 +275,8 @@ function Notes({ deck }: { deck: StudyPack }) {
   );
 }
 
-function Flashcards({ deck }: { deck: StudyPack }) {
-  const { colors, updateDeck } = useStudyBolt();
+function Flashcards({ deck, readOnly = false }: { deck: StudyPack; readOnly?: boolean }) {
+  const { colors, recordStudyEvent, updateDeck } = useStudyBolt();
   const [index, setIndex] = useState(0);
   const [revealed, setRevealed] = useState(false);
   const card = deck.flashcards[index];
@@ -226,6 +284,16 @@ function Flashcards({ deck }: { deck: StudyPack }) {
   if (!card) return <EmptyTool icon="cards-outline" title="No flashcards yet" message="Regenerate this Study Pack after source processing is connected." />;
 
   const setConfidence = (confidence: FlashcardConfidence) => {
+    if (readOnly) return;
+    recordStudyEvent({
+      type: 'flashcard-review',
+      deckId: deck.id,
+      courseId: deck.courseId,
+      cardId: card.id,
+      confidence,
+      previousConfidence: card.confidence,
+      durationMinutes: 1,
+    });
     updateDeck(deck.id, (current) => ({
       ...current,
       flashcards: current.flashcards.map((item) => (item.id === card.id ? { ...item, confidence } : item)),
@@ -266,13 +334,13 @@ function Flashcards({ deck }: { deck: StudyPack }) {
         <Pressable accessibilityLabel="Previous card" disabled={index === 0} onPress={() => { setIndex((value) => Math.max(0, value - 1)); setRevealed(false); }} style={[styles.navButton, { backgroundColor: colors.card, borderColor: colors.border, opacity: index === 0 ? 0.4 : 1 }]}>
           <Icon name="chevron-left" color={colors.textSecondary} />
         </Pressable>
-        <Text style={[styles.confidenceHint, { color: colors.textMuted }]}>{revealed ? 'How well did you know it?' : 'Retrieve, then reveal'}</Text>
+        <Text style={[styles.confidenceHint, { color: colors.textMuted }]}>{readOnly ? 'Preview the answer, then save a copy to study' : revealed ? 'How well did you know it?' : 'Retrieve, then reveal'}</Text>
         <Pressable accessibilityLabel="Next card" disabled={index === deck.flashcards.length - 1} onPress={() => { setIndex((value) => Math.min(deck.flashcards.length - 1, value + 1)); setRevealed(false); }} style={[styles.navButton, { backgroundColor: colors.card, borderColor: colors.border, opacity: index === deck.flashcards.length - 1 ? 0.4 : 1 }]}>
           <Icon name="chevron-right" color={colors.textSecondary} />
         </Pressable>
       </View>
 
-      {revealed ? (
+      {revealed && !readOnly ? (
         <View style={styles.confidenceRow}>
           <ConfidenceButton icon="refresh" label="Again" color={colors.danger} background={`${colors.danger}18`} onPress={() => setConfidence('new')} />
           <ConfidenceButton icon="progress-clock" label="Learning" color={colors.warning} background={`${colors.warning}18`} onPress={() => setConfidence('learning')} />
@@ -292,41 +360,76 @@ function ConfidenceButton({ icon, label, color, background, onPress }: { icon: I
   );
 }
 
-function Quiz({ deck }: { deck: StudyPack }) {
-  const { colors, updateDeck } = useStudyBolt();
+function Quiz({ deck, readOnly = false }: { deck: StudyPack; readOnly?: boolean }) {
+  const { colors, recordStudyEvent, state, setQuizQuestionCount, updateDeck } = useStudyBolt();
+  const [kind, setKind] = useState<AssessmentKind>('practice');
   const [index, setIndex] = useState(0);
   const [selected, setSelected] = useState<number | null>(null);
   const [correctCount, setCorrectCount] = useState(0);
   const [finished, setFinished] = useState(false);
   const [recorded, setRecorded] = useState(false);
-  const question = deck.quiz[index];
+  const [answers, setAnswers] = useState<QuizAnswerRecord[]>([]);
+  const practicePool = useMemo(() => buildAssessment(deck, 'practice'), [deck.flashcards, deck.id, deck.notes, deck.quiz]);
+  const questions = useMemo(
+    () => buildAssessment(deck, kind, kind === 'practice' ? state.quizQuestionCount : undefined),
+    [deck.flashcards, deck.id, deck.notes, deck.outline, deck.quiz, kind, state.quizQuestionCount],
+  );
+  const coverage = useMemo(() => getAssessmentCoverage(deck, questions), [deck, questions]);
+  const question = questions[index];
+
+  useEffect(() => {
+    setIndex(0);
+    setSelected(null);
+    setCorrectCount(0);
+    setAnswers([]);
+    setFinished(false);
+    setRecorded(false);
+  }, [deck.id, kind, state.quizQuestionCount]);
 
   if (!question) return <EmptyTool icon="clipboard-alert-outline" title="No quiz yet" message="No quiz questions were available for this Study Pack." />;
 
   const choose = (optionIndex: number) => {
     if (selected !== null) return;
     setSelected(optionIndex);
-    if (optionIndex === question.correctIndex) setCorrectCount((count) => count + 1);
+    const correct = optionIndex === question.correctIndex;
+    if (correct) setCorrectCount((count) => count + 1);
+    setAnswers((current) => [...current, {
+      questionId: question.id,
+      sourceSectionId: question.source.sectionId,
+      correct,
+      questionType: question.type,
+      difficulty: question.difficulty ?? (index === 0 ? 'easy' : index === questions.length - 1 ? 'hard' : 'medium'),
+    }]);
   };
 
   const next = () => {
     if (selected === null) return;
-    if (index < deck.quiz.length - 1) {
+    if (index < questions.length - 1) {
       setIndex((value) => value + 1);
       setSelected(null);
       return;
     }
     const finalCorrect = correctCount;
-    const score = Math.round((finalCorrect / deck.quiz.length) * 100);
-    if (!recorded) {
-      updateDeck(deck.id, (current) => ({ ...current, quizAttempts: [...current.quizAttempts, score] }));
+    const score = Math.round((finalCorrect / questions.length) * 100);
+    if (!recorded && !readOnly) {
+      updateDeck(deck.id, (current) => kind === 'practice'
+        ? { ...current, quizAttempts: [...current.quizAttempts, score] }
+        : { ...current, testAttempts: [...(current.testAttempts ?? []), score] });
+      recordStudyEvent({
+        type: 'quiz',
+        deckId: deck.id,
+        courseId: deck.courseId,
+        durationMinutes: Math.max(3, Math.round(questions.length * 1.5)),
+        quizScore: score,
+        quizAnswers: answers,
+      });
       setRecorded(true);
     }
     setFinished(true);
   };
 
   if (finished) {
-    const score = Math.round((correctCount / deck.quiz.length) * 100);
+    const score = Math.round((correctCount / questions.length) * 100);
     return (
       <View style={styles.results}>
         <View style={[styles.resultIcon, { backgroundColor: score >= 70 ? colors.mintSoft : colors.primarySoft }]}>
@@ -334,26 +437,71 @@ function Quiz({ deck }: { deck: StudyPack }) {
         </View>
         <Text style={[styles.resultTitle, { color: colors.text }]}>{score >= 80 ? 'Strong work!' : score >= 60 ? 'Good foundation' : 'Keep retrieving'}</Text>
         <Text style={[styles.resultScore, { color: colors.text }]}>{score}%</Text>
-        <Text style={[styles.resultText, { color: colors.textSecondary }]}>{correctCount} of {deck.quiz.length} correct. Your mastery estimate now includes this attempt.</Text>
+        <Text style={[styles.resultText, { color: colors.textSecondary }]}>{correctCount} of {questions.length} correct on your {kind === 'practice' ? 'practice quiz' : 'full PowerPoint test'}.{readOnly ? ' This preview result was not saved.' : ' Your mastery estimate now includes this attempt.'}</Text>
         <Card style={[styles.resultTip, { backgroundColor: colors.primarySoft }]}>
           <Icon name="brain" color={colors.primary} />
           <Text style={[styles.resultTipText, { color: colors.textSecondary }]}>Try again after a short gap. Retrieval spaced over time is more useful than repeating immediately.</Text>
         </Card>
-        <PrimaryButton label="Review again" icon="refresh" onPress={() => { setIndex(0); setSelected(null); setCorrectCount(0); setFinished(false); setRecorded(false); }} />
+        <PrimaryButton label="Try a fresh run" icon="refresh" onPress={() => { setIndex(0); setSelected(null); setCorrectCount(0); setAnswers([]); setFinished(false); setRecorded(false); }} />
       </View>
     );
   }
 
   return (
     <>
+      <View style={[styles.assessmentSwitcher, { backgroundColor: colors.cardStrong }]}>
+        {(['practice', 'comprehensive'] as const).map((item) => {
+          const active = kind === item;
+          return (
+            <Pressable key={item} onPress={() => setKind(item)} style={[styles.assessmentMode, active && { backgroundColor: colors.card }]}>
+              <Icon name={item === 'practice' ? 'clipboard-text-outline' : 'school-outline'} size={18} color={active ? colors.primary : colors.textMuted} />
+              <Text style={[styles.assessmentModeText, { color: active ? colors.text : colors.textMuted }]}>{item === 'practice' ? 'Practice quiz' : 'Full test'}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      <Card style={[styles.quizSetup, { backgroundColor: kind === 'practice' ? colors.primarySoft : colors.mintSoft }]}>
+        <View style={styles.quizSetupTop}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.quizSetupTitle, { color: colors.text }]}>{kind === 'practice' ? 'Choose your quiz length' : 'Complete source coverage'}</Text>
+            <Text style={[styles.quizSetupText, { color: colors.textSecondary }]}>{kind === 'practice' ? 'Starts at 10. Increase it when you want a deeper retrieval session.' : 'This test uses a separate question set and checks every source section.'}</Text>
+          </View>
+          <Pill label={kind === 'practice' ? `${questions.length} Q` : `${coverage.covered}/${coverage.total} sections`} tone={kind === 'practice' ? 'blue' : 'mint'} />
+        </View>
+        {kind === 'practice' ? (
+          <View style={styles.countChoices}>
+            {([10, 15, 20] as QuizQuestionCount[]).map((count) => {
+              const active = state.quizQuestionCount === count;
+              const disabled = practicePool.length < count;
+              return (
+                <Pressable
+                  key={count}
+                  disabled={disabled}
+                  onPress={() => setQuizQuestionCount(count)}
+                  style={[styles.countChip, { backgroundColor: active ? colors.primary : colors.card, borderColor: active ? colors.primary : colors.border, opacity: disabled ? 0.4 : 1 }]}
+                >
+                  <Text style={[styles.countText, { color: active ? colors.primaryText : colors.textSecondary }]}>{count}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : (
+          <View style={styles.coverageRow}>
+            <Icon name="check-decagram" color={colors.mint} size={18} />
+            <Text style={[styles.coverageText, { color: colors.textSecondary }]}>{questions.length} distinct questions · cumulative · source ordered</Text>
+          </View>
+        )}
+      </Card>
+
       <View style={styles.toolHeadingRow}>
         <View>
-          <Text style={[styles.toolHeading, { color: colors.text }]}>Practice Quiz</Text>
-          <Text style={[styles.toolSubheading, { color: colors.textSecondary }]}>Feedback appears after each answer.</Text>
+          <Text style={[styles.toolHeading, { color: colors.text }]}>{kind === 'practice' ? 'Practice Quiz' : 'Full PowerPoint Test'}</Text>
+          <Text style={[styles.toolSubheading, { color: colors.textSecondary }]}>{kind === 'practice' ? 'Feedback appears after each answer.' : 'A separate cumulative check across the whole source.'}</Text>
         </View>
-        <Pill label={`${index + 1} / ${deck.quiz.length}`} tone="mint" />
+        <Pill label={`${index + 1} / ${questions.length}`} tone="mint" />
       </View>
-      <ProgressBar progress={((index + 1) / deck.quiz.length) * 100} color={colors.mint} />
+      <ProgressBar progress={((index + 1) / questions.length) * 100} color={colors.mint} />
       <Card style={styles.questionCard}>
         <View style={styles.questionMeta}>
           <Pill label={question.type === 'true-false' ? 'TRUE / FALSE' : 'MULTIPLE CHOICE'} tone="neutral" />
@@ -370,7 +518,7 @@ function Quiz({ deck }: { deck: StudyPack }) {
             return (
               <Pressable key={option} onPress={() => choose(optionIndex)} style={[styles.option, { borderColor, backgroundColor }]}>
                 <View style={[styles.optionLetter, { backgroundColor: isCorrect ? colors.mint : isWrong ? colors.danger : colors.card, borderColor }]}>
-                  {isCorrect || isWrong ? <Icon name={isCorrect ? 'check' : 'close'} size={15} color="#FFFFFF" /> : <Text style={[styles.optionLetterText, { color: colors.textSecondary }]}>{String.fromCharCode(65 + optionIndex)}</Text>}
+                  {isCorrect || isWrong ? <Icon name={isCorrect ? 'check' : 'close'} size={15} color={colors.primaryText} /> : <Text style={[styles.optionLetterText, { color: colors.textSecondary }]}>{String.fromCharCode(65 + optionIndex)}</Text>}
                 </View>
                 <Text style={[styles.optionText, { color: colors.text }]}>{option}</Text>
               </Pressable>
@@ -387,13 +535,13 @@ function Quiz({ deck }: { deck: StudyPack }) {
           </View>
         </Card>
       ) : null}
-      <PrimaryButton label={index === deck.quiz.length - 1 ? 'See results' : 'Next question'} icon="arrow-right" disabled={selected === null} onPress={next} style={styles.nextButton} />
+      <PrimaryButton label={index === questions.length - 1 ? 'See results' : 'Next question'} icon="arrow-right" disabled={selected === null} onPress={next} style={styles.nextButton} />
     </>
   );
 }
 
-function AudioPlayer({ deck }: { deck: StudyPack }) {
-  const { colors, updateDeck } = useStudyBolt();
+function AudioPlayer({ deck, readOnly = false }: { deck: StudyPack; readOnly?: boolean }) {
+  const { colors, recordStudyEvent, updateDeck } = useStudyBolt();
   const [mode, setMode] = useState<'original' | 'summary'>('summary');
   const [playing, setPlaying] = useState(false);
   const [rate, setRate] = useState(1);
@@ -401,6 +549,7 @@ function AudioPlayer({ deck }: { deck: StudyPack }) {
   const [voices, setVoices] = useState<Speech.Voice[]>([]);
   const [voiceIndex, setVoiceIndex] = useState(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const sessionStartRef = useRef<number | null>(null);
   const text = mode === 'original' ? deck.originalText : deck.quickReview;
   const words = useMemo(() => text.split(/\s+/).filter(Boolean), [text]);
   const voice = voices[voiceIndex];
@@ -427,12 +576,29 @@ function AudioPlayer({ deck }: { deck: StudyPack }) {
     };
   }, [playing, rate, words.length]);
 
-  const persistPosition = (nextPosition: number) => updateDeck(deck.id, (current) => ({ ...current, audioPosition: nextPosition }));
+  const persistPosition = (nextPosition: number) => {
+    if (!readOnly) updateDeck(deck.id, (current) => ({ ...current, audioPosition: nextPosition }));
+  };
+  const recordAudioProgress = (nextPosition: number) => {
+    const startedAt = sessionStartRef.current;
+    sessionStartRef.current = null;
+    if (startedAt === null || nextPosition <= startedAt) return;
+    if (readOnly) return;
+    recordStudyEvent({
+      type: 'audio',
+      deckId: deck.id,
+      courseId: deck.courseId,
+      durationMinutes: Math.max(1, Math.round((nextPosition - startedAt) / (135 * rate))),
+      audioMode: mode,
+      completionPercent: words.length ? Math.round((nextPosition / words.length) * 100) : 0,
+    });
+  };
   const stopAt = async (nextPosition: number) => {
     await Speech.stop();
     setPlaying(false);
     setPosition(nextPosition);
     persistPosition(nextPosition);
+    recordAudioProgress(nextPosition);
   };
   const togglePlay = async () => {
     if (playing) {
@@ -441,6 +607,7 @@ function AudioPlayer({ deck }: { deck: StudyPack }) {
     }
     const start = position >= words.length ? 0 : position;
     if (start !== position) setPosition(start);
+    sessionStartRef.current = start;
     setPlaying(true);
     Speech.speak(words.slice(start).join(' '), {
       rate,
@@ -449,6 +616,7 @@ function AudioPlayer({ deck }: { deck: StudyPack }) {
         setPlaying(false);
         setPosition(words.length);
         persistPosition(words.length);
+        recordAudioProgress(words.length);
       },
       onStopped: () => setPlaying(false),
       onError: () => setPlaying(false),
@@ -457,6 +625,7 @@ function AudioPlayer({ deck }: { deck: StudyPack }) {
   const switchMode = async (next: 'original' | 'summary') => {
     await Speech.stop();
     setPlaying(false);
+    sessionStartRef.current = null;
     setMode(next);
     setPosition(0);
     persistPosition(0);
@@ -482,7 +651,7 @@ function AudioPlayer({ deck }: { deck: StudyPack }) {
           </Pressable>
         ))}
       </View>
-      <Card style={[styles.player, { backgroundColor: colors.mode === 'dark' ? '#13162D' : '#11162F' }]}>
+      <Card style={[styles.player, { backgroundColor: colors.mode === 'dark' ? '#111820' : '#11162F' }]}>
         <View style={styles.playerArtWrap}>
           <View style={[styles.playerGlow, { backgroundColor: colors.purple }]} />
           <View style={styles.playerArt}><MaterialCommunityIcons name="lightning-bolt" size={50} color="#C8B5FF" /></View>
@@ -500,7 +669,7 @@ function AudioPlayer({ deck }: { deck: StudyPack }) {
             <Icon name="rewind-15" color="#D9DCF0" size={29} />
           </Pressable>
           <Pressable accessibilityLabel={playing ? 'Pause audio' : 'Play audio'} onPress={() => void togglePlay()} style={[styles.playButton, { backgroundColor: colors.purple }]}>
-            <Icon name={playing ? 'pause' : 'play'} color="#FFFFFF" size={35} />
+            <Icon name={playing ? 'pause' : 'play'} color={colors.primaryText} size={35} />
           </Pressable>
           <Pressable accessibilityLabel="Skip forward 15 seconds" onPress={() => void skip(34)} style={styles.smallControl}>
             <Icon name="fast-forward-15" color="#D9DCF0" size={29} />
@@ -542,9 +711,18 @@ function EmptyTool({ icon, title, message }: { icon: IconName; title: string; me
 const styles = StyleSheet.create({
   page: { flex: 1 },
   horizontalPadding: { paddingHorizontal: 20 },
+  headerRightRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  shareButton: { width: 37, height: 37, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  sharedBanner: { marginHorizontal: 20, marginBottom: 2, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  sharedBannerIcon: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  sharedBannerCopy: { flex: 1 },
+  sharedBannerTitle: { fontSize: 12, fontWeight: '900' },
+  sharedBannerText: { fontSize: 10, lineHeight: 14, marginTop: 2 },
+  sharedSaveButton: { paddingHorizontal: 11, paddingVertical: 9, borderRadius: 11 },
+  sharedSaveText: { color: '#FFFFFF', fontSize: 10, fontWeight: '900' },
   tabScroller: { flexGrow: 0, borderBottomWidth: StyleSheet.hairlineWidth },
-  tabs: { paddingHorizontal: 20, paddingBottom: 10, gap: 6 },
-  tab: { paddingHorizontal: 15, paddingVertical: 9, borderRadius: 11 },
+  tabs: { flexGrow: 1, paddingHorizontal: 16, paddingBottom: 10, gap: 4 },
+  tab: { paddingHorizontal: 11, paddingVertical: 9, borderRadius: 11 },
   tabText: { fontSize: 12, fontWeight: '800' },
   content: { padding: 20, paddingBottom: 80 },
   missing: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, gap: 15 },
@@ -557,6 +735,8 @@ const styles = StyleSheet.create({
   slideCount: { fontSize: 10 },
   deckTitle: { fontSize: 21, lineHeight: 26, fontWeight: '900', letterSpacing: -0.6, marginTop: 7 },
   deckSubtitle: { fontSize: 12, marginTop: 2 },
+  previewHint: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 13, marginBottom: 12 },
+  previewHintText: { flex: 1, fontSize: 11, lineHeight: 15 },
   masteryCard: { marginBottom: 12 },
   masteryTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
   masteryLabel: { fontSize: 9, fontWeight: '900', letterSpacing: 1 },
@@ -615,6 +795,18 @@ const styles = StyleSheet.create({
   confidenceRow: { flexDirection: 'row', gap: 8, marginTop: 15 },
   confidenceButton: { flex: 1, minHeight: 58, borderRadius: 15, borderWidth: 1, alignItems: 'center', justifyContent: 'center', gap: 4 },
   confidenceButtonText: { fontSize: 10, fontWeight: '900' },
+  assessmentSwitcher: { flexDirection: 'row', borderRadius: 16, padding: 4, gap: 4, marginBottom: 12 },
+  assessmentMode: { flex: 1, minHeight: 43, borderRadius: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  assessmentModeText: { fontSize: 11, fontWeight: '800' },
+  quizSetup: { padding: 14, marginBottom: 18 },
+  quizSetupTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  quizSetupTitle: { fontSize: 13, fontWeight: '900' },
+  quizSetupText: { fontSize: 10, lineHeight: 15, marginTop: 3 },
+  countChoices: { flexDirection: 'row', gap: 8, marginTop: 13 },
+  countChip: { flex: 1, height: 39, borderRadius: 12, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  countText: { fontSize: 12, fontWeight: '900' },
+  coverageRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 12 },
+  coverageText: { flex: 1, fontSize: 10, fontWeight: '700' },
   questionCard: { marginTop: 18, padding: 18 },
   questionMeta: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   question: { fontSize: 20, lineHeight: 27, fontWeight: '800', marginTop: 20, letterSpacing: -0.4 },
@@ -641,12 +833,12 @@ const styles = StyleSheet.create({
   playerArtWrap: { width: 130, height: 130, alignItems: 'center', justifyContent: 'center', marginVertical: 8 },
   playerGlow: { position: 'absolute', width: 112, height: 112, borderRadius: 56, opacity: 0.22 },
   playerArt: { width: 98, height: 98, borderRadius: 49, backgroundColor: '#26224A', borderWidth: 1, borderColor: '#7868C4', alignItems: 'center', justifyContent: 'center' },
-  nowPlaying: { color: '#A59CCF', fontSize: 9, fontWeight: '900', letterSpacing: 1.2, marginTop: 8 },
-  audioTitle: { color: '#FFFFFF', fontSize: 20, fontWeight: '900', marginTop: 8 },
-  audioCourse: { color: '#AEB4D2', fontSize: 11, marginTop: 4 },
+  nowPlaying: { color: '#B1A8D0', fontSize: 9, fontWeight: '900', letterSpacing: 1.2, marginTop: 8 },
+  audioTitle: { color: '#EDF1F5', fontSize: 20, fontWeight: '900', marginTop: 8 },
+  audioCourse: { color: '#B4BEC8', fontSize: 11, marginTop: 4 },
   audioProgress: { width: '100%', marginTop: 24 },
   timeRow: { width: '100%', flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
-  timeText: { color: '#7F86A5', fontSize: 9 },
+  timeText: { color: '#929EAA', fontSize: 9 },
   controls: { flexDirection: 'row', alignItems: 'center', gap: 27, marginTop: 17 },
   smallControl: { width: 46, height: 46, alignItems: 'center', justifyContent: 'center' },
   playButton: { width: 65, height: 65, borderRadius: 33, alignItems: 'center', justifyContent: 'center' },

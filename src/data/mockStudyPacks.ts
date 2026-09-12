@@ -1,4 +1,11 @@
-import type { StudyBoltState, StudyPack } from '../models';
+import type { StudyBoltState, StudyClass, StudyEvent, StudyPack } from '../models';
+
+function recentTimestamp(daysAgo: number, hour: number, minute = 0): string {
+  const date = new Date();
+  date.setHours(hour, minute, 0, 0);
+  date.setDate(date.getDate() - daysAgo);
+  return date.toISOString();
+}
 
 const biology: StudyPack = {
   id: 'biology-cells',
@@ -204,6 +211,11 @@ function supportingDeck(
 }
 
 export const initialState: StudyBoltState = {
+  classes: [
+    { id: 'biology-101', name: 'Biology 101', emoji: '🦠', color: '#39BFA3', createdAt: '2026-09-08T21:20:00.000Z' },
+    { id: 'psychology', name: 'Psychology', emoji: '🧠', color: '#F26D8B', createdAt: '2026-09-07T21:20:00.000Z' },
+    { id: 'chemistry', name: 'Chemistry', emoji: '⚗️', color: '#418DFF', createdAt: '2026-09-06T21:20:00.000Z' },
+  ] satisfies StudyClass[],
   decks: [
     biology,
     supportingDeck('psych-biases', 'psychology', 'Psychology', 'Cognitive Biases', 'Lecture 3', 28, '🧠', '#F26D8B', 2),
@@ -212,32 +224,34 @@ export const initialState: StudyBoltState = {
   ],
   theme: 'system',
   hasCompletedOnboarding: false,
+  quizQuestionCount: 10,
   plan: {
-    target: 'two-days',
-    remindersEnabled: true,
+    durationDays: 3,
+    scope: { type: 'deck', id: 'biology-cells' },
+    modalities: ['notes', 'audio', 'flashcards', 'quiz', 'test'],
+    quizQuestionCount: 10,
+    remindersEnabled: false,
     days: [
       {
         id: 'today',
         label: 'Today',
         subtitle: 'Build the foundation',
-        minutes: 60,
+        minutes: 35,
         complete: false,
         blocks: [
-          { label: 'Simplified Notes', minutes: 25 },
-          { label: 'Flashcards', minutes: 20 },
-          { label: 'Quick Quiz', minutes: 15 },
+          { id: 'today-notes', modality: 'notes', label: 'Simplified Notes', minutes: 25, complete: false },
+          { id: 'today-audio', modality: 'audio', label: 'Quick Review Audio', minutes: 10, complete: false },
         ],
       },
       {
         id: 'tomorrow',
         label: 'Tomorrow',
         subtitle: 'Retrieve, then review',
-        minutes: 55,
+        minutes: 35,
         complete: false,
         blocks: [
-          { label: 'Weak Concepts', minutes: 20 },
-          { label: 'Flashcards', minutes: 15 },
-          { label: 'Exam Review', minutes: 20 },
+          { id: 'tomorrow-cards', modality: 'flashcards', label: 'Active Recall Cards', minutes: 20, complete: false },
+          { id: 'tomorrow-quiz', modality: 'quiz', label: 'Practice Quiz', minutes: 15, complete: false },
         ],
       },
       {
@@ -247,12 +261,46 @@ export const initialState: StudyBoltState = {
         minutes: 30,
         complete: false,
         blocks: [
-          { label: 'Practice Quiz', minutes: 15 },
-          { label: 'Quick Review Audio', minutes: 15 },
+          { id: 'review-cards', modality: 'flashcards', label: 'Weak-card Review', minutes: 10, complete: false },
+          { id: 'review-test', modality: 'test', label: 'Full PowerPoint Test', minutes: 20, complete: false },
         ],
       },
     ],
   },
   focusMinutes: 347,
   streakDays: 5,
+  dailyStudyGoalMinutes: 30,
+  activityEvents: [
+    { id: 'seed-focus-6', type: 'focus', occurredAt: recentTimestamp(6, 18), durationMinutes: 32 },
+    { id: 'seed-card-6-1', type: 'flashcard-review', occurredAt: recentTimestamp(6, 18, 34), deckId: 'biology-cells', courseId: 'biology-101', cardId: 'card-1', confidence: 'known', previousConfidence: 'learning', durationMinutes: 2 },
+    { id: 'seed-card-6-2', type: 'flashcard-review', occurredAt: recentTimestamp(6, 18, 37), deckId: 'biology-cells', courseId: 'biology-101', cardId: 'card-2', confidence: 'known', previousConfidence: 'learning', durationMinutes: 2 },
+    { id: 'seed-notes-5', type: 'note-review', occurredAt: recentTimestamp(5, 10), deckId: 'biology-cells', courseId: 'biology-101', noteId: 'note-cell-theory', durationMinutes: 12 },
+    { id: 'seed-quiz-5', type: 'quiz', occurredAt: recentTimestamp(5, 10, 18), deckId: 'biology-cells', courseId: 'biology-101', durationMinutes: 7, quizScore: 75, quizAnswers: [
+      { questionId: 'quiz-1', sourceSectionId: 'organelles', correct: true, questionType: 'multiple-choice', difficulty: 'easy' },
+      { questionId: 'quiz-2', sourceSectionId: 'processes', correct: true, questionType: 'true-false', difficulty: 'medium' },
+      { questionId: 'quiz-3', sourceSectionId: 'membrane', correct: false, questionType: 'multiple-choice', difficulty: 'medium' },
+      { questionId: 'quiz-4', sourceSectionId: 'organelles', correct: true, questionType: 'multiple-choice', difficulty: 'hard' },
+    ] },
+    { id: 'seed-audio-4', type: 'audio', occurredAt: recentTimestamp(4, 20), deckId: 'psych-biases', courseId: 'psychology', durationMinutes: 18, audioMode: 'summary', completionPercent: 100 },
+    { id: 'seed-focus-3', type: 'focus', occurredAt: recentTimestamp(3, 16), durationMinutes: 25 },
+    { id: 'seed-card-3-1', type: 'flashcard-review', occurredAt: recentTimestamp(3, 16, 27), deckId: 'biology-cells', courseId: 'biology-101', cardId: 'card-1', confidence: 'known', previousConfidence: 'known', durationMinutes: 2 },
+    { id: 'seed-card-3-2', type: 'flashcard-review', occurredAt: recentTimestamp(3, 16, 29), deckId: 'biology-cells', courseId: 'biology-101', cardId: 'card-2', confidence: 'learning', previousConfidence: 'known', durationMinutes: 2 },
+    { id: 'seed-notes-2', type: 'note-review', occurredAt: recentTimestamp(2, 9), deckId: 'chem-reactions', courseId: 'chemistry', noteId: 'note-cell-theory', durationMinutes: 14 },
+    { id: 'seed-quiz-2', type: 'quiz', occurredAt: recentTimestamp(2, 9, 20), deckId: 'biology-cells', courseId: 'biology-101', durationMinutes: 7, quizScore: 75, quizAnswers: [
+      { questionId: 'quiz-1', sourceSectionId: 'organelles', correct: true, questionType: 'multiple-choice', difficulty: 'easy' },
+      { questionId: 'quiz-2', sourceSectionId: 'processes', correct: true, questionType: 'true-false', difficulty: 'medium' },
+      { questionId: 'quiz-3', sourceSectionId: 'membrane', correct: false, questionType: 'multiple-choice', difficulty: 'medium' },
+      { questionId: 'quiz-4', sourceSectionId: 'organelles', correct: true, questionType: 'multiple-choice', difficulty: 'hard' },
+    ] },
+    { id: 'seed-focus-1', type: 'focus', occurredAt: recentTimestamp(1, 14), durationMinutes: 25 },
+    { id: 'seed-card-1-1', type: 'flashcard-review', occurredAt: recentTimestamp(1, 14, 27), deckId: 'biology-cells', courseId: 'biology-101', cardId: 'card-1', confidence: 'known', previousConfidence: 'known', durationMinutes: 2 },
+    { id: 'seed-card-1-3', type: 'flashcard-review', occurredAt: recentTimestamp(1, 14, 29), deckId: 'biology-cells', courseId: 'biology-101', cardId: 'card-3', confidence: 'learning', previousConfidence: 'new', durationMinutes: 2 },
+    { id: 'seed-quiz-1', type: 'quiz', occurredAt: recentTimestamp(1, 14, 34), deckId: 'biology-cells', courseId: 'biology-101', durationMinutes: 7, quizScore: 100, quizAnswers: [
+      { questionId: 'quiz-1', sourceSectionId: 'organelles', correct: true, questionType: 'multiple-choice', difficulty: 'easy' },
+      { questionId: 'quiz-2', sourceSectionId: 'processes', correct: true, questionType: 'true-false', difficulty: 'medium' },
+      { questionId: 'quiz-3', sourceSectionId: 'membrane', correct: true, questionType: 'multiple-choice', difficulty: 'medium' },
+      { questionId: 'quiz-4', sourceSectionId: 'organelles', correct: true, questionType: 'multiple-choice', difficulty: 'hard' },
+    ] },
+    { id: 'seed-audio-today', type: 'audio', occurredAt: recentTimestamp(0, 8), deckId: 'biology-cells', courseId: 'biology-101', durationMinutes: 9, audioMode: 'summary', completionPercent: 100 },
+  ] satisfies StudyEvent[],
 };

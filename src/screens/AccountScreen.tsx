@@ -140,7 +140,7 @@ export function AccountScreen({ onBack, onSignedOut, onDeleted }: { onBack: () =
               onPress={() => void removeAccount()}
               style={[styles.modalDelete, { backgroundColor: colors.danger, opacity: busy === 'delete' ? 0.65 : 1 }]}
             >
-              <Text style={styles.modalDeleteText}>{busy === 'delete' ? 'Deleting…' : 'Yes, delete account'}</Text>
+              <Text style={[styles.modalDeleteText, { color: colors.primaryText }]}>{busy === 'delete' ? 'Deleting…' : 'Yes, delete account'}</Text>
             </Pressable>
             <Pressable accessibilityRole="button" disabled={busy === 'delete'} onPress={() => setConfirmingDelete(false)} style={styles.modalCancel}>
               <Text style={[styles.modalCancelText, { color: colors.textSecondary }]}>Keep my account</Text>
@@ -161,7 +161,7 @@ export function AccountScreen({ onBack, onSignedOut, onDeleted }: { onBack: () =
               onPress={() => void logOut()}
               style={[styles.modalSignOut, { backgroundColor: colors.primary, opacity: busy === 'signout' ? 0.65 : 1 }]}
             >
-              <Text style={styles.modalDeleteText}>{busy === 'signout' ? 'Signing out…' : 'Sign out'}</Text>
+              <Text style={[styles.modalDeleteText, { color: colors.primaryText }]}>{busy === 'signout' ? 'Signing out…' : 'Sign out'}</Text>
             </Pressable>
             <Pressable accessibilityRole="button" disabled={busy === 'signout'} onPress={() => setConfirmingSignOut(false)} style={styles.modalCancel}>
               <Text style={[styles.modalCancelText, { color: colors.textSecondary }]}>Keep studying</Text>
@@ -220,7 +220,7 @@ const styles = StyleSheet.create({
   modalCopy: { fontSize: 12, lineHeight: 18, textAlign: 'center', marginTop: 7 },
   modalDelete: { width: '100%', minHeight: 50, borderRadius: 15, alignItems: 'center', justifyContent: 'center', marginTop: 20 },
   modalSignOut: { width: '100%', minHeight: 50, borderRadius: 15, alignItems: 'center', justifyContent: 'center', marginTop: 20 },
-  modalDeleteText: { color: '#FFFFFF', fontSize: 14, fontWeight: '900' },
+  modalDeleteText: { fontSize: 14, fontWeight: '900' },
   modalCancel: { minHeight: 42, justifyContent: 'center', marginTop: 4 },
   modalCancelText: { fontSize: 12, fontWeight: '800' },
 });

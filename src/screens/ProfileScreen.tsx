@@ -29,7 +29,7 @@ export function ProfileScreen({ onOpenOnboarding, onOpenAuth, onManageAccount, o
 
       <Card style={[styles.syncCard, { backgroundColor: colors.primarySoft }]}>
         <View style={styles.syncRow}>
-          <View style={[styles.syncIcon, { backgroundColor: colors.primary }]}><Icon name="cloud-sync" color="#FFFFFF" size={22} /></View>
+          <View style={[styles.syncIcon, { backgroundColor: colors.primary }]}><Icon name="cloud-sync" color={colors.primaryText} size={22} /></View>
           <View style={{ flex: 1 }}>
             <Text style={[styles.syncTitle, { color: colors.text }]}>{user ? 'Account & security' : 'Save materials everywhere'}</Text>
             <Text style={[styles.syncText, { color: colors.textSecondary }]}>{user ? 'Change your email, reset your password, or manage your account.' : 'Sign in to keep your account and future synced materials protected.'}</Text>
@@ -55,7 +55,7 @@ export function ProfileScreen({ onOpenOnboarding, onOpenAuth, onManageAccount, o
             );
           })}
         </View>
-        <Text style={[styles.themeHint, { color: colors.textMuted }]}>Night mode uses deep navy surfaces, soft text, and restrained accents for comfortable low-light reading.</Text>
+        <Text style={[styles.themeHint, { color: colors.textMuted }]}>Night mode lowers large bright areas and keeps text readable in dim rooms. Match your device brightness to the room; dark mode improves comfort but is not eye or sleep protection.</Text>
       </Card>
 
       <SectionHeader title="Study preferences" />

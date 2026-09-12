@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Linking, Platform, StyleSheet, View } from 'react-native';
 
 import { useAuth } from '../AuthContext';
 import { BottomTabs } from '../components/BottomTabs';
@@ -18,7 +18,9 @@ import { ProfileScreen } from '../screens/ProfileScreen';
 import { ResetPasswordScreen } from '../screens/ResetPasswordScreen';
 import { StatsScreen } from '../screens/StatsScreen';
 import { StudyPackScreen } from '../screens/StudyPackScreen';
+import { SharedStudyPackScreen } from '../screens/SharedStudyPackScreen';
 import { combineStudyPacks } from '../services/studyPack';
+import { parseShareToken } from '../services/sharing';
 import type { StudyPack, StudyTool } from '../models';
 import type { Route } from './routes';
 
@@ -27,6 +29,8 @@ export function StudyBoltNavigator() {
   const { loading: authLoading, recoveryMode, user } = useAuth();
   const [tab, setTab] = useState<MainTab>('home');
   const [route, setRoute] = useState<Route>({ type: 'main' });
+  const [plannerFocusDeckId, setPlannerFocusDeckId] = useState<string>();
+  const [pendingSharedToken, setPendingSharedToken] = useState<string | null>(null);
 
   const openDeck = useCallback((deck: StudyPack, tool?: StudyTool) => {
     setRoute({ type: 'deck', deckId: deck.id, tool });
@@ -66,12 +70,42 @@ export function StudyBoltNavigator() {
   }, [recoveryMode]);
 
   useEffect(() => {
-    if (user && route.type === 'auth' && !recoveryMode) setRoute({ type: 'main' });
-  }, [recoveryMode, route.type, user]);
+    let mounted = true;
+    const handleUrl = (url: string) => {
+      const token = parseShareToken(url);
+      if (mounted && token) setRoute({ type: 'shared', token });
+    };
+    const initialUrl = Platform.OS === 'web' && typeof window !== 'undefined'
+      ? Promise.resolve(window.location.href)
+      : Linking.getInitialURL();
+    void initialUrl.then((url) => {
+      if (url) handleUrl(url);
+    });
+    const subscription = Linking.addEventListener('url', ({ url }) => handleUrl(url));
+    return () => {
+      mounted = false;
+      subscription.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (user && route.type === 'auth' && !recoveryMode) {
+      setRoute(pendingSharedToken ? { type: 'shared', token: pendingSharedToken } : { type: 'main' });
+      setPendingSharedToken(null);
+    }
+  }, [pendingSharedToken, recoveryMode, route.type, user]);
 
   const mainScreen = useMemo(() => {
-    if (tab === 'library') return <LibraryScreen onOpenDeck={openDeck} onCreateReview={createReview} />;
-    if (tab === 'planner') return <PlannerScreen />;
+    if (tab === 'library') {
+      return (
+        <LibraryScreen
+          onOpenDeck={openDeck}
+          onCreateReview={createReview}
+          onImport={(asset, studyClass) => setRoute({ type: 'processing', asset, courseId: studyClass.id, courseName: studyClass.name })}
+        />
+      );
+    }
+    if (tab === 'planner') return <PlannerScreen focusDeckId={plannerFocusDeckId} onFocusApplied={() => setPlannerFocusDeckId(undefined)} />;
     if (tab === 'stats') return <StatsScreen />;
     if (tab === 'profile') {
       return (
@@ -84,7 +118,7 @@ export function StudyBoltNavigator() {
       );
     }
     return <HomeScreen onOpenDeck={openDeck} onImport={(asset) => setRoute({ type: 'processing', asset })} />;
-  }, [createReview, openDeck, tab]);
+  }, [createReview, openDeck, plannerFocusDeckId, tab]);
 
   if (!hydrated || authLoading) {
     return (
@@ -95,14 +129,23 @@ export function StudyBoltNavigator() {
     );
   }
 
-  const showOnboarding = !recoveryMode && (route.type === 'onboarding' || !state.hasCompletedOnboarding);
+  const showOnboarding = !recoveryMode && (route.type === 'onboarding' || (route.type !== 'shared' && !state.hasCompletedOnboarding));
 
   return (
     <View style={[styles.app, { backgroundColor: colors.background }]}>
       <StatusBar style={colors.mode === 'dark' ? 'light' : 'dark'} />
       {showOnboarding ? <OnboardingScreen onComplete={finishOnboarding} onTrySample={trySampleFromOnboarding} /> : null}
       {!showOnboarding && route.type === 'auth' ? (
-        <LoginScreen onAuthenticated={() => setRoute({ type: 'main' })} onContinueAsGuest={() => setRoute({ type: 'main' })} />
+        <LoginScreen
+          onAuthenticated={() => {
+            setRoute(pendingSharedToken ? { type: 'shared', token: pendingSharedToken } : { type: 'main' });
+            setPendingSharedToken(null);
+          }}
+          onContinueAsGuest={() => {
+            setRoute(pendingSharedToken ? { type: 'shared', token: pendingSharedToken } : { type: 'main' });
+            setPendingSharedToken(null);
+          }}
+        />
       ) : null}
       {!showOnboarding && route.type === 'account' ? (
         <AccountScreen
@@ -124,14 +167,33 @@ export function StudyBoltNavigator() {
           deckId={route.deckId}
           initialTool={route.tool}
           onBack={() => setRoute({ type: 'main' })}
-          onPlan={() => {
+          onPlan={(deckId) => {
+            setPlannerFocusDeckId(deckId);
             setTab('planner');
             setRoute({ type: 'main' });
           }}
         />
       ) : null}
+      {!showOnboarding && route.type === 'shared' ? (
+        <SharedStudyPackScreen
+          token={route.token}
+          onBack={() => setRoute({ type: 'main' })}
+          onRequireAuth={() => {
+            setPendingSharedToken(route.token);
+            setRoute({ type: 'auth' });
+          }}
+          onOpenSavedDeck={(deckId) => setRoute({ type: 'deck', deckId })}
+        />
+      ) : null}
       {!showOnboarding && route.type === 'processing' ? (
-        <ProcessingScreen asset={route.asset} onCancel={() => setRoute({ type: 'main' })} onSuccess={completeProcessing} onTrySample={openSample} />
+        <ProcessingScreen
+          asset={route.asset}
+          courseId={route.courseId}
+          courseName={route.courseName}
+          onCancel={() => setRoute({ type: 'main' })}
+          onSuccess={completeProcessing}
+          onTrySample={openSample}
+        />
       ) : null}
     </View>
   );

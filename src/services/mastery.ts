@@ -5,6 +5,7 @@ export interface MasteryBreakdown {
   notes: number;
   flashcards: number;
   quiz: number;
+  test: number;
   weakCount: number;
 }
 
@@ -19,13 +20,17 @@ export function calculateMastery(deck: StudyPack): MasteryBreakdown {
   }, 0);
   const flashcards = deck.flashcards.length ? (flashcardPoints / deck.flashcards.length) * 100 : 0;
   const quiz = deck.quizAttempts.length ? deck.quizAttempts[deck.quizAttempts.length - 1] ?? 0 : 0;
-  const overall = notes * 0.25 + flashcards * 0.35 + quiz * 0.4;
+  const test = deck.testAttempts?.length ? deck.testAttempts[deck.testAttempts.length - 1] ?? 0 : 0;
+  const overall = deck.testAttempts?.length
+    ? notes * 0.2 + flashcards * 0.3 + quiz * 0.2 + test * 0.3
+    : notes * 0.25 + flashcards * 0.35 + quiz * 0.4;
 
   return {
     overall: clamp(overall),
     notes: clamp(notes),
     flashcards: clamp(flashcards),
     quiz: clamp(quiz),
+    test: clamp(test),
     weakCount: deck.flashcards.filter((card) => card.confidence !== 'known').length,
   };
 }

@@ -95,8 +95,8 @@ export function PrimaryButton({
         style,
       ]}
     >
-      {loading ? <ActivityIndicator color="#FFFFFF" /> : icon ? <Icon name={icon} size={20} color="#FFFFFF" /> : null}
-      <Text style={styles.primaryButtonText}>{label}</Text>
+      {loading ? <ActivityIndicator color={colors.primaryText} /> : icon ? <Icon name={icon} size={20} color={colors.primaryText} /> : null}
+      <Text style={[styles.primaryButtonText, { color: colors.primaryText }]}>{label}</Text>
     </Pressable>
   );
 }
@@ -205,7 +205,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  primaryButtonText: { color: '#FFFFFF', fontSize: 16, lineHeight: 20, fontWeight: '800' },
+  primaryButtonText: { fontSize: 16, lineHeight: 20, fontWeight: '800' },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 26, marginBottom: 12 },
   sectionTitle: { fontSize: 18, lineHeight: 23, fontWeight: '800', letterSpacing: -0.3 },
   sectionAction: { fontSize: 13, fontWeight: '700' },

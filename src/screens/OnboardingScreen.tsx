@@ -91,7 +91,7 @@ export function OnboardingScreen({
 
       <Animated.View style={[styles.content, compact && styles.contentCompact, { opacity: pageEntrance, transform: [{ translateX: pageEntrance.interpolate({ inputRange: [0, 1], outputRange: [18, 0] }) }] }]}>
         <LinearGradient
-          colors={colors.mode === 'dark' ? ['#18264E', '#11162D'] : ['#E7F1FF', '#F6FAFF']}
+          colors={colors.mode === 'dark' ? ['#182839', '#11171F'] : ['#E7F1FF', '#F6FAFF']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={[styles.visual, compact && styles.visualCompact, { borderColor: colors.border }]}
@@ -172,12 +172,12 @@ function UploadVisual() {
           <View style={[styles.documentLine, styles.documentLineShort, { backgroundColor: colors.border }]} />
         </View>
       </View>
-      <View style={[styles.floatingBadge, styles.pdfBadge, { backgroundColor: '#FFF1F2' }]}>
-        <Icon name="file-pdf-box" size={19} color="#EC5362" />
-        <Text style={styles.pdfText}>PDF</Text>
+      <View style={[styles.floatingBadge, styles.pdfBadge, { backgroundColor: colors.mode === 'dark' ? '#392126' : '#FFF1F2' }]}>
+        <Icon name="file-pdf-box" size={19} color={colors.mode === 'dark' ? '#F08A95' : '#EC5362'} />
+        <Text style={[styles.pdfText, colors.mode === 'dark' && { color: '#F08A95' }]}>PDF</Text>
       </View>
       <View style={[styles.uploadBubble, { backgroundColor: colors.primary, shadowColor: colors.primary }]}>
-        <Icon name="arrow-up" size={27} color="#FFFFFF" />
+        <Icon name="arrow-up" size={27} color={colors.primaryText} />
       </View>
       <View style={[styles.readyBadge, { backgroundColor: colors.mintSoft }]}>
         <Icon name="check-circle" size={18} color={colors.mint} />
@@ -200,7 +200,9 @@ function ToolkitVisual() {
     blue: { background: colors.primarySoft, foreground: colors.primary },
     mint: { background: colors.mintSoft, foreground: colors.mint },
     purple: { background: colors.purpleSoft, foreground: colors.purple },
-    gold: { background: '#FFF4D8', foreground: '#D48A00' },
+    gold: colors.mode === 'dark'
+      ? { background: '#382F1E', foreground: '#E8BD67' }
+      : { background: '#FFF4D8', foreground: '#D48A00' },
   };
   return (
     <View style={styles.toolScene}>

@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { useColorScheme } from 'react-native';
 
 import { initialState } from './data/mockStudyPacks';
-import type { StudyBoltState, StudyPack, StudyPlan, ThemePreference } from './models';
+import type { QuizQuestionCount, StudyBoltState, StudyClass, StudyEventInput, StudyPack, StudyPlan, ThemePreference } from './models';
 import { loadStudyBoltState, saveStudyBoltState } from './services/persistence';
 import { AppColors, resolveColors } from './theme';
 
@@ -14,10 +14,13 @@ interface StudyBoltContextValue {
   setTheme: (theme: ThemePreference) => void;
   completeOnboarding: () => void;
   resetLocalData: () => void;
+  setQuizQuestionCount: (count: QuizQuestionCount) => void;
+  addClass: (studyClass: StudyClass) => void;
   updateDeck: (deckId: string, updater: (deck: StudyPack) => StudyPack) => void;
   addDeck: (deck: StudyPack) => void;
   setPlan: (plan: StudyPlan) => void;
   setFocusMinutes: (minutes: number) => void;
+  recordStudyEvent: (event: StudyEventInput) => void;
 }
 
 const StudyBoltContext = createContext<StudyBoltContextValue | null>(null);
@@ -52,14 +55,51 @@ export function StudyBoltProvider({ children }: { children: ReactNode }) {
       setTheme: (theme) => setState((current) => ({ ...current, theme })),
       completeOnboarding: () => setState((current) => ({ ...current, hasCompletedOnboarding: true })),
       resetLocalData: () => setState({ ...initialState, hasCompletedOnboarding: true }),
+      setQuizQuestionCount: (quizQuestionCount) => setState((current) => ({ ...current, quizQuestionCount })),
+      addClass: (studyClass) =>
+        setState((current) => ({
+          ...current,
+          classes: [studyClass, ...current.classes.filter((item) => item.id !== studyClass.id)],
+        })),
       updateDeck: (deckId, updater) =>
         setState((current) => ({
           ...current,
           decks: current.decks.map((deck) => (deck.id === deckId ? updater(deck) : deck)),
         })),
-      addDeck: (deck) => setState((current) => ({ ...current, decks: [deck, ...current.decks] })),
+      addDeck: (deck) =>
+        setState((current) => ({
+          ...current,
+          classes: current.classes.some((studyClass) => studyClass.id === deck.courseId)
+            ? current.classes
+            : [
+                ...current.classes,
+                { id: deck.courseId, name: deck.courseName, emoji: deck.emoji, color: deck.color, createdAt: deck.createdAt },
+              ],
+          decks: [deck, ...current.decks],
+          activityEvents: [
+            ...current.activityEvents,
+            {
+              id: `event-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+              type: 'pack-created' as const,
+              occurredAt: new Date().toISOString(),
+              deckId: deck.id,
+              courseId: deck.courseId,
+            },
+          ],
+        })),
       setPlan: (plan) => setState((current) => ({ ...current, plan })),
       setFocusMinutes: (focusMinutes) => setState((current) => ({ ...current, focusMinutes })),
+      recordStudyEvent: (event) => setState((current) => ({
+        ...current,
+        activityEvents: [
+          ...current.activityEvents,
+          {
+            ...event,
+            id: event.id ?? `event-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            occurredAt: event.occurredAt ?? new Date().toISOString(),
+          },
+        ].slice(-1500),
+      })),
     }),
     [hydrated, state, systemScheme],
   );

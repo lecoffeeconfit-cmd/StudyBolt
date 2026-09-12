@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '../AuthContext';
 import { AuthField } from '../components/AuthField';
+import { GoogleLogo } from '../components/GoogleLogo';
 import { BoltLogo, Icon, PrimaryButton } from '../components/ui';
 import { useStudyBolt } from '../StudyBoltContext';
 import { radius } from '../theme';
@@ -117,7 +118,7 @@ export function LoginScreen({
         </View>
 
         <LinearGradient
-          colors={colors.mode === 'dark' ? ['#192850', '#10152C'] : ['#E8F2FF', '#F6FAFF']}
+          colors={colors.mode === 'dark' ? ['#172536', '#10161D'] : ['#E8F2FF', '#F6FAFF']}
           style={[styles.hero, { borderColor: colors.border }]}
         >
           <View style={[styles.heroOrb, { backgroundColor: `${colors.mint}1F` }]} />
@@ -131,7 +132,7 @@ export function LoginScreen({
               },
             ]}
           >
-            <Icon name="lightning-bolt" size={39} color="#FFFFFF" />
+            <Icon name="lightning-bolt" size={39} color={colors.primaryText} />
           </Animated.View>
           <View style={[styles.floatingMini, styles.miniCards, { backgroundColor: colors.card }]}><Icon name="cards-outline" size={20} color={colors.purple} /></View>
           <View style={[styles.floatingMini, styles.miniBrain, { backgroundColor: colors.card }]}><Icon name="brain" size={20} color={colors.mint} /></View>
@@ -222,7 +223,7 @@ function ProviderButton({ label, icon, onPress, loading }: { label: string; icon
       onPress={onPress}
       style={({ pressed }) => [styles.providerButton, { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.75 : 1 }]}
     >
-      <Icon name={icon} size={21} color={icon === 'google' ? '#4285F4' : colors.text} />
+      {icon === 'google' ? <GoogleLogo size={21} /> : <Icon name="apple" size={21} color={colors.text} />}
       <Text style={[styles.providerLabel, { color: colors.text }]}>{loading ? 'Opening…' : label}</Text>
     </Pressable>
   );

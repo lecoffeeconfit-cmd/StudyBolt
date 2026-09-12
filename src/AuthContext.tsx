@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Linking, Platform } from 'react-native';
+import { AppState, Linking, Platform } from 'react-native';
 
 import {
   consumeAuthCallback,
@@ -13,6 +13,7 @@ import {
   requestPasswordReset,
   signInWithEmail,
   signOutAccount,
+  supabase,
   updateAccountEmail,
   updateAccountPassword,
 } from './services/auth';
@@ -23,6 +24,7 @@ interface AuthContextValue {
   loading: boolean;
   recoveryMode: boolean;
   user: AuthUser | null;
+  getAccessToken: () => Promise<string | null>;
   signIn: (email: string, password: string) => Promise<AuthResult>;
   signUp: (email: string, password: string) => Promise<AuthResult>;
   signInWithProvider: (provider: AuthProviderName) => Promise<AuthResult>;
@@ -43,7 +45,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const activeSession = useCallback(async (): Promise<AuthSession | null> => {
     if (!session) return null;
-    if (session.expires_at > Math.floor(Date.now() / 1000) + 60) return session;
+    if ((session.expires_at ?? 0) > Math.floor(Date.now() / 1000) + 60) return session;
     const refreshed = await refreshAuthSession(session.refresh_token);
     if (refreshed.session) {
       setSession(refreshed.session);
@@ -81,11 +83,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [handleUrl]);
 
+  useEffect(() => {
+    if (!supabase) return;
+    const { data } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      setSession(nextSession);
+      if (event === 'PASSWORD_RECOVERY') setRecoveryMode(true);
+    });
+    return () => data.subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const client = supabase;
+    if (!client || Platform.OS === 'web') return;
+    void client.auth.startAutoRefresh();
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') void client.auth.startAutoRefresh();
+      else void client.auth.stopAutoRefresh();
+    });
+    return () => {
+      subscription.remove();
+      void client.auth.stopAutoRefresh();
+    };
+  }, []);
+
   const value = useMemo<AuthContextValue>(() => ({
     configured: isAuthConfigured,
     loading,
     recoveryMode,
     user: session?.user ?? null,
+    getAccessToken: async () => (await activeSession())?.access_token ?? null,
     signIn: async (email, password) => {
       const result = await signInWithEmail(email, password);
       if (result.session) setSession(result.session);

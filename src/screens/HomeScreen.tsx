@@ -84,9 +84,9 @@ export function HomeScreen({
         <Text style={[styles.uploadTitle, { color: colors.text }]}>Tap to upload</Text>
         <Text style={[styles.uploadHint, { color: colors.textSecondary }]}>or drag and drop on web</Text>
         <View style={styles.fileTypes}>
-          <View style={[styles.fileIcon, { backgroundColor: '#FFF0ED' }]}><Icon name="microsoft-powerpoint" size={21} color="#E8553D" /></View>
-          <View style={[styles.fileIcon, { backgroundColor: '#FFF0F0' }]}><Icon name="file-pdf-box" size={21} color="#EF4455" /></View>
-          <View style={[styles.fileIcon, { backgroundColor: '#FFF7DE' }]}><Icon name="presentation" size={21} color="#E8A10B" /></View>
+          <View style={[styles.fileIcon, { backgroundColor: colors.mode === 'dark' ? '#39241F' : '#FFF0ED' }]}><Icon name="microsoft-powerpoint" size={21} color={colors.mode === 'dark' ? '#F08D7D' : '#E8553D'} /></View>
+          <View style={[styles.fileIcon, { backgroundColor: colors.mode === 'dark' ? '#392126' : '#FFF0F0' }]}><Icon name="file-pdf-box" size={21} color={colors.mode === 'dark' ? '#F08A95' : '#EF4455'} /></View>
+          <View style={[styles.fileIcon, { backgroundColor: colors.mode === 'dark' ? '#382F1E' : '#FFF7DE' }]}><Icon name="presentation" size={21} color={colors.mode === 'dark' ? '#E8BD67' : '#E8A10B'} /></View>
         </View>
         <Text style={[styles.formats, { color: colors.textMuted }]}>PPT, PPTX, or PDF · Up to 50 MB</Text>
       </Pressable>
@@ -107,7 +107,7 @@ export function HomeScreen({
 
       <Card style={[styles.tipCard, { backgroundColor: colors.primarySoft }]}>
         <View style={styles.tipRow}>
-          <View style={[styles.tipIcon, { backgroundColor: colors.primary }]}><Icon name="brain" size={20} color="#FFFFFF" /></View>
+          <View style={[styles.tipIcon, { backgroundColor: colors.primary }]}><Icon name="brain" size={20} color={colors.primaryText} /></View>
           <View style={styles.tipCopy}>
             <Text style={[styles.tipTitle, { color: colors.text }]}>Your next best step</Text>
             <Text style={[styles.tipText, { color: colors.textSecondary }]}>Review the 3 Biology cards still in learning. Retrieval before rereading strengthens recall.</Text>

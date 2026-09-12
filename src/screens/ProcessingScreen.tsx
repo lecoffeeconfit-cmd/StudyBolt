@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Easing, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon, Pill, PrimaryButton, ProgressBar } from '../components/ui';
@@ -12,15 +12,18 @@ const STAGES = [
   'Reading your lecture',
   'Finding important concepts',
   'Building simplified notes',
-  'Creating flashcards and quiz',
+  'Creating flashcards, quiz, and full test',
   'Preparing audio review',
 ];
 
-export function ProcessingScreen({ asset, onCancel, onSuccess, onTrySample }: { asset: ImportAsset; onCancel: () => void; onSuccess: (deck: StudyPack) => void; onTrySample: () => void }) {
+export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSuccess, onTrySample }: { asset: ImportAsset; courseId?: string; courseName?: string; onCancel: () => void; onSuccess: (deck: StudyPack) => void; onTrySample: () => void }) {
   const { colors } = useStudyBolt();
   const insets = useSafeAreaInsets();
   const [stage, setStage] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [className, setClassName] = useState(courseName ?? '');
+  const [started, setStarted] = useState(Boolean(courseName));
   const pulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -35,14 +38,28 @@ export function ProcessingScreen({ asset, onCancel, onSuccess, onTrySample }: { 
   }, [pulse]);
 
   useEffect(() => {
+    setClassName(courseName ?? '');
+    setStarted(Boolean(courseName));
+    setStage(0);
+    setError(null);
+    setNameError(null);
+  }, [asset, courseName]);
+
+  useEffect(() => {
+    if (!started) return;
     let mounted = true;
     let ticker: ReturnType<typeof setInterval> | null = null;
     try {
       validateImport(asset);
       ticker = setInterval(() => setStage((value) => Math.min(STAGES.length - 1, value + 1)), 1100);
-      processDocument(asset, 'New Course')
+      processDocument(asset, className.trim())
         .then((deck) => {
-          if (mounted) onSuccess(deck);
+          if (!mounted) return;
+          onSuccess({
+            ...deck,
+            ...(courseId ? { courseId } : {}),
+            ...(className.trim() ? { courseName: className.trim() } : {}),
+          });
         })
         .catch((reason: unknown) => {
           if (!mounted) return;
@@ -59,11 +76,22 @@ export function ProcessingScreen({ asset, onCancel, onSuccess, onTrySample }: { 
       mounted = false;
       if (ticker) clearInterval(ticker);
     };
-  }, [asset, onSuccess]);
+  }, [asset, className, courseId, onSuccess, started]);
+
+  const startProcessing = () => {
+    const name = className.trim();
+    if (!name) {
+      setNameError('Add a class name to continue.');
+      return;
+    }
+    setNameError(null);
+    setError(null);
+    setStarted(true);
+  };
 
   const progress = ((stage + 1) / STAGES.length) * 92;
   return (
-    <View style={[styles.page, { backgroundColor: colors.background, paddingTop: insets.top + 8, paddingBottom: insets.bottom + 20 }]}>
+    <KeyboardAvoidingView style={[styles.page, { backgroundColor: colors.background, paddingTop: insets.top + 8, paddingBottom: insets.bottom + 20 }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.topBar}>
         <Pressable onPress={onCancel} hitSlop={12} style={styles.closeButton}><Icon name="close" size={26} color={colors.text} /></Pressable>
         <Pill label="PRIVATE PROCESSING" tone="mint" />
@@ -71,9 +99,9 @@ export function ProcessingScreen({ asset, onCancel, onSuccess, onTrySample }: { 
       </View>
 
       <View style={styles.center}>
-        <Animated.View style={[styles.boltOrb, { backgroundColor: error ? `${colors.danger}18` : colors.primarySoft, transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] }) }] }]}>
-          <View style={[styles.boltInner, { backgroundColor: error ? colors.danger : colors.primary }]}>
-            <Icon name={error ? 'alert-outline' : 'lightning-bolt'} size={50} color="#FFFFFF" />
+        <Animated.View style={[styles.boltOrb, !started && !error && styles.setupBoltOrb, { backgroundColor: error ? `${colors.danger}18` : colors.primarySoft, transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] }) }] }]}>
+          <View style={[styles.boltInner, !started && !error && styles.setupBoltInner, { backgroundColor: error ? colors.danger : colors.primary }]}>
+            <Icon name={error ? 'alert-outline' : 'lightning-bolt'} size={!started && !error ? 32 : 50} color={colors.primaryText} />
           </View>
         </Animated.View>
 
@@ -91,10 +119,40 @@ export function ProcessingScreen({ asset, onCancel, onSuccess, onTrySample }: { 
               <Text style={[styles.secondaryText, { color: colors.textSecondary }]}>Choose another file</Text>
             </Pressable>
           </>
+        ) : !started ? (
+          <>
+            <Text style={[styles.title, { color: colors.text }]}>Name this class</Text>
+            <Text style={[styles.description, { color: colors.textSecondary }]}>Your slides will be turned into one organized Study Pack inside this class.</Text>
+            <View style={[styles.fileCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Icon name="file-document-outline" color={colors.primary} />
+              <Text numberOfLines={1} style={[styles.fileName, { color: colors.text }]}>{asset.name}</Text>
+              <Icon name="shield-check-outline" color={colors.mint} />
+            </View>
+            <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Class name</Text>
+            <View style={[styles.inputWrap, { backgroundColor: colors.card, borderColor: nameError ? colors.danger : colors.border }]}>
+              <Icon name="school-outline" size={19} color={colors.textMuted} />
+              <TextInput
+                accessibilityLabel="Class name"
+                autoFocus
+                value={className}
+                onChangeText={(value) => { setClassName(value); setNameError(null); }}
+                onSubmitEditing={startProcessing}
+                placeholder="e.g. Anatomy & Physiology"
+                placeholderTextColor={colors.textMuted}
+                returnKeyType="done"
+                style={[styles.input, { color: colors.text }]}
+              />
+            </View>
+            {nameError ? <Text style={[styles.nameError, { color: colors.danger }]}>{nameError}</Text> : null}
+            <PrimaryButton label="Build my Study Pack" icon="creation" onPress={startProcessing} style={styles.action} />
+            <Pressable onPress={onCancel} style={styles.secondaryAction}>
+              <Text style={[styles.secondaryText, { color: colors.textSecondary }]}>Choose another file</Text>
+            </Pressable>
+          </>
         ) : (
           <>
             <Text style={[styles.title, { color: colors.text }]}>Building your Study Pack</Text>
-            <Text style={[styles.description, { color: colors.textSecondary }]}>One upload creates your notes, flashcards, quiz, and audio review together.</Text>
+            <Text style={[styles.description, { color: colors.textSecondary }]}>One upload creates your notes, flashcards, practice quiz, full test, and audio review together.</Text>
             <View style={styles.progressWrap}>
               <ProgressBar progress={progress} />
               <Text style={[styles.progressLabel, { color: colors.primary }]}>{Math.round(progress)}%</Text>
@@ -118,7 +176,7 @@ export function ProcessingScreen({ asset, onCancel, onSuccess, onTrySample }: { 
         )}
       </View>
       <Text style={[styles.privacy, { color: colors.textMuted }]}><Icon name="lock-outline" size={12} color={colors.textMuted} /> Your class material is treated as private content.</Text>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -129,6 +187,8 @@ const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   boltOrb: { width: 124, height: 124, borderRadius: 62, alignItems: 'center', justifyContent: 'center', marginBottom: 26 },
   boltInner: { width: 83, height: 83, borderRadius: 42, alignItems: 'center', justifyContent: 'center' },
+  setupBoltOrb: { width: 86, height: 86, borderRadius: 43, marginBottom: 18 },
+  setupBoltInner: { width: 60, height: 60, borderRadius: 30 },
   title: { fontSize: 26, lineHeight: 32, fontWeight: '900', letterSpacing: -0.8, textAlign: 'center' },
   description: { fontSize: 13, lineHeight: 19, textAlign: 'center', marginTop: 8, maxWidth: 330 },
   progressWrap: { width: '100%', marginTop: 27 },
@@ -140,6 +200,10 @@ const styles = StyleSheet.create({
   working: { fontSize: 9, fontWeight: '800' },
   fileCard: { width: '100%', borderWidth: StyleSheet.hairlineWidth, borderRadius: 15, flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14, marginTop: 22 },
   fileName: { flex: 1, fontSize: 12, fontWeight: '700' },
+  inputLabel: { alignSelf: 'flex-start', fontSize: 11, lineHeight: 14, fontWeight: '800', marginTop: 19, marginBottom: 7, marginLeft: 2 },
+  inputWrap: { width: '100%', minHeight: 54, borderRadius: 15, borderWidth: 1, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  input: { flex: 1, minWidth: 0, height: 52, fontSize: 14 },
+  nameError: { alignSelf: 'flex-start', fontSize: 11, marginTop: 6, marginLeft: 2 },
   action: { width: '100%', marginTop: 18 },
   secondaryAction: { padding: 13 },
   secondaryText: { fontSize: 12, fontWeight: '700' },
