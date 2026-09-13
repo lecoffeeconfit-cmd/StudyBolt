@@ -1,10 +1,18 @@
 export type ThemePreference = 'system' | 'light' | 'dark';
+export type RetentionMode = 'standard' | 'fsrs' | 'sm2';
 export type FlashcardConfidence = 'new' | 'learning' | 'known';
-export type QuizQuestionType = 'multiple-choice' | 'true-false';
+export type QuizQuestionType = 'multiple-choice' | 'true-false' | 'short-answer' | 'fill-blank' | 'application';
 export type QuizDifficulty = 'easy' | 'medium' | 'hard';
-export type StudyTool = 'overview' | 'notes' | 'flashcards' | 'quiz' | 'audio';
+export type AnswerConfidence = 'unsure' | 'somewhat-sure' | 'very-sure';
+export type StudyTool = 'overview' | 'notes' | 'flashcards' | 'quiz' | 'audio' | 'coach';
 export type QuizQuestionCount = 10 | 15 | 20;
+export type LibrarySort = 'default' | 'recent' | 'oldest' | 'alphabetical';
+export type SharedStudyPackVisibility = 'private' | 'link' | 'public';
+export type DiscoverSort = 'newest' | 'popular' | 'saved';
+export type AiTutorAction = 'explain' | 'simplify' | 'example' | 'quiz' | 'ask' | 'teach-back' | 'important' | 'confuse';
+export type AiTutorDepth = 'quick' | 'normal' | 'deep';
 export type StudyModality = 'notes' | 'audio' | 'flashcards' | 'quiz' | 'test';
+export type FlaggedItemKind = 'note' | 'flashcard' | 'quiz';
 export type StudyScope =
   | { type: 'deck'; id: string }
   | { type: 'course'; id: string };
@@ -12,6 +20,28 @@ export type StudyScope =
 export interface SourceReference {
   sectionId: string;
   label: string;
+}
+
+export interface FlaggedItem {
+  id: string;
+  deckId: string;
+  deckTitle: string;
+  courseId: string;
+  courseName: string;
+  kind: FlaggedItemKind;
+  itemId: string;
+  title: string;
+  prompt: string;
+  answer: string;
+  explanation?: string;
+  source: SourceReference;
+  flaggedAt: string;
+}
+
+export type FlaggedItemInput = Omit<FlaggedItem, 'id' | 'flaggedAt'> & { id?: string };
+
+export function getFlaggedItemId(deckId: string, kind: FlaggedItemKind, itemId: string): string {
+  return `${deckId}:${kind}:${itemId}`;
 }
 
 export interface DeckOutlineItem {
@@ -23,7 +53,15 @@ export interface DeckOutlineItem {
 export interface NoteBlock {
   id: string;
   title: string;
+  summary?: string;
   bullets: string[];
+  sections?: Array<{
+    heading: string;
+    points: string[];
+  }>;
+  connections?: string[];
+  examples?: string[];
+  recallPrompts?: string[];
   keyIdea?: string;
   source: SourceReference;
 }
@@ -54,6 +92,14 @@ export interface QuizAnswerRecord {
   correct: boolean;
   questionType: QuizQuestionType;
   difficulty: QuizDifficulty;
+  selectedIndex?: number;
+  correctIndex?: number;
+  selectedAnswer?: string;
+  correctAnswer?: string;
+  responseTimeMs?: number;
+  answeredAt?: string;
+  confidence?: AnswerConfidence;
+  sequence?: number;
 }
 
 export type StudyEventType =
@@ -66,7 +112,9 @@ export type StudyEventType =
   | 'share-link-created'
   | 'share-sheet-opened'
   | 'shared-pack-opened'
-  | 'shared-pack-saved';
+  | 'shared-pack-saved'
+  | 'ai-tutor-question'
+  | 'tutor-quiz';
 
 export interface StudyEvent {
   id: string;
@@ -79,10 +127,14 @@ export interface StudyEvent {
   cardId?: string;
   confidence?: FlashcardConfidence;
   previousConfidence?: FlashcardConfidence;
+  responseTimeMs?: number;
   quizScore?: number;
   quizAnswers?: QuizAnswerRecord[];
+  assessmentKind?: 'practice' | 'comprehensive';
   audioMode?: 'original' | 'summary';
   completionPercent?: number;
+  tutorAction?: AiTutorAction;
+  tutorQuizCorrect?: boolean;
 }
 
 export type StudyEventInput = Omit<StudyEvent, 'id' | 'occurredAt'> & { id?: string; occurredAt?: string };
@@ -105,6 +157,7 @@ export interface StudyPack {
   originalText: string;
   quickReview: string;
   notes: NoteBlock[];
+  detailedNotes: NoteBlock[];
   flashcards: Flashcard[];
   quiz: QuizQuestion[];
   quizAttempts: number[];
@@ -113,9 +166,10 @@ export interface StudyPack {
   audioPosition: number;
   studyMinutes: number;
   sharedFromToken?: string;
+  originalSetId?: string;
+  originalCreatorId?: string;
+  communityClassId?: string;
 }
-
-export type SharedStudyPackVisibility = 'private' | 'link';
 
 /**
  * The only Study Pack fields allowed to leave the owner’s device. Progress,
@@ -134,6 +188,7 @@ export interface SharedStudyPackContent {
   overview: string;
   quickReview: string;
   notes: NoteBlock[];
+  detailedNotes: NoteBlock[];
   flashcards: Array<Omit<Flashcard, 'confidence'>>;
   quiz: QuizQuestion[];
 }
@@ -144,7 +199,96 @@ export interface SharedStudyPackLink {
   url: string;
   visibility: SharedStudyPackVisibility;
   createdAt: string;
+  classId?: string;
   revokedAt?: string;
+}
+
+export interface SharedStudyPackMetadata {
+  token: string;
+  creatorDisplayName: string;
+  description: string;
+  itemCount: number;
+  saveCount: number;
+  shareCount: number;
+  visibility: Exclude<SharedStudyPackVisibility, 'private'>;
+  classId?: string;
+  originalSetId?: string;
+}
+
+export interface SharedStudyPackPreview {
+  content: SharedStudyPackContent;
+  metadata: SharedStudyPackMetadata;
+}
+
+export interface CommunityClass {
+  id: string;
+  schoolName: string;
+  courseCode: string;
+  courseName: string;
+  subject: string;
+  instructorName?: string;
+  term?: string;
+  memberCount: number;
+  setCount: number;
+  joined: boolean;
+}
+
+export interface DiscoverStudySet {
+  token: string;
+  title: string;
+  courseName: string;
+  subject: string;
+  description: string;
+  creatorDisplayName: string;
+  itemCount: number;
+  pageCount: number;
+  saveCount: number;
+  shareCount: number;
+  updatedAt: string;
+  classId?: string;
+  classLabel?: string;
+}
+
+export interface AiTutorContextChunk {
+  id: string;
+  title: string;
+  text: string;
+}
+
+export interface AiTutorContext {
+  studySetTitle: string;
+  subject: string;
+  currentChunk: AiTutorContextChunk;
+  nearbyChunks: AiTutorContextChunk[];
+}
+
+export interface AiTutorQuota {
+  used: number;
+  limit: number;
+  remaining: number;
+  periodStart: string;
+  periodEnd: string;
+  plan: 'free' | 'premium';
+}
+
+export interface AiTutorConversation {
+  summary?: string;
+  turns?: Array<{ role: 'user' | 'assistant'; content: string }>;
+}
+
+export interface AiTutorQuiz {
+  question: string;
+  options: string[];
+  correctIndex: number;
+  explanation: string;
+}
+
+export interface AiTutorResponse {
+  kind: 'answer' | 'quiz';
+  answer: string;
+  quiz?: AiTutorQuiz;
+  quota?: AiTutorQuota;
+  provider: 'on-device' | 'cloud';
 }
 
 export interface StudyClass {
@@ -157,6 +301,7 @@ export interface StudyClass {
 
 export interface StudyPlanDay {
   id: string;
+  date?: string;
   label: string;
   subtitle: string;
   minutes: number;
@@ -171,7 +316,9 @@ export interface StudyPlanDay {
 }
 
 export interface StudyPlan {
-  durationDays: 1 | 3 | 7 | 14;
+  createdAt?: string;
+  targetDate?: string;
+  durationDays: number;
   scope: StudyScope;
   modalities: StudyModality[];
   quizQuestionCount: QuizQuestionCount;
@@ -182,7 +329,10 @@ export interface StudyPlan {
 export interface StudyBoltState {
   classes: StudyClass[];
   decks: StudyPack[];
+  flaggedItems: FlaggedItem[];
+  librarySort: LibrarySort;
   theme: ThemePreference;
+  retentionMode: RetentionMode;
   hasCompletedOnboarding: boolean;
   quizQuestionCount: QuizQuestionCount;
   plan: StudyPlan;

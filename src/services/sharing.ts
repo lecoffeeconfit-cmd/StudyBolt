@@ -8,9 +8,12 @@ import type {
   QuizQuestion,
   SharedStudyPackContent,
   SharedStudyPackLink,
+  SharedStudyPackMetadata,
+  SharedStudyPackPreview,
   StudyPack,
   SharedStudyPackVisibility,
 } from '../models';
+import { ensureDistinctNoteLayers } from './noteLayers';
 
 const LOCAL_LINKS_KEY = '@studybolt/shared-links/v1';
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL?.replace(/\/$/, '') ?? '';
@@ -56,7 +59,23 @@ function safeSource(source: { sectionId: string; label: string }) {
   return { sectionId: source.sectionId, label: source.label };
 }
 
+function shareableNote(note: NoteBlock): NoteBlock {
+  return {
+    id: note.id,
+    title: note.title,
+    ...(note.summary ? { summary: note.summary } : {}),
+    bullets: [...note.bullets],
+    ...(note.sections ? { sections: note.sections.map((section) => ({ heading: section.heading, points: [...section.points] })) } : {}),
+    ...(note.connections ? { connections: [...note.connections] } : {}),
+    ...(note.examples ? { examples: [...note.examples] } : {}),
+    ...(note.recallPrompts ? { recallPrompts: [...note.recallPrompts] } : {}),
+    ...(note.keyIdea ? { keyIdea: note.keyIdea } : {}),
+    source: safeSource(note.source),
+  };
+}
+
 export function createShareableContent(deck: StudyPack): SharedStudyPackContent {
+  const detailedNotes = ensureDistinctNoteLayers(deck.notes, deck.detailedNotes, deck.originalText, deck.outline);
   return {
     courseId: deck.courseId,
     courseName: deck.courseName,
@@ -70,13 +89,8 @@ export function createShareableContent(deck: StudyPack): SharedStudyPackContent 
     overview: deck.overview,
     // The original extracted source text and uploaded file are intentionally not shared.
     quickReview: deck.quickReview,
-    notes: deck.notes.map((note) => ({
-      id: note.id,
-      title: note.title,
-      bullets: [...note.bullets],
-      ...(note.keyIdea ? { keyIdea: note.keyIdea } : {}),
-      source: safeSource(note.source),
-    })),
+    notes: deck.notes.map(shareableNote),
+    detailedNotes: detailedNotes.map(shareableNote),
     flashcards: deck.flashcards.map((card) => {
       const { confidence: _privateProgress, ...studyCard } = card;
       return { ...studyCard, source: safeSource(card.source) };
@@ -102,6 +116,31 @@ function sourceValue(value: unknown): { sectionId: string; label: string } {
   return { sectionId: stringValue(source.sectionId, 'shared-section'), label: stringValue(source.label, 'Study Pack') };
 }
 
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
+function parseNote(value: Record<string, unknown>, index: number): NoteBlock {
+  const sections = Array.isArray(value.sections)
+    ? value.sections.filter(isRecord).map((section) => ({
+      heading: stringValue(section.heading),
+      points: stringArray(section.points),
+    })).filter((section) => section.heading && section.points.length)
+    : [];
+  return {
+    id: stringValue(value.id, `shared-note-${index}`),
+    title: stringValue(value.title, `Note ${index + 1}`),
+    ...(typeof value.summary === 'string' ? { summary: value.summary } : {}),
+    bullets: stringArray(value.bullets),
+    ...(sections.length ? { sections } : {}),
+    ...(Array.isArray(value.connections) ? { connections: stringArray(value.connections) } : {}),
+    ...(Array.isArray(value.examples) ? { examples: stringArray(value.examples) } : {}),
+    ...(Array.isArray(value.recallPrompts) ? { recallPrompts: stringArray(value.recallPrompts) } : {}),
+    ...(typeof value.keyIdea === 'string' ? { keyIdea: value.keyIdea } : {}),
+    source: sourceValue(value.source),
+  };
+}
+
 function parseContent(value: unknown): SharedStudyPackContent | null {
   if (!isRecord(value)) return null;
   const title = stringValue(value.title).trim();
@@ -116,14 +155,12 @@ function parseContent(value: unknown): SharedStudyPackContent | null {
     }))
     : [];
   const notes = Array.isArray(value.notes)
-    ? value.notes.filter(isRecord).map((note, index): NoteBlock => ({
-      id: stringValue(note.id, `shared-note-${index}`),
-      title: stringValue(note.title, `Note ${index + 1}`),
-      bullets: Array.isArray(note.bullets) ? note.bullets.filter((item): item is string => typeof item === 'string') : [],
-      ...(typeof note.keyIdea === 'string' ? { keyIdea: note.keyIdea } : {}),
-      source: sourceValue(note.source),
-    }))
+    ? value.notes.filter(isRecord).map(parseNote)
     : [];
+  const parsedDetailedNotes = Array.isArray(value.detailedNotes)
+    ? value.detailedNotes.filter(isRecord).map(parseNote)
+    : notes;
+  const detailedNotes = ensureDistinctNoteLayers(notes, parsedDetailedNotes, stringValue(value.quickReview), outline);
   const flashcards = Array.isArray(value.flashcards)
     ? value.flashcards.filter(isRecord).map((card, index): Omit<Flashcard, 'confidence'> => ({
       id: stringValue(card.id, `shared-card-${index}`),
@@ -159,6 +196,7 @@ function parseContent(value: unknown): SharedStudyPackContent | null {
     overview: stringValue(value.overview),
     quickReview: stringValue(value.quickReview),
     notes,
+    detailedNotes,
     flashcards,
     quiz,
   };
@@ -184,6 +222,7 @@ export function sharedContentToStudyPack(content: SharedStudyPackContent, token:
     originalText: content.quickReview,
     quickReview: content.quickReview,
     notes: content.notes,
+    detailedNotes: ensureDistinctNoteLayers(content.notes, content.detailedNotes, content.quickReview, content.outline),
     flashcards: content.flashcards.map((card) => ({ ...card, confidence: 'new' as const })),
     quiz: content.quiz,
     quizAttempts: [],
@@ -195,8 +234,13 @@ export function sharedContentToStudyPack(content: SharedStudyPackContent, token:
   };
 }
 
-export function cloneSharedStudyPack(content: SharedStudyPackContent, token: string): StudyPack {
-  return { ...sharedContentToStudyPack(content, token), id: `shared-copy-${Date.now()}-${randomToken().slice(0, 8)}` };
+export function cloneSharedStudyPack(content: SharedStudyPackContent, token: string, metadata?: SharedStudyPackMetadata): StudyPack {
+  return {
+    ...sharedContentToStudyPack(content, token),
+    id: `shared-copy-${Date.now()}-${randomToken().slice(0, 8)}`,
+    ...(metadata?.originalSetId ? { originalSetId: metadata.originalSetId } : {}),
+    ...(metadata?.classId ? { communityClassId: metadata.classId } : {}),
+  };
 }
 
 async function readError(response: Response): Promise<string> {
@@ -226,21 +270,29 @@ function backendError(status: number, detail: string): string {
   return detail || 'Something went wrong. Please try again.';
 }
 
-export async function createSharedStudyPack(deck: StudyPack, accessToken: string, ownerUserId: string): Promise<{ link?: SharedStudyPackLink; error?: string }> {
+export async function createSharedStudyPack(
+  deck: StudyPack,
+  accessToken: string,
+  visibility: SharedStudyPackVisibility,
+  options: { creatorDisplayName?: string; classId?: string } = {},
+): Promise<{ link?: SharedStudyPackLink; error?: string }> {
   if (!isSharingBackendConfigured) return { error: 'Link sharing is not connected yet. Add the StudyBolt backend to create a share link.' };
   try {
-    const response = await supabaseRequest('/rest/v1/shared_study_packs?select=share_token,visibility,created_at,revoked_at', {
+    const response = await supabaseRequest('/rest/v1/rpc/upsert_shared_study_pack', {
       method: 'POST',
-      headers: { Prefer: 'return=representation' },
       body: JSON.stringify({
-        study_pack_id: deck.id,
-        owner_user_id: ownerUserId,
-        visibility: 'link' satisfies SharedStudyPackVisibility,
-        shared_content: createShareableContent(deck),
+        p_study_pack_id: deck.id,
+        p_visibility: visibility,
+        p_shared_content: createShareableContent(deck),
+        p_creator_display_name: options.creatorDisplayName?.trim() || 'StudyBolt student',
+        p_description: deck.subtitle,
+        p_subject: deck.courseName,
+        p_class_id: visibility === 'public' ? options.classId ?? null : null,
+        p_original_set_id: deck.originalSetId ?? deck.id,
       }),
     }, accessToken);
     if (!response.ok) return { error: backendError(response.status, await readError(response)) };
-    const payload = await response.json() as Array<{ share_token?: string; visibility?: SharedStudyPackVisibility; created_at?: string; revoked_at?: string | null }> | { share_token?: string; visibility?: SharedStudyPackVisibility; created_at?: string; revoked_at?: string | null };
+    const payload = await response.json() as Array<{ share_token?: string; visibility?: SharedStudyPackVisibility; created_at?: string; class_id?: string | null }> | { share_token?: string; visibility?: SharedStudyPackVisibility; created_at?: string; class_id?: string | null };
     const row = Array.isArray(payload) ? payload[0] : payload;
     if (!row?.share_token) return { error: 'StudyBolt could not finish creating that link. Please try again.' };
     return {
@@ -248,9 +300,9 @@ export async function createSharedStudyPack(deck: StudyPack, accessToken: string
         deckId: deck.id,
         token: row.share_token,
         url: shareUrlForToken(row.share_token),
-        visibility: row.visibility === 'private' ? 'private' : 'link',
+        visibility: row.visibility === 'public' ? 'public' : row.visibility === 'private' ? 'private' : 'link',
         createdAt: row.created_at ?? new Date().toISOString(),
-        ...(row.revoked_at ? { revokedAt: row.revoked_at } : {}),
+        ...(row.class_id ? { classId: row.class_id } : {}),
       },
     };
   } catch {
@@ -258,7 +310,22 @@ export async function createSharedStudyPack(deck: StudyPack, accessToken: string
   }
 }
 
-export async function fetchSharedStudyPack(token: string): Promise<{ content?: SharedStudyPackContent; error?: string }> {
+function parseMetadata(value: unknown, token: string): SharedStudyPackMetadata {
+  const metadata = isRecord(value) ? value : {};
+  return {
+    token: stringValue(metadata.token, token),
+    creatorDisplayName: stringValue(metadata.creatorDisplayName, 'StudyBolt student'),
+    description: stringValue(metadata.description),
+    itemCount: typeof metadata.itemCount === 'number' ? Math.max(0, metadata.itemCount) : 0,
+    saveCount: typeof metadata.saveCount === 'number' ? Math.max(0, metadata.saveCount) : 0,
+    shareCount: typeof metadata.shareCount === 'number' ? Math.max(0, metadata.shareCount) : 0,
+    visibility: metadata.visibility === 'public' ? 'public' : 'link',
+    ...(typeof metadata.classId === 'string' ? { classId: metadata.classId } : {}),
+    ...(typeof metadata.originalSetId === 'string' ? { originalSetId: metadata.originalSetId } : {}),
+  };
+}
+
+export async function fetchSharedStudyPack(token: string): Promise<{ preview?: SharedStudyPackPreview; content?: SharedStudyPackContent; error?: string }> {
   if (!isSharingBackendConfigured) return { error: 'This share link is not connected to a StudyBolt backend yet.' };
   try {
     const response = await supabaseRequest('/rest/v1/rpc/get_shared_study_pack', {
@@ -270,7 +337,9 @@ export async function fetchSharedStudyPack(token: string): Promise<{ content?: S
     const result = Array.isArray(payload) ? payload[0] : payload;
     if (!result?.content) return { error: 'This Study Pack link is no longer available. It may be expired or disabled.' };
     const content = parseContent(result?.content);
-    return content ? { content } : { error: 'This share link does not contain a readable Study Pack.' };
+    if (!content) return { error: 'This share link does not contain a readable Study Pack.' };
+    const metadata = parseMetadata((result as { metadata?: unknown }).metadata, token);
+    return { content, preview: { content, metadata } };
   } catch {
     return { error: 'Could not open this Study Pack. Check your connection and try again.' };
   }

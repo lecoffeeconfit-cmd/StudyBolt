@@ -6,12 +6,13 @@ import type { IconName } from '../components/ui';
 import { learningEvidence } from '../data/learningScience';
 import { useStudyBolt } from '../StudyBoltContext';
 import { buildAnalytics } from '../services/analytics';
-import type { AnalyticsSnapshot, BreakdownValue, ConceptInsight } from '../services/analytics';
+import type { AnalyticsSnapshot, BreakdownValue, ConceptInsight, DistributionValue } from '../services/analytics';
 
-type StatsTab = 'overview' | 'mastery' | 'quizzes' | 'activity' | 'methods';
+type StatsTab = 'overview' | 'insights' | 'mastery' | 'quizzes' | 'activity' | 'methods';
 
 const TABS: Array<{ id: StatsTab; label: string; icon: IconName }> = [
   { id: 'overview', label: 'Overview', icon: 'view-dashboard-outline' },
+  { id: 'insights', label: 'Insights', icon: 'chart-box-plus-outline' },
   { id: 'mastery', label: 'Mastery', icon: 'brain' },
   { id: 'quizzes', label: 'Quizzes', icon: 'clipboard-check-outline' },
   { id: 'activity', label: 'Activity', icon: 'chart-timeline-variant' },
@@ -48,6 +49,7 @@ export function StatsScreen() {
       </ScrollView>
 
       {tab === 'overview' ? <Overview analytics={analytics} /> : null}
+      {tab === 'insights' ? <AdvancedInsights analytics={analytics} /> : null}
       {tab === 'mastery' ? <MasteryAnalytics analytics={analytics} /> : null}
       {tab === 'quizzes' ? <QuizAnalytics analytics={analytics} /> : null}
       {tab === 'activity' ? <ActivityAnalytics analytics={analytics} goalMinutes={state.dailyStudyGoalMinutes} /> : null}
@@ -121,6 +123,157 @@ function Overview({ analytics }: { analytics: AnalyticsSnapshot }) {
       <View style={styles.stack}>
         {analytics.packs.map((pack) => <PackRow key={pack.id} pack={pack} />)}
       </View>
+    </>
+  );
+}
+
+function AdvancedInsights({ analytics }: { analytics: AnalyticsSnapshot }) {
+  const { colors, state } = useStudyBolt();
+  const insight = analytics.advanced;
+  const advancedRetention = state.retentionMode !== 'standard';
+  const retentionLabel = state.retentionMode === 'standard' ? 'Standard' : state.retentionMode === 'fsrs' ? 'FSRS' : 'SM-2';
+  const gap = insight.recognitionRecallGap;
+  const calibration = insight.confidenceCalibration;
+  const fatigue = insight.sessionFatigue;
+  const forecast = insight.readinessForecast;
+  const efficiency = insight.efficiencyTrend;
+  return (
+    <>
+      <Card
+        style={[styles.advancedHero, { backgroundColor: colors.mode === 'dark' ? colors.primarySoft : '#EEF5FF' }]}
+      >
+        <View style={[styles.advancedHeroIcon, { backgroundColor: colors.primary }]}><Icon name="chart-box-plus-outline" color={colors.primaryText} size={24} /></View>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.advancedHeroTitle, { color: colors.text }]}>Your learning signals</Text>
+          <Text style={[styles.advancedHeroText, { color: colors.textSecondary }]}>Measured from your answers, retrieval ratings, timing, spacing, study sessions, and completed plan blocks. Estimates stay hidden until enough evidence exists.</Text>
+          <Text style={[styles.advancedHeroMode, { color: advancedRetention ? colors.primary : colors.textMuted }]}>{advancedRetention ? `${retentionLabel} is on · review timing adapts per card.` : 'Standard is on · fixed time-based review intervals.'}</Text>
+        </View>
+      </Card>
+
+      <SectionHeader title="Memory & recall" action="What is likely to stick" />
+      <View style={styles.metricGrid}>
+        <MetricCard icon="head-check-outline" label="Recall probability" value={percent(insight.recallProbability.value)} detail={`${insight.recallProbability.concepts} concepts with dated evidence`} tone="mint" muted={insight.recallProbability.value === null} />
+        <MetricCard icon="eye-outline" label="Recognition vs. recall" value={gap.value === null ? '—' : formatPointGap(gap.value)} detail={`${percent(gap.recognition)} recognition · ${percent(gap.recall)} recall`} tone="purple" muted={gap.value === null} />
+        <MetricCard icon="scale-balance" label="Confidence calibration" value={percent(calibration.score)} detail={`${calibration.samples} answers with confidence`} tone="blue" muted={calibration.score === null} />
+        <MetricCard icon="target-account" label="First-try accuracy" value={percent(analytics.quizzes.firstTryAccuracy)} detail="First recorded attempt per question" tone="orange" muted={analytics.quizzes.firstTryAccuracy === null} />
+        <MetricCard icon="calendar-sync-outline" label="Delayed retention" value={percent(analytics.retention.longTermSuccess)} detail="Recall repeated at least 7 days later" tone="mint" muted={analytics.retention.longTermSuccess === null} />
+        <MetricCard icon="trending-up" label="Learning velocity" value={insight.learningVelocity.pointsPerWeek === null ? '—' : `${formatSigned(insight.learningVelocity.pointsPerWeek)} pts/wk`} detail={`${insight.learningVelocity.samples} changes · normalized per concept`} tone="purple" muted={insight.learningVelocity.pointsPerWeek === null} />
+      </View>
+
+      <SectionHeader title="Forgetting risk" action={`${insight.forgettingRisk.length} concepts to protect`} />
+      <Card style={styles.insightCard}>
+        {insight.forgettingRisk.length ? insight.forgettingRisk.map((concept, index) => (
+          <RiskConceptRow key={concept.id} concept={concept} last={index === insight.forgettingRisk.length - 1} />
+        )) : <EmptyInsight icon="shield-check-outline" title="No near-term forgetting risk detected" detail="This list uses dated recall evidence and grows more reliable after spaced reviews." />}
+      </Card>
+
+      <SectionHeader title="Confidence outcomes" action={`${calibration.samples} rated answers`} />
+      <Card>
+        {calibration.samples ? (
+          <View style={styles.calibrationGrid}>
+            <CalibrationCell label="Confidently right" value={calibration.confidentlyRight} color={colors.mint} background={colors.mintSoft} />
+            <CalibrationCell label="Confidently wrong" value={calibration.confidentlyWrong} color={colors.danger} background={`${colors.danger}14`} />
+            <CalibrationCell label="Unsure but right" value={calibration.unsureRight} color={colors.primary} background={colors.primarySoft} />
+            <CalibrationCell label="Unsure and wrong" value={calibration.unsureWrong} color={colors.warning} background={`${colors.warning}18`} />
+          </View>
+        ) : <EmptyInsight icon="scale-balance" title="Confidence calibration is ready to collect" detail="Use the optional confidence chips before answering quiz questions." />}
+      </Card>
+
+      <SectionHeader title="Weakest concepts" action="Study these next" />
+      <Card style={styles.insightCard}>
+        {analytics.weakConcepts.length ? analytics.weakConcepts.slice(0, 5).map((concept, index) => <ConceptRow key={concept.id} concept={concept} rank={index + 1} last={index === Math.min(4, analytics.weakConcepts.length - 1)} />)
+          : <EmptyInsight icon="check-all" title="No weak concepts detected" detail="Keep using spaced retrieval to confirm your knowledge holds." />}
+      </Card>
+
+      <SectionHeader title="Strongest concepts" action="Likely lower priority" />
+      <Card style={styles.insightCard}>
+        {analytics.strongestConcepts.length ? analytics.strongestConcepts.slice(0, 5).map((concept, index) => <ConceptRow key={concept.id} concept={concept} last={index === Math.min(4, analytics.strongestConcepts.length - 1)} />)
+          : <EmptyInsight icon="shield-outline" title="Strong concepts are still being established" detail="Repeated correct recall will move concepts into this list." />}
+      </Card>
+
+      <SectionHeader title="Confusion pairs" action="Repeated mix-ups" />
+      <Card>
+        {insight.confusionPairs.length ? insight.confusionPairs.map((pair, index) => (
+          <View
+            key={pair.id}
+            style={[styles.confusionRow, index > 0 && { borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth }]}
+          >
+            <View style={[styles.confusionCount, { backgroundColor: `${colors.danger}14` }]}><Text style={[styles.confusionCountText, { color: colors.danger }]}>{pair.count}×</Text></View>
+            <View style={{ flex: 1 }}>
+              <Text numberOfLines={2} style={[styles.rowTitle, { color: colors.text }]}>{pair.selected}</Text>
+              <View style={styles.confusionCorrection}><Icon name="arrow-right" size={14} color={colors.mint} /><Text numberOfLines={2} style={[styles.rowMeta, { color: colors.textSecondary }]}>{pair.correct}</Text></View>
+            </View>
+          </View>
+        )) : <EmptyInsight icon="swap-horizontal" title="No repeated confusion pair yet" detail="A pair appears after the same wrong choice is selected for the same correct idea twice." />}
+      </Card>
+
+      <SectionHeader title="Retrieval performance" action="Accuracy plus speed" />
+      <View style={styles.metricGrid}>
+        <MetricCard icon="timer-outline" label="Response time" value={insight.responseTime.averageSeconds === null ? '—' : `${insight.responseTime.averageSeconds}s`} detail={`Median ${insight.responseTime.medianSeconds ?? '—'}s · ${insight.responseTime.samples} timed`} tone="blue" muted={insight.responseTime.averageSeconds === null} />
+        <MetricCard icon="speedometer" label="Fluency" value={insight.fluency.correctPerMinute === null ? '—' : `${insight.fluency.correctPerMinute}/min`} detail="Correct retrievals per timed minute" tone="mint" muted={insight.fluency.correctPerMinute === null} />
+        <MetricCard icon="weather-sunset-up" label="Best study time" value={insight.bestStudyTime?.label ?? '—'} detail={insight.bestStudyTime ? `${insight.bestStudyTime.accuracy}% across ${insight.bestStudyTime.samples} answers` : 'Needs timed answers in multiple periods'} tone="purple" muted={!insight.bestStudyTime} />
+        <MetricCard icon="battery-low" label="Session fatigue" value={!fatigue ? '—' : fatigue.drop > 0 ? `${fatigue.drop} pt drop` : 'No decline'} detail={fatigue ? `${fatigue.earlyAccuracy}% early · ${fatigue.lateAccuracy}% late` : 'Needs at least two 8+ question runs'} tone="orange" muted={!fatigue} />
+        <MetricCard icon="timer-sand-complete" label="Ideal session length" value={insight.idealSessionLength?.label ?? '—'} detail={insight.idealSessionLength ? `${insight.idealSessionLength.accuracy}% recall across ${insight.idealSessionLength.sessions} sessions` : 'Needs repeated scored sessions'} tone="blue" muted={!insight.idealSessionLength} />
+        <MetricCard icon="chart-line-variant" label="Efficiency trend" value={!efficiency ? '—' : `${formatSigned(efficiency.changePercent)}%`} detail={efficiency ? `${efficiency.recent} vs ${efficiency.previous} gain pts/hour` : 'Needs measured gains in both weeks'} tone="mint" muted={!efficiency} />
+      </View>
+
+      <SectionHeader title="Question-type performance" action="Observed attempts only" />
+      <Card>
+        <BreakdownRows values={insight.questionTypePerformance} />
+      </Card>
+
+      <SectionHeader title="Mastery gain per hour" action="Measured improvement" />
+      <View style={styles.metricGrid}>
+        <MetricCard icon="shape-plus-outline" label="Best study method" value={insight.masteryGainPerHour.topMethod ?? '—'} detail={insight.masteryGainPerHour.topMethodValue === null ? 'Needs repeated before/after evidence' : `${insight.masteryGainPerHour.topMethodValue} pts/concept/hour`} tone="purple" muted={!insight.masteryGainPerHour.topMethod} />
+        <MetricCard icon="school-outline" label="Most efficient course" value={insight.masteryGainPerHour.topCourse ?? '—'} detail={insight.masteryGainPerHour.topCourseValue === null ? 'Needs repeated before/after evidence' : `${insight.masteryGainPerHour.topCourseValue} pts/concept/hour`} tone="blue" muted={!insight.masteryGainPerHour.topCourse} />
+      </View>
+
+      <SectionHeader title="Study habits" action="Last 28 days" />
+      <View style={styles.metricGrid}>
+        <MetricCard icon="calendar-check-outline" label="Consistency score" value={`${insight.consistency.score}%`} detail={`${insight.consistency.activeDays} active days · ${insight.consistency.activeWeeks}/4 weeks`} tone="mint" />
+        <MetricCard icon="calendar-range" label="Spacing quality" value={percent(insight.spacingQuality.score)} detail={`${insight.spacingQuality.spaced}/${insight.spacingQuality.total} repeat intervals well spaced`} tone="purple" muted={insight.spacingQuality.score === null} />
+        <MetricCard icon="flash-alert-outline" label="Cramming index" value={insight.crammingIndex ? `${insight.crammingIndex.value}%` : '—'} detail={insight.crammingIndex ? `${formatMinutes(insight.crammingIndex.finalWindowMinutes)} of ${formatMinutes(insight.crammingIndex.totalMinutes)} in final 24h` : 'Calculated during the final 24h of a plan'} tone="orange" muted={!insight.crammingIndex} />
+        <MetricCard icon="clipboard-check-outline" label="Plan adherence" value={percent(insight.planAdherence.value)} detail={`${formatMinutes(insight.planAdherence.completedMinutes)} of ${formatMinutes(insight.planAdherence.plannedMinutes)} marked complete`} tone="blue" muted={insight.planAdherence.value === null} />
+        <MetricCard icon="calendar-arrow-right" label="Reviews by tomorrow" value={`${insight.reviewLoad.tomorrow}`} detail="Includes overdue cards" tone="red" />
+        <MetricCard icon="calendar-week" label="Reviews in 7 days" value={`${insight.reviewLoad.nextSevenDays}`} detail={state.retentionMode === 'fsrs' ? 'Forecast from FSRS card schedules' : state.retentionMode === 'sm2' ? 'Forecast from SM-2 card schedules' : 'Forecast from last recall and confidence'} tone="mint" />
+      </View>
+
+      <SectionHeader title="Mastery distribution" action="Current evidence" />
+      <DistributionCard values={insight.masteryDistribution} />
+
+      <SectionHeader title="Personal difficulty" action="Based on your performance" />
+      <DistributionCard values={insight.difficultyDistribution} />
+
+      <SectionHeader title="Exam readiness by topic" action="Strongest to weakest" />
+      <Card>
+        {analytics.topicMastery.length ? analytics.topicMastery.slice(0, 12).map((topic, index) => (
+          <ProgressRow key={topic.id} label={topic.title} detail={topic.courseName} value={topic.value} last={index === Math.min(11, analytics.topicMastery.length - 1)} />
+        )) : <EmptyInsight icon="book-search-outline" title="No topic evidence yet" detail="Study cards or complete quizzes to build topic-level readiness." />}
+      </Card>
+
+      <SectionHeader title="Readiness forecast" action="At your current measured pace" />
+      <Card style={[styles.forecastCard, { backgroundColor: forecast ? colors.mintSoft : colors.card }]}>
+        {forecast ? (
+          <>
+            <View style={styles.forecastTop}>
+              <View style={[styles.forecastIcon, { backgroundColor: colors.card }]}><Icon name="chart-timeline-variant-shimmer" color={colors.mint} size={24} /></View>
+              <View style={{ flex: 1 }}><Text style={[styles.forecastValue, { color: colors.text }]}>{forecast.value}% projected</Text><Text style={[styles.forecastText, { color: colors.textSecondary }]}>by {formatDate(forecast.targetDate)} · {forecast.daysRemaining} days remaining</Text></View>
+            </View>
+            <ProgressBar progress={forecast.value} color={colors.mint} />
+          </>
+        ) : <EmptyInsight icon="chart-timeline-variant-shimmer" title="Forecast is still building" detail="It needs a plan deadline, current readiness, and at least three measured mastery changes." />}
+      </Card>
+
+      <SectionHeader title="How these stats are made" action="Transparent methodology" />
+      <Card>
+        <MethodologyRow icon="database-check-outline" title="Direct observations" detail="Correctness, chosen and correct answers, answer confidence, response time, timestamps, session duration, card ratings, and completed plan blocks are stored on this device." />
+        <MethodologyRow icon="brain" title="Recall estimate" detail={state.retentionMode === 'fsrs' ? 'FSRS replays each card\'s dated review history and estimates retrievability from per-card difficulty and stability, with intervals capped at 365 days.' : state.retentionMode === 'sm2' ? 'SM-2 replays each card\'s dated review history using repetitions, an ease factor, and quality ratings to set the next interval. Its recall estimate uses the scheduled interval.' : 'Standard mode decays current observed mastery from the latest dated evidence using StudyBolt\'s time-based forgetting curve. More successful reviews increase estimated stability.'} bordered />
+        <MethodologyRow icon="calendar-sync-outline" title="Spacing and retention" detail="A repeat review counts as spaced after 20 hours; delayed retention requires successful recall at least 7 days after prior retrieval." bordered />
+        <MethodologyRow icon="flask-outline" title="Evidence context" detail="Spaced and retrieval practice have strong learning-science support. FSRS and SM-2 are timing models—not guarantees of remembering or exam performance." bordered />
+        <MethodologyRow icon="trending-up" title="Improvement rates" detail="Mastery changes are normalized per distinct concept or assessment, then divided by elapsed weeks or tracked study hours so studying more items does not inflate the rate." bordered />
+        <MethodologyRow icon="shield-check-outline" title="Evidence thresholds" detail="Timing, calibration, fatigue, ideal-session, and forecast metrics remain unavailable until their minimum sample sizes are met." bordered />
+        <MethodologyRow icon="alert-circle-outline" title="Interpret estimates carefully" detail="Readiness and recall probability guide study priorities; they are not validated predictions of an exam grade or a guarantee of remembering." bordered />
+      </Card>
     </>
   );
 }
@@ -392,8 +545,74 @@ function MetricCard({ icon, label, value, detail, tone, muted = false }: { icon:
       <View style={[styles.metricIcon, { backgroundColor: background }]}><Icon name={icon} size={19} color={color} /></View>
       <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.metricValue, { color: muted ? colors.textMuted : colors.text }]}>{muted ? '—' : value}</Text>
       <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>{label}</Text>
-      <Text style={[styles.metricDetail, { color: colors.textMuted }]}>{muted ? 'Not enough history yet' : detail}</Text>
+      <Text style={[styles.metricDetail, { color: colors.textMuted }]}>{detail}</Text>
     </Card>
+  );
+}
+
+function RiskConceptRow({ concept, last }: { concept: ConceptInsight; last: boolean }) {
+  const { colors } = useStudyBolt();
+  const probability = concept.recallProbability ?? 0;
+  const color = probability >= 70 ? colors.mint : probability >= 50 ? colors.warning : colors.danger;
+  return (
+    <View style={[styles.conceptRow, !last && { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }]}>
+      <View style={[styles.riskIcon, { backgroundColor: `${color}16` }]}><Icon name="memory" color={color} size={19} /></View>
+      <View style={{ flex: 1 }}>
+        <Text numberOfLines={2} style={[styles.rowTitle, { color: colors.text }]}>{concept.title}</Text>
+        <Text style={[styles.rowMeta, { color: colors.textMuted }]}>{concept.courseName} · {concept.lastEvidenceAt ? `last evidence ${formatDate(concept.lastEvidenceAt)}` : 'no dated evidence'}</Text>
+      </View>
+      <View style={styles.conceptScore}><Text style={[styles.conceptPercent, { color }]}>{probability}%</Text><Text style={[styles.riskLabel, { color: colors.textMuted }]}>RECALL</Text></View>
+    </View>
+  );
+}
+
+function CalibrationCell({ label, value, color, background }: { label: string; value: number; color: string; background: string }) {
+  return (
+    <View style={[styles.calibrationCell, { backgroundColor: background }]}>
+      <Text style={[styles.calibrationValue, { color }]}>{value}</Text>
+      <Text style={[styles.calibrationLabel, { color }]}>{label}</Text>
+    </View>
+  );
+}
+
+function BreakdownRows({ values }: { values: BreakdownValue[] }) {
+  const { colors } = useStudyBolt();
+  return (
+    <>
+      {values.map((item, index) => (
+        <View key={item.label} style={[styles.performanceRow, index > 0 && { borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth }]}>
+          <View style={{ flex: 1 }}><Text style={[styles.rowTitle, { color: colors.text }]}>{friendlyLabel(item.label)}</Text><Text style={[styles.rowMeta, { color: colors.textMuted }]}>{item.count ? `${item.count} recorded attempts` : 'Not collected by the current study tools'}</Text></View>
+          <Text style={[styles.performanceValue, { color: item.value === null ? colors.textMuted : colors.primary }]}>{item.value === null ? '—' : `${item.value}%`}</Text>
+        </View>
+      ))}
+    </>
+  );
+}
+
+function DistributionCard({ values }: { values: DistributionValue[] }) {
+  const { colors } = useStudyBolt();
+  return (
+    <Card>
+      {values.map((item, index) => {
+        const color = index === values.length - 1 ? colors.mint : index === 0 ? colors.textMuted : colors.primary;
+        return (
+          <View key={item.label} style={[styles.distributionRow, index > 0 && { borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth }]}>
+            <View style={styles.distributionHeading}><Text style={[styles.rowTitle, { color: colors.text }]}>{item.label}</Text><Text style={[styles.distributionValue, { color }]}>{item.count} · {item.percent}%</Text></View>
+            <ProgressBar progress={item.percent} color={color} />
+          </View>
+        );
+      })}
+    </Card>
+  );
+}
+
+function MethodologyRow({ icon, title, detail, bordered = false }: { icon: IconName; title: string; detail: string; bordered?: boolean }) {
+  const { colors } = useStudyBolt();
+  return (
+    <View style={[styles.methodologyRow, bordered && { borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth }]}>
+      <View style={[styles.methodologyIcon, { backgroundColor: colors.primarySoft }]}><Icon name={icon} color={colors.primary} size={18} /></View>
+      <View style={{ flex: 1 }}><Text style={[styles.rowTitle, { color: colors.text }]}>{title}</Text><Text style={[styles.methodologyText, { color: colors.textSecondary }]}>{detail}</Text></View>
+    </View>
   );
 }
 
@@ -536,6 +755,8 @@ const percent = (value: number | null) => value === null ? 'Not enough data' : `
 const capitalize = (value: string) => `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
 const friendlyLabel = (value: string) => value.split('-').map(capitalize).join(' ');
 const formatDate = (value: string) => new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+const formatSigned = (value: number) => `${value > 0 ? '+' : ''}${value}`;
+const formatPointGap = (value: number) => `${formatSigned(value)} pts`;
 function formatMinutes(minutes: number): string {
   const rounded = Math.max(0, Math.round(minutes));
   const hours = Math.floor(rounded / 60);
@@ -555,6 +776,11 @@ const styles = StyleSheet.create({
   tabs: { gap: 7, paddingBottom: 4 },
   tab: { height: 39, borderRadius: 13, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 6 },
   tabText: { fontSize: 11, fontWeight: '800' },
+  advancedHero: { marginTop: 14, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  advancedHeroIcon: { width: 46, height: 46, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  advancedHeroTitle: { fontSize: 14, fontWeight: '900' },
+  advancedHeroText: { fontSize: 10, lineHeight: 15, marginTop: 3 },
+  advancedHeroMode: { fontSize: 9, lineHeight: 13, fontWeight: '800', marginTop: 5 },
   readinessCard: { padding: 20, marginTop: 14, borderColor: 'transparent' },
   readinessTop: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 14 },
   heroEyebrow: { color: '#AAB6C2', fontSize: 9, fontWeight: '900', letterSpacing: 1.15 },
@@ -579,6 +805,29 @@ const styles = StyleSheet.create({
   conceptScore: { alignItems: 'flex-end', gap: 2 },
   conceptPercent: { fontSize: 14, fontWeight: '900' },
   dueText: { fontSize: 8, fontWeight: '900', letterSpacing: 0.8 },
+  riskIcon: { width: 37, height: 37, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  riskLabel: { fontSize: 7, fontWeight: '900', letterSpacing: 0.7 },
+  calibrationGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  calibrationCell: { width: '48.5%', minHeight: 74, borderRadius: 13, padding: 12, justifyContent: 'center' },
+  calibrationValue: { fontSize: 21, fontWeight: '900' },
+  calibrationLabel: { fontSize: 9, fontWeight: '800', marginTop: 2 },
+  confusionRow: { minHeight: 70, flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 11 },
+  confusionCount: { width: 39, height: 39, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  confusionCountText: { fontSize: 12, fontWeight: '900' },
+  confusionCorrection: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 },
+  performanceRow: { minHeight: 61, flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10 },
+  performanceValue: { fontSize: 15, fontWeight: '900' },
+  distributionRow: { paddingVertical: 12 },
+  distributionHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8 },
+  distributionValue: { fontSize: 10, fontWeight: '900' },
+  forecastCard: { minHeight: 100, justifyContent: 'center' },
+  forecastTop: { flexDirection: 'row', alignItems: 'center', gap: 11, marginBottom: 12 },
+  forecastIcon: { width: 43, height: 43, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  forecastValue: { fontSize: 18, fontWeight: '900' },
+  forecastText: { fontSize: 10, marginTop: 3 },
+  methodologyRow: { minHeight: 75, flexDirection: 'row', alignItems: 'flex-start', gap: 11, paddingVertical: 12 },
+  methodologyIcon: { width: 36, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  methodologyText: { fontSize: 9, lineHeight: 14, marginTop: 3 },
   progressCard: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   courseIcon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   emoji: { fontSize: 22 },

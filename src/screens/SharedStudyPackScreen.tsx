@@ -5,7 +5,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../AuthContext';
 import { Card, Icon, PrimaryButton } from '../components/ui';
 import { useStudyBolt } from '../StudyBoltContext';
-import type { SharedStudyPackContent } from '../models';
+import type { SharedStudyPackContent, SharedStudyPackPreview } from '../models';
+import { incrementSharedPackSave } from '../services/community';
 import { cloneSharedStudyPack, fetchSharedStudyPack, sharedContentToStudyPack } from '../services/sharing';
 import { StudyPackScreen } from './StudyPackScreen';
 
@@ -24,6 +25,7 @@ export function SharedStudyPackScreen({
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
   const [content, setContent] = useState<SharedStudyPackContent | null>(null);
+  const [preview, setPreview] = useState<SharedStudyPackPreview | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,12 +37,14 @@ export function SharedStudyPackScreen({
     setLoading(true);
     setError(null);
     setContent(null);
+    setPreview(null);
     void fetchSharedStudyPack(token).then((result) => {
       if (!mounted) return;
       if (result.error || !result.content) {
         setError(result.error ?? 'This Study Pack link is no longer available.');
       } else {
         setContent(result.content);
+        setPreview(result.preview ?? null);
         recordStudyEventRef.current({ type: 'shared-pack-opened' });
       }
       setLoading(false);
@@ -62,8 +66,9 @@ export function SharedStudyPackScreen({
       return;
     }
     setSaving(true);
-    const copy = cloneSharedStudyPack(content, token);
+    const copy = cloneSharedStudyPack(content, token, preview?.metadata);
     addDeck(copy);
+    void incrementSharedPackSave(token);
     recordStudyEvent({ type: 'shared-pack-saved', deckId: copy.id, courseId: copy.courseId });
     setSaving(false);
     onOpenSavedDeck(copy.id);
@@ -97,10 +102,12 @@ export function SharedStudyPackScreen({
       deckId={deck.id}
       deckOverride={deck}
       shared
+      sharedMetadata={preview?.metadata}
       onSaveShared={saveCopy}
       initialTool="overview"
       onBack={onBack}
       onPlan={() => undefined}
+      onRequireAuth={onRequireAuth}
     />
   );
 }

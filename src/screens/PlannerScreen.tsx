@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Platform, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { Animated, Platform, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 
 import { Card, Header, Icon, Pill, PrimaryButton, ProgressBar, Screen, SectionHeader } from '../components/ui';
 import type { IconName } from '../components/ui';
@@ -12,6 +12,7 @@ import {
   estimateStudyMinutesByModality,
   getPlanProgress,
   MODALITY_LABELS,
+  rebalanceMissedStudyPlan,
   RECOMMENDED_MODALITIES,
 } from '../services/studyPlan';
 
@@ -33,6 +34,9 @@ const MODALITY_ICONS: Record<StudyModality, IconName> = {
 export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: string; onFocusApplied?: () => void }) {
   const { colors, recordStudyEvent, state, setPlan, setFocusMinutes } = useStudyBolt();
   const [notice, setNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
+  const [examDate, setExamDate] = useState(() => state.plan.targetDate?.slice(0, 10) ?? '');
+  const [editingPlan, setEditingPlan] = useState(false);
+  const [showTimer, setShowTimer] = useState(false);
   const appliedFocus = useRef<string | undefined>(undefined);
   const entrance = useRef(new Animated.Value(0)).current;
 
@@ -47,6 +51,18 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
       useNativeDriver: Platform.OS !== 'web',
     }).start();
   }, [entrance]);
+
+  useEffect(() => {
+    const adjusted = rebalanceMissedStudyPlan(state.plan);
+    if (adjusted !== state.plan) {
+      setPlan(adjusted);
+      setNotice({ tone: 'success', text: 'Missed work was redistributed across your remaining study days.' });
+    }
+  }, [setPlan, state.plan]);
+
+  useEffect(() => {
+    if (state.plan.targetDate) setExamDate(state.plan.targetDate.slice(0, 10));
+  }, [state.plan.targetDate]);
 
   useEffect(() => {
     if (!focusDeckId || appliedFocus.current === focusDeckId) return;
@@ -156,12 +172,62 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
     setNotice({ tone: 'success', text: `${result.scheduled} study reminders scheduled around 6:00 PM.` });
   };
 
+  const applyExamDate = () => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(examDate)) {
+      setNotice({ tone: 'error', text: 'Enter the exam date as YYYY-MM-DD.' });
+      return;
+    }
+    const target = new Date(`${examDate}T23:59:59`);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (!Number.isFinite(+target) || +target < +today) {
+      setNotice({ tone: 'error', text: 'Choose today or a future exam date.' });
+      return;
+    }
+    const days = Math.min(90, Math.max(1, Math.floor((+target - +today) / 86400000) + 1));
+    applyPlan(state.plan.scope, days);
+    setNotice({ tone: 'success', text: `Exam Mode built a ${days}-day countdown and will rebalance it as you study.` });
+  };
+
   return (
     <Screen>
       <Animated.View style={{ opacity: entrance, transform: [{ translateY: entrance.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) }] }}>
-        <Header title="Planner" right={<Pill label="Adaptive route" tone="mint" />} />
-        <Text style={[styles.title, { color: colors.text }]}>Learn it on your timeline.</Text>
-        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Choose what you’re learning, your deadline, and the methods that work for you. StudyBolt maps the whole source into manageable sessions.</Text>
+        <Header title="Planner" />
+        <Text style={[styles.title, { color: colors.text }]}>Study plan</Text>
+        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>A realistic route that adjusts as you study.</Text>
+
+        <Card style={[styles.planSummary, styles.flatCard, { backgroundColor: colors.mode === 'dark' ? colors.primarySoft : '#EEF4FF' }]}>
+          <View style={styles.summaryTop}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.summaryEyebrow, { color: colors.mode === 'dark' ? '#8FB5EE' : colors.primary }]}>YOUR ROUTE</Text>
+              <Text style={[styles.summaryTitle, { color: colors.mode === 'dark' ? '#EDF1F5' : colors.text }]}>{subject}</Text>
+              <Text style={[styles.summaryDetail, { color: colors.mode === 'dark' ? '#C1CAD3' : colors.textSecondary }]}>{selectedDecks.length} PowerPoint{selectedDecks.length === 1 ? '' : 's'} · {state.plan.durationDays} day{state.plan.durationDays === 1 ? '' : 's'}</Text>
+            </View>
+            <View style={[styles.timeBubble, { backgroundColor: colors.mode === 'dark' ? '#FFFFFF14' : colors.card }]}>
+              <Text style={[styles.timeValue, { color: colors.mode === 'dark' ? '#EDF1F5' : colors.text }]}>{formatMinutes(totalMinutes)}</Text>
+              <Text style={[styles.timeLabel, { color: colors.mode === 'dark' ? '#AAB6C2' : colors.textMuted }]}>estimated</Text>
+            </View>
+          </View>
+          <View style={styles.summaryMetrics}>
+            <Text style={[styles.summaryMetric, { color: colors.mode === 'dark' ? '#C6CED6' : colors.textSecondary }]}>≈ {formatMinutes(Math.ceil(totalMinutes / activeDayCount))}/study day</Text>
+            <Text style={[styles.summaryMetric, { color: colors.mode === 'dark' ? '#C6CED6' : colors.textSecondary }]}>{mastery}% mastery</Text>
+          </View>
+          <ProgressBar progress={planProgress} color={colors.mint} />
+          <Text style={[styles.progressLabel, { color: colors.mode === 'dark' ? '#AAB6C2' : colors.textMuted }]}>{planProgress}% complete</Text>
+        </Card>
+
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ expanded: editingPlan }}
+          onPress={() => setEditingPlan((value) => !value)}
+          style={({ pressed }) => [styles.editPlanButton, { backgroundColor: colors.cardStrong }, pressed && styles.controlPressed]}
+        >
+          <Icon name="tune-variant" size={19} color={colors.primary} />
+          <Text style={[styles.editPlanText, { color: colors.text }]}>{editingPlan ? 'Done editing' : 'Edit plan'}</Text>
+          <Icon name={editingPlan ? 'chevron-up' : 'chevron-down'} size={20} color={colors.textMuted} />
+        </Pressable>
+
+        {editingPlan ? <View style={styles.planControls}>
 
         <SectionHeader title="1 · What are you learning?" />
         <View style={[styles.segmented, { backgroundColor: colors.cardStrong }]}>
@@ -195,7 +261,33 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
           })}
         </View>
 
-        <SectionHeader title="2 · When do you need to know it?" />
+        <SectionHeader title="2 · When is your exam?" action="Auto-adjusting" />
+        <Card style={[styles.examModeCard, { backgroundColor: colors.mode === 'dark' ? colors.primarySoft : '#EEF5FF' }]}>
+          <View style={styles.examModeHeading}>
+            <View style={[styles.examModeIcon, { backgroundColor: colors.primary }]}><Icon name="school-outline" size={22} color={colors.primaryText} /></View>
+            <View style={{ flex: 1 }}><Text style={[styles.examModeTitle, { color: colors.text }]}>Exam Mode</Text><Text style={[styles.examModeText, { color: colors.textSecondary }]}>Pick the real date. Missed work rolls into the lightest remaining days.</Text></View>
+          </View>
+          <View style={styles.examDateRow}>
+            <TextInput
+              value={examDate}
+              onChangeText={setExamDate}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor={colors.textMuted}
+              keyboardType="numbers-and-punctuation"
+              maxLength={10}
+              style={[styles.examDateInput, { color: colors.text, backgroundColor: colors.card, borderColor: colors.border }]}
+            />
+            <Pressable onPress={applyExamDate} style={[styles.examDateButton, { backgroundColor: colors.primary }]}><Text style={[styles.examDateButtonText, { color: colors.primaryText }]}>Build plan</Text></Pressable>
+          </View>
+          <View style={styles.examFacts}>
+            <Text style={[styles.examFact, { color: colors.textSecondary }]}>{state.plan.durationDays} days</Text>
+            <View style={[styles.examFactDot, { backgroundColor: colors.textMuted }]} />
+            <Text style={[styles.examFact, { color: colors.textSecondary }]}>{selectedDecks.reduce((sum, deck) => sum + deck.flashcards.filter((card) => card.confidence !== 'known').length, 0)} concepts remaining</Text>
+            <View style={[styles.examFactDot, { backgroundColor: colors.textMuted }]} />
+            <Text style={[styles.examFact, { color: colors.textSecondary }]}>~{Math.max(1, Math.ceil(totalMinutes / activeDayCount))} min/day</Text>
+          </View>
+        </Card>
+        <Text style={[styles.quickDeadlineLabel, { color: colors.textMuted }]}>OR CHOOSE A QUICK DEADLINE</Text>
         <View style={styles.durationGrid}>
           {DURATIONS.map((duration) => {
             const selected = state.plan.durationDays === duration.days;
@@ -235,26 +327,7 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
             );
           })}
         </View>
-
-        <Card style={[styles.planSummary, { backgroundColor: colors.mode === 'dark' ? colors.primarySoft : '#101A3D' }]}>
-          <View style={styles.summaryTop}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.summaryEyebrow}>YOUR ROUTE</Text>
-              <Text style={styles.summaryTitle}>{subject}</Text>
-              <Text style={styles.summaryDetail}>{selectedDecks.length} PowerPoint{selectedDecks.length === 1 ? '' : 's'} · {state.plan.durationDays} day{state.plan.durationDays === 1 ? '' : 's'}</Text>
-            </View>
-            <View style={styles.timeBubble}>
-              <Text style={styles.timeValue}>{formatMinutes(totalMinutes)}</Text>
-              <Text style={styles.timeLabel}>estimated</Text>
-            </View>
-          </View>
-          <View style={styles.summaryMetrics}>
-            <Text style={styles.summaryMetric}>≈ {formatMinutes(Math.ceil(totalMinutes / activeDayCount))}/study day</Text>
-            <Text style={styles.summaryMetric}>{mastery}% current mastery</Text>
-          </View>
-          <ProgressBar progress={planProgress} color={colors.mint} />
-          <Text style={styles.progressLabel}>{planProgress}% of planned sessions complete</Text>
-        </Card>
+        </View> : null}
 
         <SectionHeader title="Your day-by-day route" action={`${state.plan.days.filter((day) => day.minutes > 0).length} study days`} />
         <View style={styles.timeline}>
@@ -266,7 +339,7 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
                 </View>
                 {index < state.plan.days.length - 1 ? <View style={[styles.timelineLine, { backgroundColor: colors.border }]} /> : null}
               </View>
-              <Card style={[styles.dayCard, day.complete && { borderColor: colors.mint }]}>
+              <Card style={[styles.dayCard, styles.flatCard, day.complete && { borderColor: colors.mint }]}>
                 <View style={styles.dayHeader}>
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.dayTitle, { color: colors.text }]}>{day.label}</Text>
@@ -290,7 +363,7 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
           ))}
         </View>
 
-        <Card style={styles.reminderCard}>
+        <Card style={[styles.reminderCard, styles.flatCard]}>
           <View style={[styles.reminderIcon, { backgroundColor: colors.primarySoft }]}><Icon name="bell-ring" color={colors.primary} size={21} /></View>
           <View style={styles.reminderCopy}>
             <Text style={[styles.reminderTitle, { color: colors.text }]}>Notify me along the way</Text>
@@ -310,11 +383,20 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
           </View>
         ) : null}
 
-        <SectionHeader title="Focus timer" action="Supporting tool" />
-        <FocusTimer focusMinutes={state.focusMinutes} onRecord={(minutes) => {
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ expanded: showTimer }}
+          onPress={() => setShowTimer((value) => !value)}
+          style={({ pressed }) => [styles.timerToggle, { backgroundColor: colors.cardStrong }, pressed && styles.controlPressed]}
+        >
+          <View style={[styles.timerToggleIcon, { backgroundColor: colors.purpleSoft }]}><Icon name="timer-outline" size={20} color={colors.purple} /></View>
+          <View style={{ flex: 1 }}><Text style={[styles.timerToggleTitle, { color: colors.text }]}>Focus timer</Text><Text style={[styles.timerToggleText, { color: colors.textMuted }]}>25-minute focus · 5-minute break</Text></View>
+          <Icon name={showTimer ? 'chevron-up' : 'chevron-down'} size={20} color={colors.textMuted} />
+        </Pressable>
+        {showTimer ? <FocusTimer focusMinutes={state.focusMinutes} onRecord={(minutes) => {
           setFocusMinutes(minutes);
           recordStudyEvent({ type: 'focus', durationMinutes: 25 });
-        }} />
+        }} /> : null}
       </Animated.View>
     </Screen>
   );
@@ -351,17 +433,17 @@ function FocusTimer({ focusMinutes, onRecord }: { focusMinutes: number; onRecord
   const seconds = (secondsLeft % 60).toString().padStart(2, '0');
 
   return (
-    <Card style={[styles.timerCard, { backgroundColor: colors.mode === 'dark' ? colors.purpleSoft : '#10152F' }]}>
-      <View style={styles.timerModes}>
+    <Card style={[styles.timerCard, styles.flatCard, { backgroundColor: colors.purpleSoft }]}>
+      <View style={[styles.timerModes, { backgroundColor: colors.mode === 'dark' ? '#18202A' : colors.card }]}>
         {(['focus', 'break'] as const).map((item) => (
           <Pressable key={item} onPress={() => switchMode(item)} style={[styles.timerMode, mode === item && { backgroundColor: colors.purple }]}>
-            <Text style={[styles.timerModeText, { color: mode === item ? colors.primaryText : '#B4BEC8' }]}>{item === 'focus' ? 'Focus' : 'Short Break'}</Text>
+            <Text style={[styles.timerModeText, { color: mode === item ? colors.primaryText : colors.textSecondary }]}>{item === 'focus' ? 'Focus' : 'Short Break'}</Text>
           </Pressable>
         ))}
       </View>
       <View style={styles.timerCenter}>
-        <Text style={styles.timerValue}>{minutes}:{seconds}</Text>
-        <Text style={styles.timerLabel}>{running ? 'Stay with one task' : 'Ready when you are'}</Text>
+        <Text style={[styles.timerValue, { color: colors.text }]}>{minutes}:{seconds}</Text>
+        <Text style={[styles.timerLabel, { color: colors.textSecondary }]}>{running ? 'Stay with one task' : 'Ready when you are'}</Text>
       </View>
       <ProgressBar progress={((totalSeconds - secondsLeft) / totalSeconds) * 100} color={colors.purple} />
       <PrimaryButton label={running ? 'Pause session' : secondsLeft === 0 ? 'Start again' : 'Start focus'} icon={running ? 'pause' : 'play'} onPress={() => {
@@ -383,8 +465,12 @@ function formatMinutes(minutes: number): string {
 }
 
 const styles = StyleSheet.create({
-  title: { fontSize: 29, lineHeight: 35, fontWeight: '900', letterSpacing: -1 },
-  subtitle: { fontSize: 14, lineHeight: 20, marginTop: 6, marginBottom: 5 },
+  title: { fontSize: 28, lineHeight: 33, fontWeight: '900', letterSpacing: -0.9, marginTop: 13 },
+  subtitle: { fontSize: 13, lineHeight: 18, marginTop: 4 },
+  planControls: { marginTop: 2 },
+  editPlanButton: { minHeight: 48, borderRadius: 14, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 10 },
+  editPlanText: { flex: 1, fontSize: 12, fontWeight: '800' },
+  controlPressed: { opacity: 0.76, transform: [{ scale: 0.99 }] },
   segmented: { flexDirection: 'row', borderRadius: 16, padding: 4, gap: 4 },
   segment: { flex: 1, minHeight: 44, borderRadius: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
   segmentText: { fontSize: 12, fontWeight: '800' },
@@ -394,21 +480,34 @@ const styles = StyleSheet.create({
   scopeEmoji: { fontSize: 21 },
   scopeTitle: { fontSize: 13, fontWeight: '800' },
   scopeDetail: { fontSize: 10, marginTop: 3 },
+  examModeCard: { padding: 15 },
+  examModeHeading: { flexDirection: 'row', alignItems: 'center', gap: 11 },
+  examModeIcon: { width: 43, height: 43, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  examModeTitle: { fontSize: 14, fontWeight: '900' },
+  examModeText: { fontSize: 9, lineHeight: 14, marginTop: 3 },
+  examDateRow: { flexDirection: 'row', gap: 8, marginTop: 13 },
+  examDateInput: { flex: 1, minHeight: 45, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, fontSize: 12, fontWeight: '700' },
+  examDateButton: { minHeight: 45, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 15 },
+  examDateButtonText: { fontSize: 10, fontWeight: '900' },
+  examFacts: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 7, marginTop: 12 },
+  examFact: { fontSize: 9, fontWeight: '800' },
+  examFactDot: { width: 3, height: 3, borderRadius: 2 },
+  quickDeadlineLabel: { fontSize: 8, fontWeight: '900', letterSpacing: 0.9, marginTop: 15, marginBottom: 8 },
   durationGrid: { flexDirection: 'row', gap: 7 },
-  duration: { flex: 1, minHeight: 68, borderRadius: 15, borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  duration: { flex: 1, minHeight: 58, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
   durationLabel: { fontSize: 13, fontWeight: '900' },
   durationDetail: { fontSize: 9, marginTop: 3 },
   recommendation: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12 },
   recommendationTitle: { fontSize: 12, fontWeight: '800' },
   recommendationText: { fontSize: 10, lineHeight: 15, marginTop: 2 },
   modalityList: { gap: 8, marginTop: 9 },
-  modality: { minHeight: 66, borderRadius: 16, borderWidth: 1, paddingHorizontal: 11, flexDirection: 'row', alignItems: 'center', gap: 9 },
+  modality: { minHeight: 60, borderRadius: 15, borderWidth: 1, paddingHorizontal: 11, flexDirection: 'row', alignItems: 'center', gap: 9 },
   modalityOrder: { width: 25, height: 25, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   modalityOrderText: { fontSize: 10, fontWeight: '900' },
   modalityTitle: { fontSize: 12, fontWeight: '800' },
   modalityDetail: { fontSize: 9, marginTop: 2 },
   modalityMinutes: { fontSize: 10, fontWeight: '800' },
-  planSummary: { marginTop: 18, padding: 19 },
+  planSummary: { marginTop: 16, padding: 17 },
   summaryTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   summaryEyebrow: { color: '#8FB5EE', fontSize: 9, fontWeight: '900', letterSpacing: 1.2 },
   summaryTitle: { color: '#EDF1F5', fontSize: 18, lineHeight: 23, fontWeight: '900', marginTop: 4 },
@@ -439,12 +538,17 @@ const styles = StyleSheet.create({
   reminderText: { fontSize: 10, marginTop: 3, lineHeight: 14 },
   notice: { marginTop: 9, borderRadius: 13, padding: 11, flexDirection: 'row', alignItems: 'center', gap: 8 },
   noticeText: { flex: 1, fontSize: 10, lineHeight: 14 },
-  timerCard: { padding: 20 },
+  timerToggle: { minHeight: 64, borderRadius: 16, flexDirection: 'row', alignItems: 'center', gap: 11, padding: 11, marginTop: 18 },
+  timerToggleIcon: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  timerToggleTitle: { fontSize: 13, fontWeight: '800' },
+  timerToggleText: { fontSize: 10, marginTop: 3 },
+  timerCard: { padding: 18, marginTop: 8 },
   timerModes: { flexDirection: 'row', gap: 8, alignSelf: 'center', backgroundColor: '#18202A', borderRadius: 14, padding: 4 },
   timerMode: { paddingHorizontal: 15, paddingVertical: 8, borderRadius: 11 },
   timerModeText: { fontSize: 11, fontWeight: '800' },
   timerCenter: { alignItems: 'center', paddingVertical: 24 },
-  timerValue: { color: '#EDF1F5', fontSize: 50, lineHeight: 56, fontWeight: '300', letterSpacing: -1 },
-  timerLabel: { color: '#B4BEC8', fontSize: 11, marginTop: 4 },
+  timerValue: { fontSize: 50, lineHeight: 56, fontWeight: '300', letterSpacing: -1 },
+  timerLabel: { fontSize: 11, marginTop: 4 },
   timerButton: { marginTop: 18, backgroundColor: '#8D6BFF' },
+  flatCard: { shadowOpacity: 0, elevation: 0 },
 });

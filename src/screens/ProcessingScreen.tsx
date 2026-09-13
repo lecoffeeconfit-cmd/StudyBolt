@@ -11,7 +11,7 @@ const STAGES = [
   'Uploading slides',
   'Reading your lecture',
   'Finding important concepts',
-  'Building simplified notes',
+  'Building simplified and detailed notes',
   'Creating flashcards, quiz, and full test',
   'Preparing audio review',
 ];
@@ -152,7 +152,7 @@ export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSucc
         ) : (
           <>
             <Text style={[styles.title, { color: colors.text }]}>Building your Study Pack</Text>
-            <Text style={[styles.description, { color: colors.textSecondary }]}>One upload creates your notes, flashcards, practice quiz, full test, and audio review together.</Text>
+            <Text style={[styles.description, { color: colors.textSecondary }]}>One upload creates layered notes, flashcards, practice quiz, full test, and audio review together.</Text>
             <View style={styles.progressWrap}>
               <ProgressBar progress={progress} />
               <Text style={[styles.progressLabel, { color: colors.primary }]}>{Math.round(progress)}%</Text>

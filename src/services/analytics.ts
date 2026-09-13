@@ -8,6 +8,7 @@ import type {
   StudyPack,
 } from '../models';
 import { calculateCourseMastery, calculateMastery } from './mastery';
+import { getRetentionCardSchedule } from './retentionScheduler';
 
 export type EvidenceLevel = 'early' | 'building' | 'strong';
 export type ConceptStatus = 'mastered' | 'learning' | 'weak' | 'unseen' | 'at-risk' | 'improving' | 'forgotten';
@@ -22,12 +23,58 @@ export interface ConceptInsight {
   status: ConceptStatus;
   reviewCount: number;
   due: boolean;
+  recallProbability: number | null;
+  forgettingRisk: number | null;
+  lastEvidenceAt: string | null;
 }
 
 export interface BreakdownValue {
   label: string;
   value: number | null;
   count: number;
+}
+
+export interface DistributionValue {
+  label: string;
+  count: number;
+  percent: number;
+}
+
+export interface AdvancedAnalytics {
+  recallProbability: { value: number | null; concepts: number };
+  forgettingRisk: ConceptInsight[];
+  recognitionRecallGap: { value: number | null; recognition: number | null; recall: number | null; samples: number };
+  confidenceCalibration: {
+    score: number | null;
+    samples: number;
+    confidentlyRight: number;
+    confidentlyWrong: number;
+    unsureRight: number;
+    unsureWrong: number;
+  };
+  learningVelocity: { pointsPerWeek: number | null; samples: number };
+  masteryGainPerHour: {
+    topMethod: string | null;
+    topMethodValue: number | null;
+    topCourse: string | null;
+    topCourseValue: number | null;
+  };
+  confusionPairs: Array<{ id: string; selected: string; correct: string; count: number }>;
+  questionTypePerformance: BreakdownValue[];
+  responseTime: { averageSeconds: number | null; medianSeconds: number | null; samples: number };
+  fluency: { correctPerMinute: number | null; samples: number };
+  bestStudyTime: { label: string; accuracy: number; samples: number } | null;
+  sessionFatigue: { drop: number; earlyAccuracy: number; lateAccuracy: number; samples: number } | null;
+  idealSessionLength: { label: string; accuracy: number; sessions: number } | null;
+  consistency: { score: number; activeDays: number; activeWeeks: number };
+  spacingQuality: { score: number | null; spaced: number; total: number };
+  crammingIndex: { value: number; finalWindowMinutes: number; totalMinutes: number } | null;
+  planAdherence: { value: number | null; completedMinutes: number; plannedMinutes: number };
+  reviewLoad: { tomorrow: number; nextSevenDays: number };
+  masteryDistribution: DistributionValue[];
+  difficultyDistribution: DistributionValue[];
+  readinessForecast: { value: number; targetDate: string; daysRemaining: number } | null;
+  efficiencyTrend: { changePercent: number; recent: number; previous: number } | null;
 }
 
 export interface AnalyticsSnapshot {
@@ -55,6 +102,7 @@ export interface AnalyticsSnapshot {
   packs: Array<{ id: string; title: string; courseName: string; color: string; completion: number; remaining: number; studyMinutes: number }>;
   packCompletion: number;
   materialRemaining: number;
+  advanced: AdvancedAnalytics;
   retention: {
     rate: number | null;
     confidence: number | null;
@@ -124,6 +172,13 @@ const average = (values: number[]) => values.length ? values.reduce((sum, value)
 const confidenceValue = (confidence: FlashcardConfidence) => confidence === 'known' ? 88 : confidence === 'learning' ? 52 : 8;
 const confidenceRank = (confidence?: FlashcardConfidence) => confidence === 'known' ? 2 : confidence === 'learning' ? 1 : 0;
 
+function median(values: number[]): number {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] ?? 0 : ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2;
+}
+
 function dayKey(value: string | Date): string {
   const date = value instanceof Date ? value : new Date(value);
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -139,6 +194,13 @@ function daysAgo(now: Date, days: number): Date {
   const date = dayStart(now);
   date.setDate(date.getDate() - days);
   return date;
+}
+
+function hourLabel(hour: number): string {
+  const normalized = hour % 24;
+  if (normalized === 0) return '12 AM';
+  if (normalized === 12) return '12 PM';
+  return normalized > 12 ? `${normalized - 12} PM` : `${normalized} AM`;
 }
 
 function minutesFor(event: StudyEvent): number {
@@ -171,19 +233,36 @@ function groupAccuracy<T extends string>(answers: QuizAnswerRecord[], values: re
   });
 }
 
-function sessionDurations(events: StudyEvent[]): number[] {
+function makeDistribution(labels: string[], values: string[]): DistributionValue[] {
+  return labels.map((label) => {
+    const count = values.filter((value) => value === label).length;
+    return { label, count, percent: values.length ? clamp((count / values.length) * 100) : 0 };
+  });
+}
+
+interface StudySession {
+  events: StudyEvent[];
+  minutes: number;
+}
+
+function studySessions(events: StudyEvent[]): StudySession[] {
   const timed = events.filter((event) => minutesFor(event) > 0).sort((a, b) => +new Date(a.occurredAt) - +new Date(b.occurredAt));
-  const sessions: Array<{ endedAt: number; minutes: number }> = [];
+  const sessions: Array<StudySession & { endedAt: number }> = [];
   timed.forEach((event) => {
     const time = +new Date(event.occurredAt);
     const last = sessions[sessions.length - 1];
-    if (!last || time - last.endedAt > 35 * 60 * 1000) sessions.push({ endedAt: time, minutes: minutesFor(event) });
+    if (!last || time - last.endedAt > 35 * 60 * 1000) sessions.push({ endedAt: time, minutes: minutesFor(event), events: [event] });
     else {
       last.endedAt = time;
       last.minutes += minutesFor(event);
+      last.events.push(event);
     }
   });
-  return sessions.map((session) => session.minutes);
+  return sessions;
+}
+
+function sessionDurations(events: StudyEvent[]): number[] {
+  return studySessions(events).map((session) => session.minutes);
 }
 
 function scoresWithLegacy(state: StudyBoltState, quizEvents: StudyEvent[]): number[] {
@@ -215,9 +294,11 @@ export function buildAnalytics(state: StudyBoltState, now = new Date()): Analyti
       : 'Early estimate: complete quizzes and review concepts on different days to unlock retention insights.';
 
   const answerByDeckAndSection = new Map<string, QuizAnswerRecord[]>();
+  const latestQuizEvidenceAt = new Map<string, string>();
   quizEvents.forEach((event) => (event.quizAnswers ?? []).forEach((answer) => {
     const key = `${event.deckId}:${answer.sourceSectionId}`;
     answerByDeckAndSection.set(key, [...(answerByDeckAndSection.get(key) ?? []), answer]);
+    latestQuizEvidenceAt.set(key, answer.answeredAt ?? event.occurredAt);
   }));
 
   const conceptDecks = state.decks.filter((deck) => deck.fileType !== 'demo' || deck.id === 'biology-cells');
@@ -232,10 +313,22 @@ export function buildAnalytics(state: StudyBoltState, now = new Date()): Analyti
     const declined = hadKnown && card.confidence !== 'known';
     const improved = matching.some((event) => confidenceRank(event.confidence) > confidenceRank(event.previousConfidence));
     const unseen = matching.length === 0 && card.confidence === 'new' && quizEvidence.length === 0;
-    const lastDate = latest ? dayStart(new Date(latest.occurredAt)) : null;
-    const elapsed = lastDate ? Math.floor((+dayStart(now) - +lastDate) / 86400000) : null;
+    const latestQuizAt = latestQuizEvidenceAt.get(`${deck.id}:${card.source.sectionId}`);
+    const lastEvidenceAt = [latest?.occurredAt, latestQuizAt]
+      .filter((value): value is string => Boolean(value))
+      .sort((a, b) => +new Date(b) - +new Date(a))[0] ?? null;
+    const lastDate = lastEvidenceAt ? dayStart(new Date(lastEvidenceAt)) : null;
+    const elapsed = lastDate ? Math.max(0, (+now - +new Date(lastEvidenceAt as string)) / 86400000) : null;
     const interval = card.confidence === 'known' ? 7 : card.confidence === 'learning' ? 1 : 0;
-    const due = elapsed === null ? card.confidence !== 'known' : elapsed >= interval;
+    const advancedSchedule = state.retentionMode !== 'standard'
+      ? getRetentionCardSchedule(state, deck.id, card.id, state.retentionMode, now)
+      : null;
+    const due = advancedSchedule ? advancedSchedule.due : elapsed === null ? card.confidence !== 'known' : elapsed >= interval;
+    const evidenceCount = matching.length + quizEvidence.length;
+    const stabilityDays = Math.max(0.75, 1 + Math.pow(mastery / 100, 2) * 18 + Math.min(6, evidenceCount) * 1.5);
+    const recallProbability = advancedSchedule?.hasEvidence && advancedSchedule.retrievability !== null
+      ? clamp(advancedSchedule.retrievability * 100)
+      : elapsed === null || unseen ? null : clamp(mastery * Math.pow(0.5, elapsed / stabilityDays));
     let status: ConceptStatus = mastery >= 80 ? 'mastered' : mastery < 45 ? 'weak' : 'learning';
     if (unseen) status = 'unseen';
     else if (declined && card.confidence === 'new') status = 'forgotten';
@@ -251,6 +344,9 @@ export function buildAnalytics(state: StudyBoltState, now = new Date()): Analyti
       status,
       reviewCount: matching.length,
       due,
+      recallProbability,
+      forgettingRisk: recallProbability === null ? null : 100 - recallProbability,
+      lastEvidenceAt,
     };
   }));
 
@@ -412,6 +508,262 @@ export function buildAnalytics(state: StudyBoltState, now = new Date()): Analyti
     ? clamp(readinessComponents.reduce((sum, component) => sum + component.value * (component.weight / 100), 0))
     : null;
 
+  const recallConcepts = concepts.filter((concept) => concept.recallProbability !== null);
+  const recallProbability = recallConcepts.length >= 2
+    ? clamp(average(recallConcepts.map((concept) => concept.recallProbability as number)))
+    : null;
+  const forgettingRisk = [...recallConcepts]
+    .filter((concept) => concept.due || (concept.recallProbability ?? 100) < 70)
+    .sort((a, b) => (b.forgettingRisk ?? 0) - (a.forgettingRisk ?? 0))
+    .slice(0, 6);
+
+  const cardSectionById = new Map<string, string>();
+  state.decks.forEach((deck) => deck.flashcards.forEach((card) => cardSectionById.set(`${deck.id}:${card.id}`, card.source.sectionId)));
+  const recallSectionKeys = new Set(cardEvents.map((event) => {
+    const sectionId = cardSectionById.get(`${event.deckId}:${event.cardId}`);
+    return sectionId ? `${event.deckId}:${sectionId}` : '';
+  }).filter(Boolean));
+  const recognitionAnswers = quizEvents.flatMap((event) => (event.quizAnswers ?? []).filter((answer) => recallSectionKeys.has(`${event.deckId}:${answer.sourceSectionId}`)));
+  const recognitionSectionKeys = new Set(quizEvents.flatMap((event) => (event.quizAnswers ?? []).map((answer) => `${event.deckId}:${answer.sourceSectionId}`)));
+  const recallComparisons = cardEvents.filter((event) => {
+    const sectionId = cardSectionById.get(`${event.deckId}:${event.cardId}`);
+    return Boolean(sectionId && recognitionSectionKeys.has(`${event.deckId}:${sectionId}`));
+  });
+  const recognitionAccuracy = accuracy(recognitionAnswers);
+  const recallAccuracy = recallComparisons.length
+    ? clamp((recallComparisons.filter((event) => event.confidence === 'known').length / recallComparisons.length) * 100)
+    : null;
+  const recognitionRecallGap = recognitionAnswers.length >= 3 && recallComparisons.length >= 3 && recognitionAccuracy !== null && recallAccuracy !== null
+    ? recognitionAccuracy - recallAccuracy
+    : null;
+
+  const confidenceAnswers = allAnswers.filter((answer) => answer.confidence);
+  const confidenceProbability = { unsure: 0.35, 'somewhat-sure': 0.65, 'very-sure': 0.9 } as const;
+  const calibrationScore = confidenceAnswers.length >= 5
+    ? clamp(100 - average(confidenceAnswers.map((answer) => Math.abs(confidenceProbability[answer.confidence!] - (answer.correct ? 1 : 0)))) * 100)
+    : null;
+
+  type GainRecord = { at: string; gain: number; minutes: number; method: string; courseName: string; unitId: string };
+  const gainRecords: GainRecord[] = [];
+  const priorQuizScoreByDeck = new Map<string, number>();
+  events.forEach((event) => {
+    const deck = state.decks.find((item) => item.id === event.deckId);
+    if (event.type === 'flashcard-review' && event.confidence && event.previousConfidence) {
+      gainRecords.push({
+        at: event.occurredAt,
+        gain: (confidenceRank(event.confidence) - confidenceRank(event.previousConfidence)) * 50,
+        minutes: Math.max(0.1, minutesFor(event)),
+        method: 'Flashcards',
+        courseName: deck?.courseName ?? 'Unassigned',
+        unitId: `${event.deckId}:${event.cardId}`,
+      });
+    }
+    if (event.type === 'quiz' && event.deckId && typeof event.quizScore === 'number') {
+      const prior = priorQuizScoreByDeck.get(event.deckId);
+      if (prior !== undefined) {
+        gainRecords.push({
+          at: event.occurredAt,
+          gain: event.quizScore - prior,
+          minutes: Math.max(0.1, minutesFor(event)),
+          method: event.assessmentKind === 'comprehensive' ? 'Full tests' : 'Quizzes',
+          courseName: deck?.courseName ?? 'Unassigned',
+          unitId: `${event.deckId}:${event.assessmentKind ?? 'practice'}`,
+        });
+      }
+      priorQuizScoreByDeck.set(event.deckId, event.quizScore);
+    }
+  });
+  const velocityRecords = gainRecords.filter((record) => +new Date(record.at) >= +daysAgo(now, 27));
+  const velocitySpanWeeks = velocityRecords.length
+    ? Math.max(1, Math.min(4, (+now - Math.min(...velocityRecords.map((record) => +new Date(record.at)))) / (7 * 86400000)))
+    : 1;
+  const velocityUnits = new Set(velocityRecords.map((record) => record.unitId)).size;
+  const learningVelocity = velocityRecords.length >= 3 && velocityUnits >= 2
+    ? Math.round((velocityRecords.reduce((sum, record) => sum + record.gain, 0) / velocityUnits / velocitySpanWeeks) * 10) / 10
+    : null;
+
+  const gainRateBy = (key: 'method' | 'courseName') => {
+    const groups = new Map<string, GainRecord[]>();
+    gainRecords.forEach((record) => groups.set(record[key], [...(groups.get(record[key]) ?? []), record]));
+    return [...groups.entries()].map(([label, records]) => {
+      const units = new Set(records.map((record) => record.unitId)).size;
+      const hours = records.reduce((sum, record) => sum + record.minutes, 0) / 60;
+      return {
+        label,
+        samples: records.length,
+        units,
+        value: Math.round((records.reduce((sum, record) => sum + record.gain, 0) / Math.max(1, units) / Math.max(0.1, hours)) * 10) / 10,
+      };
+    }).filter((row) => row.samples >= 2 && row.units >= 2).sort((a, b) => b.value - a.value);
+  };
+  const methodGain = gainRateBy('method')[0];
+  const courseGain = gainRateBy('courseName')[0];
+
+  const confusionMap = new Map<string, { selected: string; correct: string; count: number }>();
+  allAnswers.filter((answer) => !answer.correct && answer.selectedAnswer && answer.correctAnswer).forEach((answer) => {
+    const key = `${answer.selectedAnswer}\u0000${answer.correctAnswer}`;
+    const current = confusionMap.get(key) ?? { selected: answer.selectedAnswer as string, correct: answer.correctAnswer as string, count: 0 };
+    current.count += 1;
+    confusionMap.set(key, current);
+  });
+  const confusionPairs = [...confusionMap.entries()]
+    .filter(([, pair]) => pair.count >= 2)
+    .map(([id, pair]) => ({ id, ...pair }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 6);
+
+  const flashcardAccuracy = cardEvents.length ? clamp((cardEvents.filter((event) => event.confidence === 'known').length / cardEvents.length) * 100) : null;
+  const questionTypePerformance: BreakdownValue[] = [
+    { label: 'flashcard recall', value: flashcardAccuracy, count: cardEvents.length },
+    ...groupAccuracy(allAnswers, ['multiple-choice', 'true-false', 'short-answer', 'fill-blank', 'application'] as const, (answer) => answer.questionType as QuizQuestionType),
+  ];
+
+  const timedObservations: Array<{ ms: number; correct: boolean; at: string }> = [];
+  quizEvents.forEach((event) => (event.quizAnswers ?? []).forEach((answer) => {
+    if (typeof answer.responseTimeMs === 'number' && answer.responseTimeMs >= 0) {
+      timedObservations.push({ ms: answer.responseTimeMs, correct: answer.correct, at: answer.answeredAt ?? event.occurredAt });
+    }
+  }));
+  cardEvents.forEach((event) => {
+    if (typeof event.responseTimeMs === 'number' && event.responseTimeMs >= 0) {
+      timedObservations.push({ ms: event.responseTimeMs, correct: event.confidence === 'known', at: event.occurredAt });
+    }
+  });
+  const responseTimes = timedObservations.map((item) => item.ms);
+  const averageResponseSeconds = responseTimes.length >= 3 ? Math.round((average(responseTimes) / 1000) * 10) / 10 : null;
+  const medianResponseSeconds = responseTimes.length >= 3 ? Math.round((median(responseTimes) / 1000) * 10) / 10 : null;
+  const totalTimedMinutes = responseTimes.reduce((sum, value) => sum + value, 0) / 60000;
+  const fluency = timedObservations.length >= 5 && totalTimedMinutes > 0
+    ? Math.round((timedObservations.filter((item) => item.correct).length / totalTimedMinutes) * 10) / 10
+    : null;
+
+  const timeWindows = new Map<number, Array<{ correct: boolean }>>();
+  timedObservations.forEach((item) => {
+    const hour = new Date(item.at).getHours();
+    const start = Math.floor(hour / 2) * 2;
+    timeWindows.set(start, [...(timeWindows.get(start) ?? []), item]);
+  });
+  const bestTime = [...timeWindows.entries()].map(([start, observations]) => ({
+    label: `${hourLabel(start)}–${hourLabel(start + 2)}`,
+    accuracy: clamp((observations.filter((item) => item.correct).length / observations.length) * 100),
+    samples: observations.length,
+  })).filter((window) => window.samples >= 5).sort((a, b) => b.accuracy - a.accuracy || b.samples - a.samples)[0] ?? null;
+
+  const longQuizRuns = quizEvents.filter((event) => (event.quizAnswers?.length ?? 0) >= 8);
+  const earlySessionAnswers = longQuizRuns.flatMap((event) => {
+    const answers = event.quizAnswers ?? [];
+    return answers.slice(0, Math.max(1, Math.ceil(answers.length / 3)));
+  });
+  const lateSessionAnswers = longQuizRuns.flatMap((event) => {
+    const answers = event.quizAnswers ?? [];
+    return answers.slice(-Math.max(1, Math.ceil(answers.length / 3)));
+  });
+  const earlySessionAccuracy = accuracy(earlySessionAnswers);
+  const lateSessionAccuracy = accuracy(lateSessionAnswers);
+  const sessionFatigue = longQuizRuns.length >= 2 && earlySessionAccuracy !== null && lateSessionAccuracy !== null
+    ? { drop: earlySessionAccuracy - lateSessionAccuracy, earlyAccuracy: earlySessionAccuracy, lateAccuracy: lateSessionAccuracy, samples: earlySessionAnswers.length + lateSessionAnswers.length }
+    : null;
+
+  const sessionBands = [
+    { label: 'Under 15 min', min: 0, max: 15 },
+    { label: '15–25 min', min: 15, max: 25 },
+    { label: '26–35 min', min: 25, max: 35 },
+    { label: '36–50 min', min: 35, max: 50 },
+    { label: 'Over 50 min', min: 50, max: Infinity },
+  ];
+  const scoredSessions = studySessions(events).map((session) => {
+    const answers = session.events.flatMap((event) => event.quizAnswers ?? []);
+    const reviews = session.events.filter((event) => event.type === 'flashcard-review' && event.confidence);
+    const observations = [...answers.map((answer) => answer.correct), ...reviews.map((event) => event.confidence === 'known')];
+    return { minutes: session.minutes, accuracy: observations.length >= 3 ? clamp((observations.filter(Boolean).length / observations.length) * 100) : null };
+  }).filter((session): session is { minutes: number; accuracy: number } => session.accuracy !== null);
+  const idealSessionLength = sessionBands.map((band) => {
+    const matching = scoredSessions.filter((session) => session.minutes >= band.min && session.minutes < band.max);
+    return { label: band.label, accuracy: matching.length ? clamp(average(matching.map((session) => session.accuracy))) : 0, sessions: matching.length };
+  }).filter((band) => band.sessions >= 2).sort((a, b) => b.accuracy - a.accuracy || b.sessions - a.sessions)[0] ?? null;
+
+  const activeWeeks = new Set(activeDayKeys.map((key) => {
+    const date = dayStart(new Date(`${key}T12:00:00`));
+    const first = daysAgo(now, 27);
+    return Math.min(3, Math.floor((+date - +first) / (7 * 86400000)));
+  })).size;
+  const consistencyScore = clamp(Math.min(1, activeDayKeys.length / 16) * 70 + Math.min(1, activeWeeks / 4) * 30);
+
+  const reviewIntervalsHours: number[] = [];
+  cardGroups.forEach((group) => group.forEach((event, index) => {
+    const previous = group[index - 1];
+    if (previous) reviewIntervalsHours.push(Math.max(0, (+new Date(event.occurredAt) - +new Date(previous.occurredAt)) / 3600000));
+  }));
+  const spacedIntervals = reviewIntervalsHours.filter((hours) => hours >= 20 && hours <= 14 * 24).length;
+  const spacingQuality = reviewIntervalsHours.length >= 3 ? clamp((spacedIntervals / reviewIntervalsHours.length) * 100) : null;
+
+  const plannedMinutes = state.plan.days.flatMap((day) => day.blocks).reduce((sum, block) => sum + block.minutes, 0);
+  const completedMinutes = state.plan.days.flatMap((day) => day.blocks).filter((block) => block.complete).reduce((sum, block) => sum + block.minutes, 0);
+  const planAdherence = plannedMinutes ? clamp((completedMinutes / plannedMinutes) * 100) : null;
+
+  let crammingIndex: AdvancedAnalytics['crammingIndex'] = null;
+  if (state.plan.createdAt && state.plan.targetDate) {
+    const start = +new Date(state.plan.createdAt);
+    const target = +new Date(state.plan.targetDate);
+    const finalWindowStart = target - 86400000;
+    if (+now >= finalWindowStart) {
+      const scopedEvents = events.filter((event) => {
+        const inScope = state.plan.scope.type === 'deck' ? event.deckId === state.plan.scope.id : event.courseId === state.plan.scope.id;
+        const occurred = +new Date(event.occurredAt);
+        return inScope && occurred >= start && occurred <= target && minutesFor(event) > 0;
+      });
+      const planStudyMinutes = scopedEvents.reduce((sum, event) => sum + minutesFor(event), 0);
+      const finalWindowMinutes = scopedEvents.filter((event) => +new Date(event.occurredAt) >= finalWindowStart).reduce((sum, event) => sum + minutesFor(event), 0);
+      if (planStudyMinutes > 0) crammingIndex = { value: clamp((finalWindowMinutes / planStudyMinutes) * 100), finalWindowMinutes, totalMinutes: planStudyMinutes };
+    }
+  }
+
+  const tomorrowEnd = dayStart(now);
+  tomorrowEnd.setDate(tomorrowEnd.getDate() + 2);
+  const sevenDayEnd = dayStart(now);
+  sevenDayEnd.setDate(sevenDayEnd.getDate() + 8);
+  const dueDates = state.decks.flatMap((deck) => deck.flashcards.map((card) => {
+    if (state.retentionMode !== 'standard') return new Date(getRetentionCardSchedule(state, deck.id, card.id, state.retentionMode, now).dueAt);
+    const matching = cardGroups.get(`${deck.id}:${card.id}`) ?? [];
+    const latest = matching[matching.length - 1];
+    if (!latest) return dayStart(now);
+    const due = new Date(latest.occurredAt);
+    due.setDate(due.getDate() + (card.confidence === 'known' ? 7 : card.confidence === 'learning' ? 1 : 0));
+    return due;
+  }));
+  const reviewLoad = {
+    tomorrow: dueDates.filter((date) => +date < +tomorrowEnd).length,
+    nextSevenDays: dueDates.filter((date) => +date < +sevenDayEnd).length,
+  };
+
+  const masteryDistribution = makeDistribution(
+    ['New', 'Learning', 'Familiar', 'Strong', 'Mastered'],
+    concepts.map((concept) => concept.mastery < 20 ? 'New' : concept.mastery < 45 ? 'Learning' : concept.mastery < 65 ? 'Familiar' : concept.mastery < 80 ? 'Strong' : 'Mastered'),
+  );
+  const difficultyDistribution = makeDistribution(
+    ['Easy', 'Moderate', 'Hard'],
+    concepts.map((concept) => concept.mastery >= 80 ? 'Easy' : concept.mastery >= 55 ? 'Moderate' : 'Hard'),
+  );
+
+  const targetDate = state.plan.targetDate ? new Date(state.plan.targetDate) : null;
+  const daysRemaining = targetDate ? Math.max(0, Math.ceil((+targetDate - +now) / 86400000)) : 0;
+  const readinessForecast = readiness !== null && targetDate && +targetDate > +now && learningVelocity !== null
+    ? { value: clamp(readiness + learningVelocity * (daysRemaining / 7)), targetDate: targetDate.toISOString(), daysRemaining }
+    : null;
+
+  const efficiencyFor = (records: GainRecord[]) => {
+    const units = new Set(records.map((record) => record.unitId)).size;
+    const hours = records.reduce((sum, record) => sum + record.minutes, 0) / 60;
+    return records.length >= 2 && units >= 2
+      ? records.reduce((sum, record) => sum + record.gain, 0) / units / Math.max(0.1, hours)
+      : null;
+  };
+  const recentEfficiency = efficiencyFor(gainRecords.filter((record) => +new Date(record.at) >= +daysAgo(now, 6)));
+  const previousEfficiency = efficiencyFor(gainRecords.filter((record) => +new Date(record.at) >= +daysAgo(now, 13) && +new Date(record.at) < +daysAgo(now, 6)));
+  const efficiencyTrend = recentEfficiency !== null && previousEfficiency !== null && previousEfficiency > 0
+    ? { changePercent: Math.round(((recentEfficiency - previousEfficiency) / previousEfficiency) * 100), recent: Math.round(recentEfficiency * 10) / 10, previous: Math.round(previousEfficiency * 10) / 10 }
+    : null;
+
   const latestAudioByDeck = new Map<string, number>();
   events.filter((event) => event.type === 'audio' && event.deckId).forEach((event) => {
     latestAudioByDeck.set(event.deckId as string, event.completionPercent ?? 0);
@@ -444,6 +796,42 @@ export function buildAnalytics(state: StudyBoltState, now = new Date()): Analyti
     packs: packRows,
     packCompletion: packCompletionAverage,
     materialRemaining: 100 - packCompletionAverage,
+    advanced: {
+      recallProbability: { value: recallProbability, concepts: recallConcepts.length },
+      forgettingRisk,
+      recognitionRecallGap: { value: recognitionRecallGap, recognition: recognitionAccuracy, recall: recallAccuracy, samples: recognitionAnswers.length + recallComparisons.length },
+      confidenceCalibration: {
+        score: calibrationScore,
+        samples: confidenceAnswers.length,
+        confidentlyRight: confidenceAnswers.filter((answer) => answer.confidence === 'very-sure' && answer.correct).length,
+        confidentlyWrong: confidenceAnswers.filter((answer) => answer.confidence === 'very-sure' && !answer.correct).length,
+        unsureRight: confidenceAnswers.filter((answer) => answer.confidence === 'unsure' && answer.correct).length,
+        unsureWrong: confidenceAnswers.filter((answer) => answer.confidence === 'unsure' && !answer.correct).length,
+      },
+      learningVelocity: { pointsPerWeek: learningVelocity, samples: velocityRecords.length },
+      masteryGainPerHour: {
+        topMethod: methodGain?.label ?? null,
+        topMethodValue: methodGain?.value ?? null,
+        topCourse: courseGain?.label ?? null,
+        topCourseValue: courseGain?.value ?? null,
+      },
+      confusionPairs,
+      questionTypePerformance,
+      responseTime: { averageSeconds: averageResponseSeconds, medianSeconds: medianResponseSeconds, samples: responseTimes.length },
+      fluency: { correctPerMinute: fluency, samples: timedObservations.length },
+      bestStudyTime: bestTime,
+      sessionFatigue,
+      idealSessionLength,
+      consistency: { score: consistencyScore, activeDays: activeDayKeys.length, activeWeeks },
+      spacingQuality: { score: spacingQuality, spaced: spacedIntervals, total: reviewIntervalsHours.length },
+      crammingIndex,
+      planAdherence: { value: planAdherence, completedMinutes, plannedMinutes },
+      reviewLoad,
+      masteryDistribution,
+      difficultyDistribution,
+      readinessForecast,
+      efficiencyTrend,
+    },
     retention: {
       rate: retentionRate,
       confidence: retentionConfidence,
@@ -467,7 +855,7 @@ export function buildAnalytics(state: StudyBoltState, now = new Date()): Analyti
       repeatAccuracy: accuracy(repeatAnswers),
       repeatedMisses,
       byDifficulty: groupAccuracy(allAnswers, ['easy', 'medium', 'hard'] as const, (answer) => answer.difficulty as QuizDifficulty),
-      byType: groupAccuracy(allAnswers, ['multiple-choice', 'true-false'] as const, (answer) => answer.questionType as QuizQuestionType),
+      byType: groupAccuracy(allAnswers, ['multiple-choice', 'true-false', 'short-answer', 'fill-blank', 'application'] as const, (answer) => answer.questionType as QuizQuestionType),
       perfectQuizzes: scores.filter((score) => score === 100).length,
       completed: scores.length,
       trend: (eventScores.length ? eventScores : scores).slice(-7),

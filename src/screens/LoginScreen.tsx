@@ -1,6 +1,7 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Animated,
   KeyboardAvoidingView,
   Platform,
@@ -29,14 +30,16 @@ export function LoginScreen({
   onContinueAsGuest: () => void;
 }) {
   const { colors } = useStudyBolt();
-  const { configured, signIn, signUp, signInWithProvider, forgotPassword } = useAuth();
+  const { configured, signIn, signUp, signInWithProvider, forgotPassword, resendConfirmationEmail } = useAuth();
   const insets = useSafeAreaInsets();
   const [mode, setMode] = useState<AuthMode>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
+  const [resendBusy, setResendBusy] = useState(false);
   const [providerBusy, setProviderBusy] = useState<'google' | 'apple' | null>(null);
   const [notice, setNotice] = useState<{ tone: 'error' | 'success'; text: string } | null>(null);
+  const [confirmationEmail, setConfirmationEmail] = useState<string | null>(null);
   const entrance = useRef(new Animated.Value(0)).current;
   const bob = useRef(new Animated.Value(0)).current;
 
@@ -61,7 +64,13 @@ export function LoginScreen({
   const changeMode = (next: AuthMode) => {
     setMode(next);
     setNotice(null);
+    setConfirmationEmail(null);
     setPassword('');
+  };
+
+  const handleEmailChange = (value: string) => {
+    setEmail(value);
+    if (confirmationEmail) setConfirmationEmail(null);
   };
 
   const submit = async () => {
@@ -84,6 +93,18 @@ export function LoginScreen({
     setBusy(false);
     if (result.error) setNotice({ tone: 'error', text: result.error });
     else if (result.session) onAuthenticated();
+    else if (result.message) {
+      setNotice({ tone: 'success', text: result.message });
+      setConfirmationEmail(mode === 'signup' ? cleanEmail : null);
+    }
+  };
+
+  const resendConfirmation = async () => {
+    if (!confirmationEmail) return;
+    setResendBusy(true);
+    const result = await resendConfirmationEmail(confirmationEmail);
+    setResendBusy(false);
+    if (result.error) setNotice({ tone: 'error', text: result.error });
     else if (result.message) setNotice({ tone: 'success', text: result.message });
   };
 
@@ -148,9 +169,28 @@ export function LoginScreen({
           <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{subtitle}</Text>
 
           {notice ? (
-            <View style={[styles.notice, { backgroundColor: notice.tone === 'error' ? `${colors.danger}14` : colors.mintSoft }]}>
+            <View
+              style={[styles.notice, { backgroundColor: notice.tone === 'error' ? `${colors.danger}14` : colors.mintSoft }]}
+            >
               <Icon name={notice.tone === 'error' ? 'alert-circle-outline' : 'email-check-outline'} size={19} color={notice.tone === 'error' ? colors.danger : colors.mint} />
-              <Text style={[styles.noticeText, { color: notice.tone === 'error' ? colors.danger : colors.mint }]}>{notice.text}</Text>
+              <View style={styles.noticeBody}>
+                <Text style={[styles.noticeText, { color: notice.tone === 'error' ? colors.danger : colors.mint }]}>{notice.text}</Text>
+                {notice.tone === 'success' && confirmationEmail ? (
+                  <View style={styles.confirmationHelp}>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Resend confirmation email"
+                      disabled={resendBusy}
+                      onPress={() => void resendConfirmation()}
+                      style={({ pressed }) => [styles.resendButton, { opacity: resendBusy ? 0.55 : pressed ? 0.7 : 1 }]}
+                    >
+                      {resendBusy ? <ActivityIndicator size="small" color={colors.mint} /> : <Icon name="refresh" size={16} color={colors.mint} />}
+                      <Text style={[styles.resendText, { color: colors.mint }]}>{resendBusy ? 'Sending…' : 'Resend email'}</Text>
+                    </Pressable>
+                    <Text style={[styles.folderHint, { color: colors.textSecondary }]}>Also check your spam or junk folder.</Text>
+                  </View>
+                ) : null}
+              </View>
             </View>
           ) : null}
 
@@ -177,7 +217,7 @@ export function LoginScreen({
           ) : null}
 
           <View style={styles.fields}>
-            <AuthField label="Email address" icon="email-outline" value={email} onChangeText={setEmail} placeholder="you@example.com" keyboardType="email-address" autoComplete="email" />
+            <AuthField label="Email address" icon="email-outline" value={email} onChangeText={handleEmailChange} placeholder="you@example.com" keyboardType="email-address" autoComplete="email" />
             {mode !== 'forgot' ? <AuthField label="Password" icon="lock-outline" value={password} onChangeText={setPassword} placeholder="At least 8 characters" secure autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} /> : null}
           </View>
 
@@ -241,8 +281,13 @@ const styles = StyleSheet.create({
   miniBrain: { right: '20%', bottom: 19, transform: [{ rotate: '8deg' }] },
   title: { fontSize: 29, lineHeight: 34, fontWeight: '900', letterSpacing: -0.9 },
   subtitle: { fontSize: 14, lineHeight: 20, marginTop: 5 },
-  notice: { minHeight: 48, borderRadius: 14, marginTop: 16, paddingHorizontal: 13, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 9 },
-  noticeText: { flex: 1, fontSize: 11, lineHeight: 16, fontWeight: '700' },
+  notice: { minHeight: 48, borderRadius: 14, marginTop: 16, paddingHorizontal: 13, paddingVertical: 10, flexDirection: 'row', alignItems: 'flex-start', gap: 9 },
+  noticeBody: { flex: 1, gap: 8 },
+  noticeText: { fontSize: 11, lineHeight: 16, fontWeight: '700' },
+  confirmationHelp: { gap: 4 },
+  resendButton: { alignSelf: 'flex-start', minHeight: 30, flexDirection: 'row', alignItems: 'center', gap: 5 },
+  resendText: { fontSize: 12, lineHeight: 16, fontWeight: '900' },
+  folderHint: { fontSize: 10, lineHeight: 14 },
   providers: { gap: 9, marginTop: 19 },
   providerButton: { minHeight: 52, borderRadius: radius.md, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
   providerLabel: { fontSize: 14, fontWeight: '800' },

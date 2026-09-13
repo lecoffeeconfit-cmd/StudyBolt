@@ -119,6 +119,21 @@ export async function createAccount(email: string, password: string): Promise<Au
   }
 }
 
+export async function resendSignupConfirmation(email: string): Promise<AuthResult> {
+  if (!supabase) return configurationError();
+  try {
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email,
+      options: { emailRedirectTo: AUTH_REDIRECT_URL },
+    });
+    if (error) return { error: errorMessage(error) };
+    return { message: 'Confirmation email sent again. Check your inbox, spam, or junk folder.' };
+  } catch {
+    return { error: 'Could not resend the confirmation email. Check your connection and try again.' };
+  }
+}
+
 export function authRedirectUrl(): string {
   return AUTH_REDIRECT_URL;
 }

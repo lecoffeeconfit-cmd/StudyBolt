@@ -1,10 +1,10 @@
 import React from 'react';
-import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 
 import { Card, Header, Icon, Pill, PrimaryButton, Screen, SectionHeader } from '../components/ui';
 import type { IconName } from '../components/ui';
 import { useStudyBolt } from '../StudyBoltContext';
-import type { ThemePreference } from '../models';
+import type { RetentionMode, ThemePreference } from '../models';
 import { learningEvidence } from '../data/learningScience';
 import { useAuth } from '../AuthContext';
 
@@ -14,8 +14,18 @@ const THEMES: Array<{ id: ThemePreference; label: string; icon: IconName }> = [
   { id: 'dark', label: 'Dark', icon: 'weather-night' },
 ];
 
+const RETENTION_OPTIONS: Array<{ id: RetentionMode; label: string; detail: string; icon: IconName }> = [
+  { id: 'standard', label: 'Standard', detail: 'Simple', icon: 'calendar-sync-outline' },
+  { id: 'fsrs', label: 'FSRS', detail: 'Adaptive', icon: 'brain' },
+  { id: 'sm2', label: 'SM-2', detail: 'Classic', icon: 'chart-timeline-variant' },
+];
+
+function retentionLabel(mode: RetentionMode): string {
+  return mode === 'standard' ? 'Standard' : mode === 'fsrs' ? 'FSRS' : 'SM-2';
+}
+
 export function ProfileScreen({ onOpenOnboarding, onOpenAuth, onManageAccount, onOpenLegal }: { onOpenOnboarding: () => void; onOpenAuth: () => void; onManageAccount: () => void; onOpenLegal: () => void }) {
-  const { colors, state, setTheme } = useStudyBolt();
+  const { colors, state, setRetentionMode, setTheme } = useStudyBolt();
   const { user } = useAuth();
   const initial = (user?.email?.[0] ?? 'H').toUpperCase();
   return (
@@ -64,6 +74,50 @@ export function ProfileScreen({ onOpenOnboarding, onOpenAuth, onManageAccount, o
         <Setting icon="speedometer" title="Playback speed" detail="1.0× default" />
         <Setting icon="timer-outline" title="Focus timer" detail="25 min focus · 5 min break" />
         <Setting icon="download-circle-outline" title="Offline study" detail={`${state.decks.length} packs stored locally`} last />
+      </Card>
+
+      <SectionHeader title="Retention scheduling" action={retentionLabel(state.retentionMode)} />
+      <Card style={[styles.retentionCard, { backgroundColor: state.retentionMode === 'standard' ? colors.card : colors.primarySoft }]}>
+        <View style={styles.retentionTop}>
+          <View style={[styles.retentionIcon, { backgroundColor: state.retentionMode === 'standard' ? colors.cardStrong : colors.primary }]}><Icon name="brain" size={21} color={state.retentionMode === 'standard' ? colors.primary : colors.primaryText} /></View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.retentionTitle, { color: colors.text }]}>Advanced review timing</Text>
+            <Text style={[styles.retentionText, { color: colors.textSecondary }]}>Choose how StudyBolt decides when each card is due.</Text>
+          </View>
+          <Switch
+            accessibilityLabel="Use advanced retention scheduling"
+            value={state.retentionMode !== 'standard'}
+            onValueChange={(enabled) => setRetentionMode(enabled ? 'fsrs' : 'standard')}
+            trackColor={{ false: colors.border, true: colors.primary }}
+            thumbColor={colors.primaryText}
+          />
+        </View>
+        <View style={styles.retentionOptions}>
+          {RETENTION_OPTIONS.map((option) => {
+            const selected = state.retentionMode === option.id;
+            return (
+              <Pressable
+                key={option.id}
+                accessibilityRole="radio"
+                accessibilityState={{ selected }}
+                onPress={() => setRetentionMode(option.id)}
+                style={[styles.retentionOption, { backgroundColor: selected ? colors.card : 'transparent', borderColor: selected ? colors.primary : colors.border }]}
+              >
+                <Icon name={option.icon} size={17} color={selected ? colors.primary : colors.textMuted} />
+                <Text style={[styles.retentionOptionLabel, { color: selected ? colors.primary : colors.textSecondary }]}>{option.label}</Text>
+                <Text style={[styles.retentionOptionDetail, { color: colors.textMuted }]}>{option.detail}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <Text style={[styles.retentionHint, { color: colors.textMuted }]}>
+          {state.retentionMode === 'standard'
+            ? 'Off · Standard uses simple time-based intervals. Your review history is kept.'
+            : state.retentionMode === 'fsrs'
+              ? 'On · FSRS adapts difficulty, stability, and retrievability from your recorded reviews.'
+              : 'On · SM-2 adjusts each card’s ease factor and interval from your recall ratings.'}
+        </Text>
+        <Text style={[styles.retentionEvidence, { color: colors.textMuted }]}>Science note · Spaced retrieval supports long-term retention; schedulers guide timing but cannot guarantee memory.</Text>
       </Card>
 
       <SectionHeader title="About" />
@@ -157,4 +211,15 @@ const styles = StyleSheet.create({
   evidenceTitle: { fontSize: 12, fontWeight: '800' },
   evidenceText: { fontSize: 10, lineHeight: 14, marginTop: 2 },
   evidenceSource: { fontSize: 9, fontWeight: '700', marginTop: 4 },
+  retentionCard: { padding: 14 },
+  retentionTop: { flexDirection: 'row', alignItems: 'center', gap: 11 },
+  retentionIcon: { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  retentionTitle: { fontSize: 13, fontWeight: '800' },
+  retentionText: { fontSize: 10, lineHeight: 14, marginTop: 3 },
+  retentionOptions: { flexDirection: 'row', gap: 7, marginTop: 14 },
+  retentionOption: { flex: 1, minHeight: 67, borderRadius: 13, borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, paddingVertical: 8, gap: 2 },
+  retentionOptionLabel: { fontSize: 10, fontWeight: '900' },
+  retentionOptionDetail: { fontSize: 8, fontWeight: '700' },
+  retentionHint: { fontSize: 10, lineHeight: 15, marginTop: 11, paddingHorizontal: 2 },
+  retentionEvidence: { fontSize: 9, lineHeight: 14, marginTop: 7, paddingHorizontal: 2 },
 });

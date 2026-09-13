@@ -1,12 +1,11 @@
 import * as Clipboard from 'expo-clipboard';
 import React, { useEffect, useState } from 'react';
-import { Alert, Modal, Platform, Pressable, Share, StyleSheet, Text, View } from 'react-native';
+import { Alert, Modal, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '../AuthContext';
-import { Card, Icon, Pill, PrimaryButton } from './ui';
-import { useStudyBolt } from '../StudyBoltContext';
-import type { SharedStudyPackLink, StudyPack } from '../models';
+import type { CommunityClass, SharedStudyPackLink, SharedStudyPackVisibility, StudyPack } from '../models';
+import { listCommunityClasses } from '../services/community';
 import {
   createSharedStudyPack,
   isSharingBackendConfigured,
@@ -16,13 +15,25 @@ import {
   shareMessageFor,
   storeShareLink,
 } from '../services/sharing';
+import { useStudyBolt } from '../StudyBoltContext';
 import { radius } from '../theme';
+import { Card, Icon, Pill, PrimaryButton } from './ui';
+import type { IconName } from './ui';
 
-export function StudyPackShareSheet({ deck, visible, onClose }: { deck: StudyPack; visible: boolean; onClose: () => void }) {
+const VISIBILITIES: Array<{ id: SharedStudyPackVisibility; title: string; detail: string; icon: IconName }> = [
+  { id: 'private', title: 'Private', detail: 'Only me', icon: 'lock-outline' },
+  { id: 'link', title: 'Anyone with link', detail: 'People with the link can view and import it', icon: 'link-variant' },
+  { id: 'public', title: 'Public', detail: 'Eligible to appear in Discover', icon: 'earth' },
+];
+
+export function StudyPackShareSheet({ deck, visible, onClose, onRequireAuth }: { deck: StudyPack; visible: boolean; onClose: () => void; onRequireAuth?: () => void }) {
   const { colors, recordStudyEvent } = useStudyBolt();
   const { user, getAccessToken } = useAuth();
   const insets = useSafeAreaInsets();
   const [link, setLink] = useState<SharedStudyPackLink | null>(null);
+  const [visibility, setVisibility] = useState<SharedStudyPackVisibility>('private');
+  const [classes, setClasses] = useState<CommunityClass[]>([]);
+  const [classId, setClassId] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -34,224 +45,226 @@ export function StudyPackShareSheet({ deck, visible, onClose }: { deck: StudyPac
     setBusy(true);
     void loadStoredShareLink(deck.id).then((stored) => {
       setLink(stored);
+      setVisibility(stored?.visibility ?? 'private');
+      setClassId(stored?.classId);
       setBusy(false);
     });
-  }, [deck.id, visible]);
+    if (user && isSharingBackendConfigured) {
+      void listCommunityClasses({ limit: 8 }).then((classResult) => setClasses(classResult.data.filter((item) => item.joined)));
+    } else setClasses([]);
+  }, [deck.id, user, visible]);
 
-  const ensureLink = async (): Promise<SharedStudyPackLink | null> => {
-    if (link && !link.revokedAt) return link;
+  const creatorDisplayName = user?.user_metadata?.full_name
+    ?? user?.user_metadata?.name
+    ?? 'StudyBolt student';
+
+  const saveVisibility = async (): Promise<SharedStudyPackLink | null> => {
     if (!user) {
-      setError('Sign in to create a share link for your Study Pack.');
+      setError('Sign in to share or publish a Study Pack.');
       return null;
     }
+    if (visibility === 'private' && !link) {
+      onClose();
+      return null;
+    }
+    if (!isSharingBackendConfigured && link && link.visibility === visibility && link.classId === classId) return link;
     const accessToken = await getAccessToken();
     if (!accessToken) {
-      setError('Your session has expired. Sign in again to share this Study Pack.');
+      setError('Your session expired. Sign in again to manage sharing.');
       return null;
     }
     setBusy(true);
     setError(null);
-    const result = await createSharedStudyPack(deck, accessToken, user.id);
+    const result = await createSharedStudyPack(deck, accessToken, visibility, {
+      creatorDisplayName,
+      ...(visibility === 'public' && classId ? { classId } : {}),
+    });
+    setBusy(false);
     if (result.error || !result.link) {
-      setBusy(false);
-      setError(result.error ?? 'Could not create a share link. Please try again.');
+      setError(result.error ?? 'StudyBolt could not update sharing.');
       return null;
     }
+    const firstShare = !link;
     await storeShareLink(result.link);
     setLink(result.link);
-    setBusy(false);
-    recordStudyEvent({ type: 'share-link-created', deckId: deck.id, courseId: deck.courseId });
+    if (firstShare && visibility !== 'private') recordStudyEvent({ type: 'share-link-created', deckId: deck.id, courseId: deck.courseId });
     return result.link;
   };
 
-  const openShareSheet = async () => {
-    const nextLink = await ensureLink();
+  const openNativeShare = async () => {
+    if (visibility === 'private') {
+      setError('Choose “Anyone with link” or “Public” before sharing.');
+      return;
+    }
+    const nextLink = await saveVisibility();
     if (!nextLink) return;
-    setError(null);
     recordStudyEvent({ type: 'share-sheet-opened', deckId: deck.id, courseId: deck.courseId });
     try {
-      await Share.share({
-        message: shareMessageFor(deck, nextLink.url),
-        title: deck.title,
-        url: nextLink.url,
-      });
+      await Share.share({ message: shareMessageFor(deck, nextLink.url), title: deck.title, url: nextLink.url });
     } catch {
       setError('Could not open the share sheet. Please try again.');
     }
   };
 
   const copyLink = async () => {
-    const nextLink = await ensureLink();
+    if (visibility === 'private') return;
+    const nextLink = await saveVisibility();
     if (!nextLink) return;
     try {
       await Clipboard.setStringAsync(nextLink.url);
       setCopied(true);
-      setError(null);
-      setTimeout(() => setCopied(false), 2400);
+      setTimeout(() => setCopied(false), 2200);
     } catch {
-      setError('Could not copy the link. Try Share again and choose Copy Link.');
+      setError('Could not copy the link. Try the native share sheet instead.');
     }
   };
 
-  const disableLink = async () => {
+  const stopSharing = async () => {
     if (!link) return;
     const accessToken = await getAccessToken();
-    if (!accessToken) {
-      setError('Your session has expired. Sign in again to stop sharing.');
-      return;
-    }
+    if (!accessToken) return setError('Sign in again to stop sharing.');
     setBusy(true);
     const result = await revokeSharedStudyPack(link.token, accessToken);
-    if (result.error) {
-      setBusy(false);
-      setError(result.error);
-      return;
-    }
+    setBusy(false);
+    if (result.error) return setError(result.error);
     await markShareLinkRevoked(link);
     setLink(null);
-    setBusy(false);
+    setVisibility('private');
+    setClassId(undefined);
     setError(null);
   };
 
-  const requestDisable = () => {
-    if (Platform.OS === 'web') {
-      void disableLink();
-      return;
-    }
-    Alert.alert('Stop sharing this Study Pack?', 'Anyone with the current link will lose access. You can create a new link later.', [
-      { text: 'Keep link', style: 'cancel' },
-      { text: 'Stop sharing', style: 'destructive', onPress: () => void disableLink() },
+  const confirmStopSharing = () => {
+    if (Platform.OS === 'web') return void stopSharing();
+    Alert.alert('Stop sharing this Study Pack?', 'The current link will stop working and it will leave Discover.', [
+      { text: 'Keep sharing', style: 'cancel' },
+      { text: 'Stop sharing', style: 'destructive', onPress: () => void stopSharing() },
     ]);
   };
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={[styles.modalRoot, { backgroundColor: colors.mode === 'dark' ? 'rgba(0,0,0,0.68)' : 'rgba(17,28,78,0.32)' }]}>
+      <View style={[styles.modalRoot, { backgroundColor: colors.mode === 'dark' ? 'rgba(0,0,0,0.72)' : 'rgba(17,28,78,0.34)' }]}>
         <Pressable accessibilityLabel="Close share dialog" onPress={onClose} style={StyleSheet.absoluteFill} />
         <View style={[styles.sheet, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow, paddingBottom: Math.max(insets.bottom, 18) }]}>
           <View style={[styles.handle, { backgroundColor: colors.border }]} />
           <View style={styles.headingRow}>
-            <View style={[styles.headingIcon, { backgroundColor: colors.primarySoft }]}>
-              <Icon name="share-variant" size={23} color={colors.primary} />
-            </View>
-            <View style={styles.headingCopy}>
-              <Text style={[styles.title, { color: colors.text }]}>Share Study Pack</Text>
-              <Text numberOfLines={1} style={[styles.subtitle, { color: colors.textSecondary }]}>{deck.title}</Text>
-            </View>
-            <Pressable accessibilityLabel="Close" onPress={onClose} hitSlop={10} style={styles.closeButton}>
-              <Icon name="close" size={22} color={colors.textMuted} />
-            </Pressable>
+            <View style={[styles.headingIcon, { backgroundColor: colors.primarySoft }]}><Icon name="share-variant" size={23} color={colors.primary} /></View>
+            <View style={styles.headingCopy}><Text style={[styles.title, { color: colors.text }]}>Share Study Pack</Text><Text numberOfLines={1} style={[styles.subtitle, { color: colors.textSecondary }]}>{deck.title}</Text></View>
+            <Pressable accessibilityLabel="Close" onPress={onClose} hitSlop={10} style={styles.closeButton}><Icon name="close" size={22} color={colors.textMuted} /></Pressable>
           </View>
 
-          <View style={[styles.privacyCard, { backgroundColor: colors.mintSoft }]}>
-            <Icon name="shield-check-outline" size={20} color={colors.mint} />
-            <View style={styles.privacyCopy}>
-              <Text style={[styles.privacyTitle, { color: colors.text }]}>Study material only</Text>
-              <Text style={[styles.privacyText, { color: colors.textSecondary }]}>Notes, cards, quiz content, and quick review are shared. Your mastery and history stay private.</Text>
-            </View>
-          </View>
+          <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+            <View style={[styles.privacyCard, { backgroundColor: colors.mintSoft }]}><Icon name="shield-check-outline" size={20} color={colors.mint} /><View style={styles.privacyCopy}><Text style={[styles.privacyTitle, { color: colors.text }]}>Your progress stays private</Text><Text style={[styles.privacyText, { color: colors.textSecondary }]}>Only generated notes, cards, quiz content, and quick review are copied. Source files, history, and mastery are excluded.</Text></View></View>
 
-          {!user ? (
-            <View style={[styles.notice, { backgroundColor: colors.primarySoft }]}>
-              <Icon name="account-lock-outline" size={19} color={colors.primary} />
-              <Text style={[styles.noticeText, { color: colors.textSecondary }]}>Sign in to create and manage a share link.</Text>
-            </View>
-          ) : null}
-          {!isSharingBackendConfigured ? (
-            <View style={[styles.notice, { backgroundColor: colors.cardStrong }]}>
-              <Icon name="cloud-alert-outline" size={19} color={colors.textMuted} />
-              <Text style={[styles.noticeText, { color: colors.textSecondary }]}>Link sharing needs the StudyBolt backend connection.</Text>
-            </View>
-          ) : null}
-          {error ? (
-            <View style={[styles.notice, { backgroundColor: `${colors.danger}14` }]}>
-              <Icon name="alert-circle-outline" size={19} color={colors.danger} />
-              <Text style={[styles.noticeText, { color: colors.danger }]}>{error}</Text>
-            </View>
-          ) : null}
+            {!user ? <Notice icon="account-lock-outline" text="Sign in to create and manage sharing." tone="primary" /> : null}
+            {!isSharingBackendConfigured ? <Notice icon="cloud-alert-outline" text="Sharing needs the secure StudyBolt backend connection." tone="neutral" /> : null}
+            {error ? <Notice icon="alert-circle-outline" text={error} tone="danger" /> : null}
 
-          {link ? (
-            <Card style={[styles.activeCard, { backgroundColor: colors.backgroundRaised }]}>
-              <View style={styles.activeTop}>
-                <View style={[styles.activeIcon, { backgroundColor: colors.mintSoft }]}><Icon name="link-variant" size={19} color={colors.mint} /></View>
-                <View style={styles.activeCopy}>
-                  <View style={styles.activeLabelRow}><Text style={[styles.activeTitle, { color: colors.text }]}>Link active</Text><Pill label="Anyone with the link" tone="mint" /></View>
-                  <Text numberOfLines={1} style={[styles.linkText, { color: colors.textMuted }]}>{link.url}</Text>
-                </View>
-              </View>
-              <View style={styles.actionRow}>
-                <Pressable accessibilityRole="button" onPress={() => void copyLink()} style={[styles.secondaryAction, { backgroundColor: colors.primarySoft }]}>
-                  <Icon name="content-copy" size={18} color={colors.primary} />
-                  <Text style={[styles.secondaryActionText, { color: colors.primary }]}>{copied ? 'Copied' : 'Copy link'}</Text>
-                </Pressable>
-                <Pressable accessibilityRole="button" onPress={() => void openShareSheet()} style={[styles.secondaryAction, { backgroundColor: colors.cardStrong }]}>
-                  <Icon name="share-variant" size={18} color={colors.textSecondary} />
-                  <Text style={[styles.secondaryActionText, { color: colors.textSecondary }]}>Share again</Text>
-                </Pressable>
-              </View>
-              <Pressable accessibilityRole="button" disabled={busy} onPress={requestDisable} style={styles.disableAction}>
-                <Icon name="link-off" size={17} color={colors.danger} />
-                <Text style={[styles.disableText, { color: colors.danger }]}>Stop sharing</Text>
-              </Pressable>
-            </Card>
-          ) : (
-            <View style={[styles.createCard, { backgroundColor: colors.primarySoft }]}>
-              <View style={styles.privateState}><Icon name="lock-outline" size={16} color={colors.textSecondary} /><Text style={[styles.privateStateText, { color: colors.textSecondary }]}>Private until you create a link</Text></View>
-              <View style={[styles.createIcon, { backgroundColor: colors.card }]}><Icon name="send-outline" size={23} color={colors.primary} /></View>
-              <Text style={[styles.createTitle, { color: colors.text }]}>Send this pack to someone</Text>
-              <Text style={[styles.createText, { color: colors.textSecondary }]}>Create a private link, then use Messages, WhatsApp, Mail, AirDrop, or Copy Link.</Text>
+            <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>VISIBILITY</Text>
+            <View style={styles.visibilityList}>
+              {VISIBILITIES.map((item) => {
+                const selected = visibility === item.id;
+                return (
+                  <Pressable key={item.id} accessibilityRole="radio" accessibilityState={{ checked: selected }} onPress={() => setVisibility(item.id)} style={[styles.visibility, { backgroundColor: selected ? colors.primarySoft : colors.cardStrong, borderColor: selected ? colors.primary : colors.border }]}>
+                    <View style={[styles.visibilityIcon, { backgroundColor: colors.card }]}><Icon name={item.icon} size={20} color={selected ? colors.primary : colors.textMuted} /></View>
+                    <View style={styles.visibilityCopy}><Text style={[styles.visibilityTitle, { color: colors.text }]}>{item.title}</Text><Text style={[styles.visibilityDetail, { color: colors.textSecondary }]}>{item.detail}</Text></View>
+                    <View style={[styles.radio, { borderColor: selected ? colors.primary : colors.border }]}>{selected ? <View style={[styles.radioDot, { backgroundColor: colors.primary }]} /> : null}</View>
+                  </Pressable>
+                );
+              })}
             </View>
-          )}
+
+            {visibility === 'public' ? (
+              <View style={styles.classSection}>
+                <View style={styles.classHeading}><Text style={[styles.sectionLabel, { color: colors.textMuted, marginTop: 0 }]}>CLASS · OPTIONAL</Text>{classId ? <Pressable onPress={() => setClassId(undefined)}><Text style={[styles.clearClass, { color: colors.primary }]}>Clear</Text></Pressable> : null}</View>
+                {classes.length ? (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.classChips}>
+                    {classes.map((item) => {
+                      const selected = classId === item.id;
+                      return <Pressable key={item.id} onPress={() => setClassId(item.id)} style={[styles.classChip, { backgroundColor: selected ? colors.mintSoft : colors.cardStrong, borderColor: selected ? colors.mint : colors.border }]}><Text style={[styles.classChipCode, { color: selected ? colors.mint : colors.text }]}>{item.courseCode}</Text><Text numberOfLines={1} style={[styles.classChipName, { color: colors.textMuted }]}>{item.courseName}</Text></Pressable>;
+                    })}
+                  </ScrollView>
+                ) : <Text style={[styles.classEmpty, { color: colors.textMuted }]}>Join a class in Discover to associate this public set.</Text>}
+              </View>
+            ) : null}
+
+            {link && visibility !== 'private' ? (
+              <Card style={[styles.activeCard, { backgroundColor: colors.backgroundRaised }]}>
+                <View style={styles.activeTop}><View style={[styles.activeIcon, { backgroundColor: visibility === 'public' ? colors.purpleSoft : colors.mintSoft }]}><Icon name={visibility === 'public' ? 'earth' : 'link-variant'} size={19} color={visibility === 'public' ? colors.purple : colors.mint} /></View><View style={styles.activeCopy}><View style={styles.activeLabelRow}><Text style={[styles.activeTitle, { color: colors.text }]}>{visibility === 'public' ? 'Public set' : 'Link active'}</Text><Pill label={visibility === 'public' ? 'Discover eligible' : 'Anyone with link'} tone={visibility === 'public' ? 'purple' : 'mint'} /></View><Text numberOfLines={1} style={[styles.linkText, { color: colors.textMuted }]}>{link.url}</Text></View></View>
+                <View style={styles.actionRow}><Pressable onPress={() => void copyLink()} style={[styles.secondaryAction, { backgroundColor: colors.primarySoft }]}><Icon name="content-copy" size={18} color={colors.primary} /><Text style={[styles.secondaryActionText, { color: colors.primary }]}>{copied ? 'Copied' : 'Copy link'}</Text></Pressable><Pressable onPress={() => void openNativeShare()} style={[styles.secondaryAction, { backgroundColor: colors.cardStrong }]}><Icon name="share-variant" size={18} color={colors.textSecondary} /><Text style={[styles.secondaryActionText, { color: colors.textSecondary }]}>Share</Text></Pressable></View>
+              </Card>
+            ) : null}
+          </ScrollView>
 
           <PrimaryButton
-            label={link ? 'Open share sheet' : user ? 'Create share link' : 'Sign in to share'}
-            icon={link ? 'share-variant' : user ? 'link-plus' : 'account-arrow-right-outline'}
-            onPress={link ? () => void openShareSheet() : user ? () => void openShareSheet() : onClose}
+            label={!user ? 'Sign in to share' : visibility === 'private' ? link ? 'Save as private' : 'Keep private' : link ? 'Save & share' : 'Create & share'}
+            icon={!user ? 'account-arrow-right-outline' : visibility === 'private' ? 'lock-outline' : 'share-variant'}
+            onPress={() => !user ? onRequireAuth?.() : visibility === 'private' ? void saveVisibility() : void openNativeShare()}
             loading={busy}
-            disabled={!user || (!isSharingBackendConfigured && !link)}
+            disabled={!user ? !onRequireAuth : (!isSharingBackendConfigured && Boolean(link) === false)}
             style={styles.primaryAction}
           />
-          {!link && !user ? <Text style={[styles.helper, { color: colors.textMuted }]}>Your recipient can still preview a link after you sign in.</Text> : null}
+          {link ? <Pressable disabled={busy} onPress={confirmStopSharing} style={styles.stopAction}><Icon name="link-off" size={17} color={colors.danger} /><Text style={[styles.stopText, { color: colors.danger }]}>Disable current share link</Text></Pressable> : null}
         </View>
       </View>
     </Modal>
   );
 }
 
+function Notice({ icon, text, tone }: { icon: IconName; text: string; tone: 'primary' | 'neutral' | 'danger' }) {
+  const { colors } = useStudyBolt();
+  const color = tone === 'danger' ? colors.danger : tone === 'primary' ? colors.primary : colors.textMuted;
+  const background = tone === 'danger' ? `${colors.danger}14` : tone === 'primary' ? colors.primarySoft : colors.cardStrong;
+  return <View style={[styles.notice, { backgroundColor: background }]}><Icon name={icon} size={19} color={color} /><Text style={[styles.noticeText, { color: tone === 'danger' ? colors.danger : colors.textSecondary }]}>{text}</Text></View>;
+}
+
 const styles = StyleSheet.create({
   modalRoot: { flex: 1, justifyContent: 'flex-end' },
-  sheet: { borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 20, paddingTop: 10, shadowOffset: { width: 0, height: -8 }, shadowOpacity: 0.16, shadowRadius: 24, elevation: 12 },
-  handle: { alignSelf: 'center', width: 42, height: 4, borderRadius: 4, marginBottom: 17 },
+  sheet: { width: '100%', maxWidth: 560, alignSelf: 'center', maxHeight: '94%', borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 20, paddingTop: 10, shadowOffset: { width: 0, height: -8 }, shadowOpacity: 0.16, shadowRadius: 24, elevation: 12 },
+  handle: { alignSelf: 'center', width: 42, height: 4, borderRadius: 4, marginBottom: 16 },
   headingRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   headingIcon: { width: 46, height: 46, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
-  headingCopy: { flex: 1 },
+  headingCopy: { flex: 1, minWidth: 0 },
   title: { fontSize: 21, lineHeight: 26, fontWeight: '900', letterSpacing: -0.5 },
-  subtitle: { fontSize: 13, marginTop: 2 },
+  subtitle: { fontSize: 12, marginTop: 2 },
   closeButton: { width: 34, height: 34, alignItems: 'flex-end', justifyContent: 'center' },
-  privacyCard: { flexDirection: 'row', gap: 10, padding: 13, borderRadius: radius.md, marginTop: 19 },
+  scroll: { marginTop: 11 },
+  scrollContent: { paddingBottom: 6 },
+  privacyCard: { flexDirection: 'row', gap: 10, padding: 13, borderRadius: radius.md },
   privacyCopy: { flex: 1, gap: 2 },
   privacyTitle: { fontSize: 12, fontWeight: '900' },
-  privacyText: { fontSize: 11, lineHeight: 16 },
-  notice: { flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 13, marginTop: 10 },
-  noticeText: { flex: 1, fontSize: 11, lineHeight: 16, fontWeight: '700' },
-  createCard: { alignItems: 'center', padding: 17, borderRadius: radius.md, marginTop: 14 },
-  privateState: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 12 },
-  privateStateText: { fontSize: 10, fontWeight: '800' },
-  createIcon: { width: 46, height: 46, borderRadius: 15, alignItems: 'center', justifyContent: 'center', marginBottom: 9 },
-  createTitle: { fontSize: 15, fontWeight: '900' },
-  createText: { fontSize: 11, lineHeight: 16, textAlign: 'center', marginTop: 4 },
+  privacyText: { fontSize: 10, lineHeight: 15 },
+  notice: { flexDirection: 'row', alignItems: 'center', gap: 9, padding: 11, borderRadius: 13, marginTop: 9 },
+  noticeText: { flex: 1, fontSize: 10, lineHeight: 15, fontWeight: '700' },
+  sectionLabel: { fontSize: 9, fontWeight: '900', letterSpacing: 0.8, marginTop: 16, marginBottom: 8 },
+  visibilityList: { gap: 8 },
+  visibility: { minHeight: 62, borderRadius: 15, borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 11, padding: 9 },
+  visibilityIcon: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  visibilityCopy: { flex: 1 },
+  visibilityTitle: { fontSize: 12, fontWeight: '900' },
+  visibilityDetail: { fontSize: 9, lineHeight: 13, marginTop: 2 },
+  radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
+  radioDot: { width: 10, height: 10, borderRadius: 5 },
+  classSection: { marginTop: 1 },
+  classHeading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, marginBottom: 8 },
+  clearClass: { fontSize: 9, fontWeight: '900' },
+  classChips: { gap: 8 },
+  classChip: { width: 125, minHeight: 54, borderRadius: 14, borderWidth: 1, justifyContent: 'center', paddingHorizontal: 11 },
+  classChipCode: { fontSize: 11, fontWeight: '900' },
+  classChipName: { fontSize: 8, marginTop: 3 },
+  classEmpty: { fontSize: 9, lineHeight: 14 },
   activeCard: { marginTop: 14, padding: 13 },
   activeTop: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   activeIcon: { width: 39, height: 39, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   activeCopy: { flex: 1, minWidth: 0 },
   activeLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  activeTitle: { fontSize: 13, fontWeight: '900' },
-  linkText: { fontSize: 10, marginTop: 4 },
-  actionRow: { flexDirection: 'row', gap: 8, marginTop: 14 },
-  secondaryAction: { flex: 1, minHeight: 44, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
-  secondaryActionText: { fontSize: 12, fontWeight: '900' },
-  disableAction: { alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 39, marginTop: 4 },
-  disableText: { fontSize: 11, fontWeight: '800' },
-  primaryAction: { marginTop: 14 },
-  helper: { fontSize: 10, lineHeight: 15, textAlign: 'center', marginTop: 8 },
+  activeTitle: { fontSize: 12, fontWeight: '900' },
+  linkText: { fontSize: 9, marginTop: 4 },
+  actionRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  secondaryAction: { flex: 1, minHeight: 42, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  secondaryActionText: { fontSize: 11, fontWeight: '900' },
+  primaryAction: { marginTop: 10 },
+  stopAction: { alignSelf: 'center', minHeight: 39, flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
+  stopText: { fontSize: 10, fontWeight: '800' },
 });

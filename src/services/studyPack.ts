@@ -20,6 +20,7 @@ export function combineStudyPacks(decks: StudyPack[]): StudyPack {
     quickReview: decks.map((deck) => `${deck.title}. ${deck.quickReview}`).join('\n\n'),
     outline: decks.map((deck, index) => ({ id: `review-outline-${stamp}-${deck.id}`, title: deck.title, range: `Deck ${index + 1} · ${deck.pageCount} slides` })),
     notes: decks.flatMap((deck) => deck.notes.map((note) => ({ ...note, id: `${deck.id}-${note.id}`, title: `${deck.title} · ${note.title}` }))),
+    detailedNotes: decks.flatMap((deck) => deck.detailedNotes.map((note) => ({ ...note, id: `${deck.id}-${note.id}`, title: `${deck.title} · ${note.title}` }))),
     flashcards: decks.flatMap((deck) => deck.flashcards.map((card) => ({ ...card, id: `${deck.id}-${card.id}`, confidence: 'new' as const }))),
     quiz: decks.flatMap((deck) => deck.quiz.map((question) => ({ ...question, id: `${deck.id}-${question.id}` }))),
     quizAttempts: [],

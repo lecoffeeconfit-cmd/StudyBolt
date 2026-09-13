@@ -67,6 +67,10 @@ function scheduledDays(modality: StudyModality, durationDays: number): number[] 
 }
 
 export function buildStudyPlan(decks: StudyPack[], options: StudyPlanOptions): StudyPlan {
+  const createdAt = new Date();
+  const targetDate = new Date(createdAt);
+  targetDate.setDate(targetDate.getDate() + options.durationDays - 1);
+  targetDate.setHours(23, 59, 59, 999);
   const modalities = [...new Set(options.modalities)].sort((a, b) => MODALITY_ORDER[a] - MODALITY_ORDER[b]);
   const estimates = estimateStudyMinutesByModality(decks, options.quizQuestionCount);
   const dayBlocks: StudyPlanDay['blocks'][] = Array.from({ length: options.durationDays }, () => []);
@@ -85,11 +89,11 @@ export function buildStudyPlan(decks: StudyPack[], options: StudyPlanOptions): S
       });
       return;
     }
-    const days = scheduledDays(modality, options.durationDays);
-    const baseMinutes = Math.max(5, Math.floor(estimates[modality] / days.length));
+    const days = scheduledDays(modality, options.durationDays).slice(0, Math.max(1, Math.floor(estimates[modality])));
     let remaining = estimates[modality];
     days.forEach((dayIndex, sessionIndex) => {
-      const minutes = sessionIndex === days.length - 1 ? remaining : baseMinutes;
+      const sessionsLeft = days.length - sessionIndex;
+      const minutes = sessionIndex === days.length - 1 ? remaining : Math.max(1, Math.floor(remaining / sessionsLeft));
       remaining -= minutes;
       dayBlocks[dayIndex]?.push({
         id: `day-${dayIndex}-${modality}-${sessionIndex}`,
@@ -103,8 +107,11 @@ export function buildStudyPlan(decks: StudyPack[], options: StudyPlanOptions): S
 
   const days = dayBlocks.map((blocks, index) => {
     const sorted = blocks.sort((a, b) => MODALITY_ORDER[a.modality] - MODALITY_ORDER[b.modality]);
+    const date = new Date(createdAt);
+    date.setDate(date.getDate() + index);
     return {
       id: `plan-day-${index}`,
+      date: date.toISOString(),
       label: index === 0 ? 'Today' : index === 1 ? 'Tomorrow' : `Day ${index + 1}`,
       subtitle: index === options.durationDays - 1
         ? 'Cumulative check and weak-spot review'
@@ -120,6 +127,8 @@ export function buildStudyPlan(decks: StudyPack[], options: StudyPlanOptions): S
   });
 
   return {
+    createdAt: createdAt.toISOString(),
+    targetDate: targetDate.toISOString(),
     durationDays: options.durationDays,
     scope: options.scope,
     modalities,
@@ -133,4 +142,57 @@ export function getPlanProgress(plan: StudyPlan): number {
   const blocks = plan.days.flatMap((day) => day.blocks);
   if (!blocks.length) return 0;
   return Math.round((blocks.filter((block) => block.complete).length / blocks.length) * 100);
+}
+
+/** Moves unfinished work from elapsed calendar days onto the lightest remaining days. */
+export function rebalanceMissedStudyPlan(plan: StudyPlan, now = new Date()): StudyPlan {
+  const hasInvalidMinutes = plan.days.some((day) => day.blocks.some((block) => block.minutes < 1)
+    || day.minutes !== day.blocks.reduce((sum, block) => sum + Math.max(1, block.minutes), 0));
+  if (hasInvalidMinutes) {
+    return {
+      ...plan,
+      days: plan.days.map((day) => {
+        const blocks = day.blocks.map((block) => ({ ...block, minutes: Math.max(1, block.minutes) }));
+        return { ...day, blocks, minutes: blocks.reduce((sum, block) => sum + block.minutes, 0) };
+      }),
+    };
+  }
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  const missedIndexes = plan.days.flatMap((day, index) => {
+    if (!day.date || !day.blocks.some((block) => !block.complete)) return [];
+    const date = new Date(day.date);
+    date.setHours(0, 0, 0, 0);
+    return +date < +today ? [index] : [];
+  });
+  const futureIndexes = plan.days.flatMap((day, index) => {
+    if (!day.date) return [];
+    const date = new Date(day.date);
+    date.setHours(0, 0, 0, 0);
+    return +date >= +today ? [index] : [];
+  });
+  if (!missedIndexes.length || !futureIndexes.length) return plan;
+
+  const days = plan.days.map((day) => ({ ...day, blocks: [...day.blocks] }));
+  const missedBlocks = missedIndexes.flatMap((index) => {
+    const day = days[index]!;
+    const incomplete = day.blocks.filter((block) => !block.complete);
+    day.blocks = day.blocks.filter((block) => block.complete);
+    day.minutes = day.blocks.reduce((sum, block) => sum + block.minutes, 0);
+    day.complete = day.blocks.length > 0 && day.blocks.every((block) => block.complete);
+    day.subtitle = incomplete.length ? 'Missed work moved forward automatically' : day.subtitle;
+    return incomplete;
+  });
+
+  missedBlocks.forEach((block, blockIndex) => {
+    const targetIndex = [...futureIndexes].sort((a, b) => days[a]!.minutes - days[b]!.minutes)[0];
+    if (targetIndex === undefined) return;
+    const target = days[targetIndex]!;
+    target.blocks.push({ ...block, id: `${block.id}-catchup-${target.id}-${blockIndex}`, label: `Catch up · ${block.label}` });
+    target.minutes = target.blocks.reduce((sum, item) => sum + item.minutes, 0);
+    target.complete = false;
+    target.subtitle = targetIndex === futureIndexes[0] ? 'Rebalanced from a missed session' : target.subtitle;
+  });
+
+  return { ...plan, days };
 }

@@ -11,6 +11,7 @@ import {
   openProviderSignIn,
   refreshAuthSession,
   requestPasswordReset,
+  resendSignupConfirmation,
   signInWithEmail,
   signOutAccount,
   supabase,
@@ -29,6 +30,7 @@ interface AuthContextValue {
   signUp: (email: string, password: string) => Promise<AuthResult>;
   signInWithProvider: (provider: AuthProviderName) => Promise<AuthResult>;
   forgotPassword: (email: string) => Promise<AuthResult>;
+  resendConfirmationEmail: (email: string) => Promise<AuthResult>;
   changeEmail: (email: string) => Promise<AuthResult>;
   changePassword: (password: string) => Promise<AuthResult>;
   signOut: () => Promise<void>;
@@ -124,6 +126,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     signInWithProvider: openProviderSignIn,
     forgotPassword: requestPasswordReset,
+    resendConfirmationEmail: resendSignupConfirmation,
     changeEmail: async (email) => {
       const current = await activeSession();
       return current ? updateAccountEmail(current, email) : { error: 'Please sign in again to change your email.' };

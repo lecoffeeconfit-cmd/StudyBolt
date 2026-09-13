@@ -37,49 +37,280 @@ const biology: StudyPack = {
     {
       id: 'note-cell-theory',
       title: 'Cell Theory',
+      summary: 'Cell theory explains what living things are made of and how new cells arise.',
       bullets: [
         'All living organisms are made of one or more cells.',
         'The cell is the basic unit of structure and organization in living things.',
         'All new cells arise from pre-existing cells.',
       ],
       keyIdea: 'Cell theory links every organism through the same basic unit: the cell.',
+      recallPrompts: ['What are the three claims of cell theory?', 'Why does “new cells come from existing cells” matter for continuity of life?'],
       source: { sectionId: 'cell-intro', label: 'Slides 2–4' },
     },
     {
       id: 'note-membrane',
       title: 'The Cell Membrane',
+      summary: 'The plasma membrane is a flexible, selectively permeable boundary whose structure controls exchange.',
       bullets: [
         'A selectively permeable phospholipid bilayer separates the cell from its environment.',
         'Hydrophilic heads face the fluid inside and outside the cell; hydrophobic tails face inward.',
         'Membrane proteins support transport, signaling, recognition, and attachment.',
       ],
       keyIdea: 'Structure explains function: the bilayer forms a flexible barrier while proteins handle specialized tasks.',
+      recallPrompts: ['Sketch the bilayer and label which parts face water.', 'How does membrane structure make selective transport possible?'],
       source: { sectionId: 'membrane', label: 'Slides 5–10' },
+    },
+    {
+      id: 'note-organelles',
+      title: 'Organelles: Structure Meets Function',
+      summary: 'Organelles divide the cell’s work into specialized but connected jobs.',
+      bullets: [
+        'Nucleus — stores DNA and directs cell activity.',
+        'Ribosome — assembles amino acids into proteins.',
+        'Mitochondrion — produces most cellular ATP through cellular respiration.',
+        'Rough ER modifies proteins; smooth ER helps synthesize lipids.',
+        'Golgi apparatus modifies, sorts, and packages proteins and lipids; lysosomes digest materials.',
+        'Plant cells use chloroplasts for photosynthesis and a cell wall for structural support.',
+      ],
+      keyIdea: 'Learn organelles as a coordinated system, not as an isolated vocabulary list.',
+      recallPrompts: ['Trace a protein from genetic instructions to packaging.', 'Which structures distinguish the plant-cell functions described here?'],
+      source: { sectionId: 'organelles', label: 'Slides 11–20' },
     },
     {
       id: 'note-transport',
       title: 'Moving Across the Membrane',
+      summary: 'Transport is classified by the direction of the concentration gradient and whether cellular energy is required.',
       bullets: [
         'Passive transport moves material down its concentration gradient and does not require cellular energy.',
         'Diffusion, facilitated diffusion, and osmosis are forms of passive transport.',
         'Active transport requires energy, usually ATP, to move material against a concentration gradient.',
       ],
       keyIdea: 'Ask two questions: Which direction is the gradient, and is ATP required?',
-      source: { sectionId: 'processes', label: 'Slides 21–27' },
+      recallPrompts: ['Compare passive and active transport without looking.', 'Why does movement against a gradient require energy?'],
+      source: { sectionId: 'processes', label: 'Slides 21–32' },
+    },
+    {
+      id: 'note-review',
+      title: 'Putting the Cell System Together',
+      summary: 'Cell survival depends on coordinated boundaries, information, energy, production, transport, and recycling.',
+      bullets: [
+        'The membrane regulates exchange while organelles carry out specialized internal work.',
+        'DNA instructions, protein synthesis, modification, packaging, and energy production operate as a connected system.',
+        'The most useful review strategy is to connect each structure to its function and to the processes it supports.',
+      ],
+      keyIdea: 'A complete explanation links structures together instead of memorizing each one alone.',
+      recallPrompts: ['Explain how three organelles cooperate to make and deliver a protein.', 'Build a structure → function → process chain for the cell membrane.'],
+      source: { sectionId: 'review', label: 'Slides 33–42' },
+    },
+  ],
+  detailedNotes: [
+    {
+      id: 'note-cell-theory',
+      title: 'Cell Theory and the Organization of Life',
+      summary: 'Cell theory provides a shared framework for describing the composition, organization, and continuity of all living things.',
+      bullets: [
+        'Every organism contains one or more cells.',
+        'A cell is the smallest basic unit that provides biological structure and organization.',
+        'Cellular continuity depends on new cells arising from cells that already exist.',
+      ],
+      sections: [
+        {
+          heading: 'The three claims',
+          points: [
+            'Composition: all living things are composed of one or more cells.',
+            'Organization: the cell is the basic unit of structure and organization in organisms.',
+            'Continuity: new cells arise from pre-existing cells rather than appearing independently.',
+          ],
+        },
+        {
+          heading: 'How the claims work together',
+          points: [
+            'The first two claims connect organisms of every size through a common structural unit.',
+            'The third claim explains how cellular life continues as existing cells produce new cells.',
+            'Together, the claims describe both what living systems are made of and how their basic units persist over time.',
+          ],
+        },
+      ],
+      connections: [
+        'Cell theory is the organizing idea for the rest of the lecture: membranes and organelles explain how the basic unit of life functions.',
+      ],
+      examples: ['A multicellular organism contains many cells, while a single-celled organism still satisfies cell theory with one cell.'],
+      keyIdea: 'Do not memorize the claims as three isolated lines—connect composition, organization, and continuity.',
+      recallPrompts: ['State all three claims from memory, then explain how each answers a different question about life.', 'How does cell theory prepare you to study membranes and organelles?'],
+      source: { sectionId: 'cell-intro', label: 'Slides 1–4' },
+    },
+    {
+      id: 'note-membrane',
+      title: 'Plasma Membrane: Architecture and Selectivity',
+      summary: 'The plasma membrane’s phospholipid arrangement creates a flexible boundary, while embedded proteins add specialized control and communication functions.',
+      bullets: [
+        'The membrane is a selectively permeable phospholipid bilayer.',
+        'Water-attracting heads face fluid; water-repelling tails face inward.',
+        'Membrane proteins extend the boundary’s role beyond a simple barrier.',
+      ],
+      sections: [
+        {
+          heading: 'Bilayer organization',
+          points: [
+            'A phospholipid has a hydrophilic head and hydrophobic tails.',
+            'Because the cell interior and exterior are watery, heads orient toward fluid on both sides.',
+            'The hydrophobic tails turn away from water and face one another inside the bilayer.',
+            'This arrangement produces a continuous, flexible boundary between the cell and its environment.',
+          ],
+        },
+        {
+          heading: 'Selective permeability',
+          points: [
+            'Selective permeability means some substances cross more readily than others.',
+            'The phospholipid interior forms the basic barrier, so exchange is controlled rather than unrestricted.',
+            'Embedded proteins support specialized transport, signaling, recognition, and attachment roles.',
+          ],
+        },
+      ],
+      connections: [
+        'Membrane architecture creates the conditions for passive and active transport.',
+        'Selective exchange helps the cell maintain an internal environment that differs from its surroundings.',
+      ],
+      examples: ['When a substance cannot pass freely through the bilayer, a membrane transport protein may provide a selective route.'],
+      keyIdea: 'The membrane’s function follows from its structure: the bilayer forms the boundary and proteins provide specialized pathways and signals.',
+      recallPrompts: ['Draw and label the bilayer from memory, including the watery environments on both sides.', 'Explain why “selectively permeable” is more accurate than “sealed.”'],
+      source: { sectionId: 'membrane', label: 'Slides 5–10' },
     },
     {
       id: 'note-organelles',
-      title: 'Organelles: Structure Meets Function',
+      title: 'Organelles as a Coordinated Cellular System',
+      summary: 'Organelles specialize in information storage, synthesis, energy conversion, packaging, digestion, and—within plant cells—photosynthesis and structural support.',
       bullets: [
-        'Nucleus — stores DNA and directs cell activity.',
-        'Ribosome — assembles amino acids into proteins.',
-        'Mitochondrion — produces most cellular ATP through cellular respiration.',
-        'Golgi apparatus — modifies, sorts, and packages proteins and lipids.',
-        'Lysosome — uses enzymes to break down macromolecules and worn-out cell parts.',
-        'Chloroplast — converts light energy into chemical energy in plant cells.',
+        'The nucleus stores DNA; ribosomes use genetic instructions to synthesize proteins.',
+        'The ER and Golgi process cellular products, while mitochondria supply most cellular ATP.',
+        'Lysosomes digest material; chloroplasts and cell walls support plant-specific functions described in the lecture.',
       ],
-      keyIdea: 'Learn organelles as a coordinated system, not as an isolated vocabulary list.',
+      sections: [
+        {
+          heading: 'Information and protein production',
+          points: [
+            'The nucleus stores DNA and directs cell activity through genetic information.',
+            'Ribosomes assemble amino acids into proteins.',
+            'The rough endoplasmic reticulum modifies proteins associated with its ribosomes.',
+            'The Golgi apparatus further modifies, sorts, and packages proteins and lipids for delivery.',
+          ],
+        },
+        {
+          heading: 'Energy and lipid synthesis',
+          points: [
+            'Mitochondria produce most cellular ATP through cellular respiration.',
+            'ATP provides usable energy for cellular work, including energy-requiring transport.',
+            'The smooth endoplasmic reticulum helps synthesize lipids.',
+          ],
+        },
+        {
+          heading: 'Digestion and plant-cell structures',
+          points: [
+            'Lysosomes contain digestive enzymes that break down macromolecules and worn-out cell parts.',
+            'Chloroplasts carry out photosynthesis, converting light energy into chemical energy in plant cells.',
+            'A plant cell wall provides structural support outside the plasma membrane.',
+          ],
+        },
+      ],
+      connections: [
+        'A useful protein pathway is nucleus → ribosome → rough ER → Golgi → destination.',
+        'Mitochondrial ATP links energy production to active transport and other cellular work.',
+        'The membrane controls exchange for the whole cell while organelles manage specialized internal tasks.',
+      ],
+      examples: ['A protein intended for delivery is assembled by a ribosome, modified through the rough ER and Golgi, then packaged for transport.'],
+      keyIdea: 'Study organelles as an interacting network: ask what each structure contributes and which structure acts next.',
+      recallPrompts: ['Reconstruct the protein pathway and state the job performed at each step.', 'Compare the roles of mitochondria and chloroplasts.', 'Which organelle handles digestion, and what does it break down?'],
       source: { sectionId: 'organelles', label: 'Slides 11–20' },
+    },
+    {
+      id: 'note-transport',
+      title: 'Membrane Transport and Concentration Gradients',
+      summary: 'Transport mechanisms differ according to whether material moves with or against its concentration gradient and whether cellular energy is used.',
+      bullets: [
+        'Passive transport moves down a concentration gradient without cellular energy.',
+        'Diffusion, facilitated diffusion, and osmosis are passive mechanisms.',
+        'Active transport uses energy, commonly ATP, to move against a concentration gradient.',
+      ],
+      sections: [
+        {
+          heading: 'Passive transport',
+          points: [
+            'A concentration gradient is a difference in the amount of a substance across space or across a membrane.',
+            'Moving down the gradient means moving from an area of higher concentration toward lower concentration.',
+            'Passive transport does not require the cell to spend energy for the movement.',
+            'Diffusion, facilitated diffusion, and osmosis all follow this general pattern.',
+          ],
+        },
+        {
+          heading: 'Active transport',
+          points: [
+            'Moving against the gradient means moving from lower concentration toward higher concentration.',
+            'This movement requires an energy input, usually supplied by ATP.',
+            'Active transport allows the cell to maintain concentration differences that passive movement alone would reduce.',
+          ],
+        },
+        {
+          heading: 'A decision framework',
+          points: [
+            'First identify the direction of movement relative to the concentration gradient.',
+            'Then determine whether the cell must use energy.',
+            'Down the gradient without energy indicates passive transport; against the gradient with energy indicates active transport.',
+          ],
+        },
+      ],
+      connections: [
+        'The selectively permeable membrane determines which transport route a substance can use.',
+        'Mitochondrial ATP can power transport processes that cannot occur passively.',
+      ],
+      examples: ['If a substance moves from high to low concentration without ATP, classify the process as passive even when a membrane protein assists it.'],
+      keyIdea: 'Direction plus energy separates the two major transport categories.',
+      recallPrompts: ['Create a two-column comparison of passive and active transport from memory.', 'Why can facilitated diffusion use a protein and still remain passive?', 'Predict the transport type when a cell moves a substance from low to high concentration.'],
+      source: { sectionId: 'processes', label: 'Slides 21–32' },
+    },
+    {
+      id: 'note-review',
+      title: 'Integrated Review: From Structure to Cell Function',
+      summary: 'A complete model of the cell links its boundary, genetic information, organelles, energy supply, and transport processes into one coordinated system.',
+      bullets: [
+        'Structure predicts function at both the membrane and organelle levels.',
+        'Cell processes depend on coordinated sequences rather than isolated structures.',
+        'Strong explanations compare mechanisms and trace causal or sequential relationships.',
+      ],
+      sections: [
+        {
+          heading: 'Structure → function',
+          points: [
+            'The phospholipid bilayer’s orientation creates a selective boundary.',
+            'Each organelle’s specialized structure supports a particular cellular job.',
+            'Plant-cell chloroplasts and cell walls add photosynthetic and structural functions.',
+          ],
+        },
+        {
+          heading: 'Function → process',
+          points: [
+            'DNA in the nucleus provides information used in protein production.',
+            'Ribosomes, rough ER, and Golgi form a sequence for producing, modifying, sorting, and packaging proteins.',
+            'Mitochondria generate ATP that supports energy-requiring cellular processes.',
+            'The plasma membrane and its proteins regulate movement into and out of the cell.',
+          ],
+        },
+        {
+          heading: 'High-value comparisons',
+          points: [
+            'Passive versus active transport: down versus against the gradient; no cellular energy versus energy required.',
+            'Rough versus smooth ER: protein modification versus lipid synthesis.',
+            'Mitochondria versus chloroplasts: ATP production through cellular respiration versus photosynthesis in plant cells.',
+          ],
+        },
+      ],
+      connections: [
+        'Cell theory identifies the cell as life’s basic unit; the remaining concepts explain how that unit stays organized and performs work.',
+        'Membrane transport and organelle function meet at energy use: ATP makes movement against a gradient possible.',
+      ],
+      examples: ['To explain protein export, connect DNA storage, ribosome synthesis, rough-ER modification, Golgi packaging, and membrane delivery in order.'],
+      keyIdea: 'For durable understanding, reconstruct the system from memory and explain the links between parts.',
+      recallPrompts: ['Teach the whole cell as a connected system in two minutes without looking.', 'Explain three structure–function relationships from the lecture.', 'Which comparisons would you use to distinguish the most easily confused concepts?'],
+      source: { sectionId: 'review', label: 'Slides 33–42' },
     },
   ],
   flashcards: [
@@ -222,10 +453,15 @@ export const initialState: StudyBoltState = {
     supportingDeck('chem-reactions', 'chemistry', 'Chemistry', 'Organic Reactions', 'Unit 3', 35, '⚗️', '#418DFF', 3),
     supportingDeck('biology-genetics', 'biology-101', 'Biology 101', 'Intro to Genetics', 'Chapter 6', 31, '🧬', '#39BFA3', 4),
   ],
+  flaggedItems: [],
+  librarySort: 'default',
   theme: 'system',
+  retentionMode: 'standard',
   hasCompletedOnboarding: false,
   quizQuestionCount: 10,
   plan: {
+    createdAt: recentTimestamp(0, 8),
+    targetDate: recentTimestamp(-2, 23, 59),
     durationDays: 3,
     scope: { type: 'deck', id: 'biology-cells' },
     modalities: ['notes', 'audio', 'flashcards', 'quiz', 'test'],
@@ -234,6 +470,7 @@ export const initialState: StudyBoltState = {
     days: [
       {
         id: 'today',
+        date: recentTimestamp(0, 12),
         label: 'Today',
         subtitle: 'Build the foundation',
         minutes: 35,
@@ -245,6 +482,7 @@ export const initialState: StudyBoltState = {
       },
       {
         id: 'tomorrow',
+        date: recentTimestamp(-1, 12),
         label: 'Tomorrow',
         subtitle: 'Retrieve, then review',
         minutes: 35,
@@ -256,6 +494,7 @@ export const initialState: StudyBoltState = {
       },
       {
         id: 'review-day',
+        date: recentTimestamp(-2, 12),
         label: 'Review Day',
         subtitle: 'Final confidence check',
         minutes: 30,

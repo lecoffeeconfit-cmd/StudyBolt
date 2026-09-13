@@ -26,6 +26,26 @@ export function Icon({ name, size = 22, color }: { name: IconName; size?: number
   return <MaterialCommunityIcons name={name} size={size} color={color ?? colors.text} />;
 }
 
+export function FlagButton({ flagged, onPress, label = 'Flag for later' }: { flagged: boolean; onPress: () => void; label?: string }) {
+  const { colors } = useStudyBolt();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={flagged ? 'Remove flag' : label}
+      accessibilityState={{ selected: flagged }}
+      hitSlop={8}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.flagButton,
+        { backgroundColor: flagged ? `${colors.warning}1C` : colors.cardStrong, borderColor: flagged ? `${colors.warning}66` : colors.border },
+        pressed && styles.flagButtonPressed,
+      ]}
+    >
+      <Icon name={flagged ? 'flag' : 'flag-outline'} size={17} color={flagged ? colors.warning : colors.textMuted} />
+    </Pressable>
+  );
+}
+
 export function BoltLogo({ compact = false }: { compact?: boolean }) {
   const { colors } = useStudyBolt();
   return (
@@ -216,6 +236,8 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 17, fontWeight: '800', letterSpacing: -0.3 },
   headerSubtitle: { fontSize: 11, marginTop: 1 },
   iconButton: { width: 42, height: 42, justifyContent: 'center' },
+  flagButton: { width: 34, height: 34, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center' },
+  flagButtonPressed: { opacity: 0.68, transform: [{ scale: 0.94 }] },
   pill: { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.pill },
   pillText: { fontSize: 11, lineHeight: 14, fontWeight: '800' },
   progressTrack: { height: 8, borderRadius: radius.pill, overflow: 'hidden' },

@@ -1,0 +1,10 @@
+{
+  "name": "studybolt-on-device-ai",
+  "version": "1.0.0",
+  "description": "StudyBolt bridge for Apple Foundation Models and Android Gemini Nano.",
+  "main": "index.ts",
+  "private": true,
+  "peerDependencies": {
+    "expo": "*"
+  }
+}

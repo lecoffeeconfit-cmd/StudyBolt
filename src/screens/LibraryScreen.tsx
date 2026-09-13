@@ -1,10 +1,11 @@
 import * as DocumentPicker from 'expo-document-picker';
 import React, { useMemo, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Card, Header, Icon, Pill, PrimaryButton, Screen, SectionHeader } from '../components/ui';
+import { Card, Header, Icon, type IconName, Pill, PrimaryButton, Screen } from '../components/ui';
 import { useStudyBolt } from '../StudyBoltContext';
-import type { ImportAsset, StudyClass, StudyPack } from '../models';
+import type { ImportAsset, LibrarySort, StudyClass, StudyPack } from '../models';
 import { calculateCourseMastery, calculateMastery } from '../services/mastery';
 import { radius } from '../theme';
 
@@ -13,18 +14,43 @@ const CLASS_EMOJIS = ['📚', '🧠', '🧪', '🎨', '💻', '🌿'];
 
 type CourseGroup = { course: StudyClass; decks: StudyPack[] };
 
+const SORT_OPTIONS: Array<{ value: LibrarySort; label: string; description: string; icon: IconName }> = [
+  { value: 'default', label: 'Default order', description: 'Classes as saved, packs in chapter order', icon: 'format-list-numbered' },
+  { value: 'recent', label: 'Recently added', description: 'Newest classes and study packs first', icon: 'clock-outline' },
+  { value: 'oldest', label: 'Oldest added', description: 'Earliest classes and study packs first', icon: 'clock-time-four-outline' },
+  { value: 'alphabetical', label: 'A–Z', description: 'Alphabetize classes and study packs', icon: 'sort-alphabetical-ascending' },
+];
+
+function timestamp(value: string): number {
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function sortDecks(decks: StudyPack[], sort: LibrarySort): StudyPack[] {
+  return [...decks].sort((a, b) => {
+    if (sort === 'recent') return timestamp(b.createdAt) - timestamp(a.createdAt) || a.order - b.order;
+    if (sort === 'oldest') return timestamp(a.createdAt) - timestamp(b.createdAt) || a.order - b.order;
+    if (sort === 'alphabetical') return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
+    return a.order - b.order;
+  });
+}
+
 export function LibraryScreen({
   onOpenDeck,
   onCreateReview,
+  onOpenFlagged,
   onImport,
 }: {
   onOpenDeck: (deck: StudyPack) => void;
   onCreateReview: (deckIds: string[]) => void;
+  onOpenFlagged: () => void;
   onImport: (asset: ImportAsset, course: StudyClass) => void;
 }) {
-  const { colors, state, addClass } = useStudyBolt();
+  const { colors, state, addClass, setLibrarySort } = useStudyBolt();
+  const insets = useSafeAreaInsets();
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
+  const [choosingSort, setChoosingSort] = useState(false);
   const [creatingClass, setCreatingClass] = useState(false);
   const [newClassName, setNewClassName] = useState('');
   const [selectedColor, setSelectedColor] = useState(CLASS_COLORS[0] ?? '#39BFA3');
@@ -45,8 +71,18 @@ export function LibraryScreen({
         decks: deckMap.get(deck.courseId) ?? [],
       });
     });
-    return groups;
-  }, [state.classes, state.decks]);
+    const sortedGroups = [...groups];
+    if (state.librarySort === 'recent') {
+      sortedGroups.sort((a, b) => timestamp(b.course.createdAt) - timestamp(a.course.createdAt));
+    } else if (state.librarySort === 'oldest') {
+      sortedGroups.sort((a, b) => timestamp(a.course.createdAt) - timestamp(b.course.createdAt));
+    } else if (state.librarySort === 'alphabetical') {
+      sortedGroups.sort((a, b) => a.course.name.localeCompare(b.course.name, undefined, { sensitivity: 'base' }));
+    }
+    return sortedGroups.map((group) => ({ ...group, decks: sortDecks(group.decks, state.librarySort) }));
+  }, [state.classes, state.decks, state.librarySort]);
+
+  const activeSort = SORT_OPTIONS.find((option) => option.value === state.librarySort) ?? SORT_OPTIONS[0]!;
 
   const toggle = (id: string) => setSelected((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
 
@@ -112,8 +148,7 @@ export function LibraryScreen({
                 }}
                 style={({ pressed }) => [styles.newClassButton, { backgroundColor: colors.primary, opacity: pressed ? 0.84 : 1 }]}
               >
-                <Icon name="plus" size={16} color={colors.primaryText} />
-                <Text style={[styles.newClassText, { color: colors.primaryText }]}>New class</Text>
+                <Icon name="plus" size={19} color={colors.primaryText} />
               </Pressable>
               <Pressable onPress={() => { setSelecting((value) => !value); setSelected([]); }} style={[styles.selectButton, { backgroundColor: colors.primarySoft }]}>
                 <Text style={[styles.selectText, { color: colors.primary }]}>{selecting ? 'Done' : 'Select'}</Text>
@@ -121,11 +156,11 @@ export function LibraryScreen({
             </View>
           }
         />
-        <Text style={[styles.title, { color: colors.text }]}>Your library</Text>
-        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Keep every class in one place, then add study packs whenever you’re ready.</Text>
+        <Text style={[styles.title, { color: colors.text }]}>Library</Text>
+        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{courses.length} {courses.length === 1 ? 'class' : 'classes'} · {state.decks.length} study {state.decks.length === 1 ? 'pack' : 'packs'}</Text>
 
         {selecting ? (
-          <Card style={[styles.reviewBanner, { backgroundColor: colors.purpleSoft }]}>
+          <Card style={[styles.reviewBanner, styles.flatCard, { backgroundColor: colors.purpleSoft }]}>
             <View style={styles.reviewBannerRow}>
               <Icon name="playlist-check" color={colors.purple} size={25} />
               <View style={{ flex: 1 }}>
@@ -138,26 +173,49 @@ export function LibraryScreen({
           </Card>
         ) : null}
 
-        <SectionHeader title="Classes" action={`${courses.length} ${courses.length === 1 ? 'class' : 'classes'}`} />
+        <View style={styles.libraryToolbar}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Classes</Text>
+          <View style={styles.toolbarActions}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Open flagged review"
+              onPress={onOpenFlagged}
+              style={({ pressed }) => [styles.savedButton, { backgroundColor: colors.cardStrong }, pressed && styles.sortButtonPressed]}
+            >
+              <Icon name="flag-outline" size={17} color={colors.warning} />
+              <Text style={[styles.savedButtonText, { color: colors.textSecondary }]}>{state.flaggedItems.length}</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Sort library, currently ${activeSort.label}`}
+              onPress={() => setChoosingSort(true)}
+              style={({ pressed }) => [styles.sortButton, { backgroundColor: colors.cardStrong }, pressed && styles.sortButtonPressed]}
+            >
+              <Icon name="sort-variant" size={17} color={colors.primary} />
+              <Text style={[styles.sortButtonText, { color: colors.textSecondary }]}>{activeSort.label}</Text>
+              <Icon name="chevron-down" size={16} color={colors.textMuted} />
+            </Pressable>
+          </View>
+        </View>
         <View style={styles.courseList}>
           {courses.map(({ course, decks }) => {
             const courseMastery = decks.length ? calculateCourseMastery(decks) : 0;
             return (
               <View key={course.id}>
                 <View style={styles.courseHeader}>
+                  <View style={[styles.courseIcon, { backgroundColor: `${course.color}24` }]}>
+                    <Text style={styles.courseEmoji}>{course.emoji}</Text>
+                  </View>
                   <View style={styles.courseHeaderCopy}>
                     <Text style={[styles.courseName, { color: colors.text }]}>{course.name}</Text>
                     <Text style={[styles.courseMeta, { color: colors.textMuted }]}>
                       {decks.length ? `${decks.length} ${decks.length === 1 ? 'deck' : 'decks'} · ${courseMastery}% estimated mastery` : 'No study packs yet · Ready when you are'}
                     </Text>
                   </View>
-                  <View style={[styles.courseIcon, { backgroundColor: `${course.color}24` }]}>
-                    <Text style={styles.courseEmoji}>{course.emoji}</Text>
-                  </View>
                 </View>
 
                 {decks.length === 0 ? (
-                  <Card style={[styles.emptyClassCard, { borderColor: `${course.color}55` }]}>
+                  <Card style={[styles.emptyClassCard, styles.flatCard, { borderColor: `${course.color}55` }]}>
                     <View style={[styles.emptyClassIcon, { backgroundColor: `${course.color}18` }]}>
                       <Icon name="file-plus-outline" size={22} color={course.color} />
                     </View>
@@ -171,10 +229,10 @@ export function LibraryScreen({
                   </Card>
                 ) : (
                   <View style={styles.deckList}>
-                    {[...decks].sort((a, b) => a.order - b.order).map((deck, index) => {
+                    {decks.map((deck, index) => {
                       const isSelected = selected.includes(deck.id);
                       return (
-                        <Card key={deck.id} onPress={() => selecting ? toggle(deck.id) : onOpenDeck(deck)} style={[styles.deckCard, isSelected && { borderColor: colors.primary, borderWidth: 1.5 }]}>
+                        <Card key={deck.id} onPress={() => selecting ? toggle(deck.id) : onOpenDeck(deck)} style={[styles.deckCard, styles.flatCard, isSelected && { borderColor: colors.primary, borderWidth: 1.5 }]}>
                           {selecting ? (
                             <View style={[styles.checkbox, { borderColor: isSelected ? colors.primary : colors.border, backgroundColor: isSelected ? colors.primary : colors.card }]}>
                               {isSelected ? <Icon name="check" size={15} color={colors.primaryText} /> : null}
@@ -200,8 +258,58 @@ export function LibraryScreen({
         </View>
       </Screen>
 
+      <Modal visible={choosingSort} transparent animationType="slide" onRequestClose={() => setChoosingSort(false)}>
+        <View style={[styles.modalRoot, { backgroundColor: colors.mode === 'dark' ? 'rgba(0,0,0,0.68)' : 'rgba(17,28,78,0.32)' }]}>
+          <Pressable accessibilityLabel="Close sort options" onPress={() => setChoosingSort(false)} style={StyleSheet.absoluteFill} />
+          <View style={[styles.sortSheet, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow, paddingBottom: Math.max(insets.bottom, 18) }]}>
+            <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
+            <View style={styles.sheetHeadingRow}>
+              <View style={[styles.sheetIcon, { backgroundColor: colors.primarySoft }]}><Icon name="sort-variant" size={24} color={colors.primary} /></View>
+              <View style={styles.sheetHeadingCopy}>
+                <Text style={[styles.sheetTitle, { color: colors.text }]}>Sort your library</Text>
+                <Text style={[styles.sheetSubtitle, { color: colors.textSecondary }]}>Choose how classes and study packs are arranged.</Text>
+              </View>
+              <Pressable accessibilityLabel="Close" onPress={() => setChoosingSort(false)} hitSlop={10}><Icon name="close" size={22} color={colors.textMuted} /></Pressable>
+            </View>
+
+            <View style={styles.sortOptions}>
+              {SORT_OPTIONS.map((option) => {
+                const active = option.value === state.librarySort;
+                return (
+                  <Pressable
+                    key={option.value}
+                    accessibilityRole="radio"
+                    accessibilityState={{ checked: active }}
+                    onPress={() => {
+                      setLibrarySort(option.value);
+                      setChoosingSort(false);
+                    }}
+                    style={({ pressed }) => [
+                      styles.sortOption,
+                      { backgroundColor: active ? colors.primarySoft : colors.backgroundRaised, borderColor: active ? colors.primary : colors.border },
+                      pressed && styles.sortOptionPressed,
+                    ]}
+                  >
+                    <View style={[styles.sortOptionIcon, { backgroundColor: active ? colors.card : colors.cardStrong }]}>
+                      <Icon name={option.icon} size={21} color={active ? colors.primary : colors.textSecondary} />
+                    </View>
+                    <View style={styles.sortOptionCopy}>
+                      <Text style={[styles.sortOptionTitle, { color: colors.text }]}>{option.label}</Text>
+                      <Text style={[styles.sortOptionDescription, { color: colors.textSecondary }]}>{option.description}</Text>
+                    </View>
+                    <View style={[styles.radio, { borderColor: active ? colors.primary : colors.border, backgroundColor: active ? colors.primary : 'transparent' }]}>
+                      {active ? <Icon name="check" size={13} color={colors.primaryText} /> : null}
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <Modal visible={creatingClass} transparent animationType="slide" onRequestClose={closeClassModal}>
-        <KeyboardAvoidingView style={styles.modalRoot} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <KeyboardAvoidingView style={[styles.modalRoot, { backgroundColor: colors.mode === 'dark' ? 'rgba(0,0,0,0.68)' : 'rgba(17,28,78,0.32)' }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <Pressable accessibilityLabel="Close new class dialog" onPress={closeClassModal} style={StyleSheet.absoluteFill} />
           <View style={[styles.sheet, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow }]}>
             <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
@@ -266,20 +374,27 @@ export function LibraryScreen({
 
 const styles = StyleSheet.create({
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  newClassButton: { minHeight: 36, paddingHorizontal: 10, borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 4 },
-  newClassText: { fontSize: 11, fontWeight: '900' },
+  newClassButton: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   selectButton: { paddingHorizontal: 11, paddingVertical: 9, borderRadius: 12 },
   selectText: { fontSize: 11, fontWeight: '800' },
-  title: { fontSize: 30, lineHeight: 36, fontWeight: '900', letterSpacing: -1 },
-  subtitle: { fontSize: 14, lineHeight: 20, marginTop: 6, marginBottom: 4 },
-  reviewBanner: { marginTop: 20 },
+  title: { fontSize: 28, lineHeight: 33, fontWeight: '900', letterSpacing: -0.9, marginTop: 13 },
+  subtitle: { fontSize: 12, lineHeight: 17, marginTop: 4 },
+  reviewBanner: { marginTop: 18 },
   reviewBannerRow: { flexDirection: 'row', alignItems: 'center', gap: 11 },
   reviewTitle: { fontSize: 14, fontWeight: '800' },
   reviewSubtitle: { fontSize: 11, marginTop: 3 },
   reviewButton: { minHeight: 48, marginTop: 14 },
-  courseList: { gap: 28 },
-  courseHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
-  courseHeaderCopy: { flex: 1, paddingRight: 12 },
+  libraryToolbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 22, marginBottom: 12 },
+  sectionTitle: { fontSize: 18, lineHeight: 23, fontWeight: '800', letterSpacing: -0.3 },
+  toolbarActions: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  savedButton: { minHeight: 38, borderRadius: radius.pill, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 11 },
+  savedButtonText: { fontSize: 11, fontWeight: '800' },
+  sortButton: { minHeight: 38, maxWidth: 170, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 11, borderRadius: radius.pill },
+  sortButtonPressed: { opacity: 0.82, transform: [{ scale: 0.98 }] },
+  sortButtonText: { flexShrink: 1, fontSize: 11, fontWeight: '800' },
+  courseList: { gap: 22 },
+  courseHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 9 },
+  courseHeaderCopy: { flex: 1 },
   courseName: { fontSize: 17, fontWeight: '800' },
   courseMeta: { fontSize: 11, marginTop: 3 },
   courseIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
@@ -298,8 +413,18 @@ const styles = StyleSheet.create({
   deckCopy: { flex: 1 },
   deckTitle: { fontSize: 13, fontWeight: '800' },
   deckMeta: { fontSize: 10, marginTop: 4 },
+  flatCard: { shadowOpacity: 0, elevation: 0 },
   modalRoot: { flex: 1, justifyContent: 'flex-end' },
-  sheet: { borderTopLeftRadius: 27, borderTopRightRadius: 27, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 22, paddingTop: 10, paddingBottom: 16, shadowOffset: { width: 0, height: -8 }, shadowOpacity: 0.18, shadowRadius: 24, elevation: 16 },
+  sortSheet: { width: '100%', maxWidth: 560, alignSelf: 'center', borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 20, paddingTop: 10, shadowOffset: { width: 0, height: -8 }, shadowOpacity: 0.16, shadowRadius: 24, elevation: 16 },
+  sortOptions: { gap: 9, marginTop: 20 },
+  sortOption: { minHeight: 68, borderRadius: radius.md, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 11 },
+  sortOptionPressed: { opacity: 0.8, transform: [{ scale: 0.99 }] },
+  sortOptionIcon: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  sortOptionCopy: { flex: 1 },
+  sortOptionTitle: { fontSize: 13, lineHeight: 17, fontWeight: '900' },
+  sortOptionDescription: { fontSize: 10, lineHeight: 14, marginTop: 2 },
+  radio: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
+  sheet: { width: '100%', maxWidth: 560, alignSelf: 'center', borderTopLeftRadius: 27, borderTopRightRadius: 27, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 22, paddingTop: 10, paddingBottom: 16, shadowOffset: { width: 0, height: -8 }, shadowOpacity: 0.18, shadowRadius: 24, elevation: 16 },
   sheetHandle: { width: 42, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 18 },
   sheetHeadingRow: { flexDirection: 'row', alignItems: 'center', gap: 11 },
   sheetIcon: { width: 46, height: 46, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },

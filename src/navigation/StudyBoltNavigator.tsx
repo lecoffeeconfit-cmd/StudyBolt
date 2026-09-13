@@ -7,10 +7,14 @@ import { BottomTabs } from '../components/BottomTabs';
 import type { MainTab } from '../components/BottomTabs';
 import { useStudyBolt } from '../StudyBoltContext';
 import { AccountScreen } from '../screens/AccountScreen';
+import { CommunityClassScreen } from '../screens/CommunityClassScreen';
+import { DiscoverScreen } from '../screens/DiscoverScreen';
 import { HomeScreen } from '../screens/HomeScreen';
 import { LibraryScreen } from '../screens/LibraryScreen';
 import { LegalScreen } from '../screens/LegalScreen';
 import { LoginScreen } from '../screens/LoginScreen';
+import { MistakeNotebookScreen } from '../screens/MistakeNotebookScreen';
+import { FlaggedReviewScreen } from '../screens/FlaggedReviewScreen';
 import { OnboardingScreen } from '../screens/OnboardingScreen';
 import { PlannerScreen } from '../screens/PlannerScreen';
 import { ProcessingScreen } from '../screens/ProcessingScreen';
@@ -19,6 +23,7 @@ import { ResetPasswordScreen } from '../screens/ResetPasswordScreen';
 import { StatsScreen } from '../screens/StatsScreen';
 import { StudyPackScreen } from '../screens/StudyPackScreen';
 import { SharedStudyPackScreen } from '../screens/SharedStudyPackScreen';
+import { SmartStudyScreen } from '../screens/SmartStudyScreen';
 import { combineStudyPacks } from '../services/studyPack';
 import { parseShareToken } from '../services/sharing';
 import type { StudyPack, StudyTool } from '../models';
@@ -31,6 +36,7 @@ export function StudyBoltNavigator() {
   const [route, setRoute] = useState<Route>({ type: 'main' });
   const [plannerFocusDeckId, setPlannerFocusDeckId] = useState<string>();
   const [pendingSharedToken, setPendingSharedToken] = useState<string | null>(null);
+  const [pendingRoute, setPendingRoute] = useState<Route | null>(null);
 
   const openDeck = useCallback((deck: StudyPack, tool?: StudyTool) => {
     setRoute({ type: 'deck', deckId: deck.id, tool });
@@ -40,6 +46,8 @@ export function StudyBoltNavigator() {
     const sample = state.decks.find((deck) => deck.id === 'biology-cells') ?? state.decks[0];
     if (sample) openDeck(sample);
   }, [openDeck, state.decks]);
+
+  const openFlagged = useCallback(() => setRoute({ type: 'flagged' }), []);
 
   const completeProcessing = useCallback((deck: StudyPack) => {
     addDeck(deck);
@@ -90,10 +98,11 @@ export function StudyBoltNavigator() {
 
   useEffect(() => {
     if (user && route.type === 'auth' && !recoveryMode) {
-      setRoute(pendingSharedToken ? { type: 'shared', token: pendingSharedToken } : { type: 'main' });
+      setRoute(pendingRoute ?? (pendingSharedToken ? { type: 'shared', token: pendingSharedToken } : { type: 'main' }));
       setPendingSharedToken(null);
+      setPendingRoute(null);
     }
-  }, [pendingSharedToken, recoveryMode, route.type, user]);
+  }, [pendingRoute, pendingSharedToken, recoveryMode, route.type, user]);
 
   const mainScreen = useMemo(() => {
     if (tab === 'library') {
@@ -101,11 +110,21 @@ export function StudyBoltNavigator() {
         <LibraryScreen
           onOpenDeck={openDeck}
           onCreateReview={createReview}
+          onOpenFlagged={openFlagged}
           onImport={(asset, studyClass) => setRoute({ type: 'processing', asset, courseId: studyClass.id, courseName: studyClass.name })}
         />
       );
     }
     if (tab === 'planner') return <PlannerScreen focusDeckId={plannerFocusDeckId} onFocusApplied={() => setPlannerFocusDeckId(undefined)} />;
+    if (tab === 'discover') {
+      return (
+        <DiscoverScreen
+          onPreviewSet={(token) => setRoute({ type: 'shared', token })}
+          onOpenClass={(classId) => setRoute({ type: 'community-class', classId })}
+          onOpenDeck={openDeck}
+        />
+      );
+    }
     if (tab === 'stats') return <StatsScreen />;
     if (tab === 'profile') {
       return (
@@ -117,8 +136,17 @@ export function StudyBoltNavigator() {
         />
       );
     }
-    return <HomeScreen onOpenDeck={openDeck} onImport={(asset) => setRoute({ type: 'processing', asset })} />;
-  }, [createReview, openDeck, plannerFocusDeckId, tab]);
+    return (
+      <HomeScreen
+        onOpenDeck={openDeck}
+        onImport={(asset) => setRoute({ type: 'processing', asset })}
+        onStartStudy={(mode) => setRoute({ type: 'smart-study', mode })}
+        onOpenMistakes={() => setRoute({ type: 'mistakes' })}
+        onOpenFlagged={openFlagged}
+        onOpenPlanner={() => setTab('planner')}
+      />
+    );
+  }, [createReview, openDeck, openFlagged, plannerFocusDeckId, tab]);
 
   if (!hydrated || authLoading) {
     return (
@@ -138,12 +166,14 @@ export function StudyBoltNavigator() {
       {!showOnboarding && route.type === 'auth' ? (
         <LoginScreen
           onAuthenticated={() => {
-            setRoute(pendingSharedToken ? { type: 'shared', token: pendingSharedToken } : { type: 'main' });
+            setRoute(pendingRoute ?? (pendingSharedToken ? { type: 'shared', token: pendingSharedToken } : { type: 'main' }));
             setPendingSharedToken(null);
+            setPendingRoute(null);
           }}
           onContinueAsGuest={() => {
-            setRoute(pendingSharedToken ? { type: 'shared', token: pendingSharedToken } : { type: 'main' });
+            setRoute(pendingRoute ?? (pendingSharedToken ? { type: 'shared', token: pendingSharedToken } : { type: 'main' }));
             setPendingSharedToken(null);
+            setPendingRoute(null);
           }}
         />
       ) : null}
@@ -156,6 +186,19 @@ export function StudyBoltNavigator() {
       ) : null}
       {!showOnboarding && route.type === 'legal' ? <LegalScreen onBack={() => setRoute({ type: 'main' })} /> : null}
       {!showOnboarding && route.type === 'reset-password' ? <ResetPasswordScreen onComplete={() => setRoute({ type: 'main' })} /> : null}
+      {!showOnboarding && route.type === 'smart-study' ? <SmartStudyScreen initialMode={route.mode} focusDeckId={route.deckId} onBack={() => setRoute(route.deckId ? { type: 'deck', deckId: route.deckId } : { type: 'main' })} /> : null}
+      {!showOnboarding && route.type === 'mistakes' ? (
+        <MistakeNotebookScreen
+          onBack={() => setRoute({ type: 'main' })}
+          onOpenDeck={(deckId, tool) => setRoute({ type: 'deck', deckId, tool })}
+        />
+      ) : null}
+      {!showOnboarding && route.type === 'flagged' ? (
+        <FlaggedReviewScreen
+          onBack={() => setRoute({ type: 'main' })}
+          onOpenDeck={(deckId, tool) => setRoute({ type: 'deck', deckId, tool })}
+        />
+      ) : null}
       {!showOnboarding && route.type === 'main' ? (
         <>
           {mainScreen}
@@ -172,6 +215,11 @@ export function StudyBoltNavigator() {
             setTab('planner');
             setRoute({ type: 'main' });
           }}
+          onStartStudy={(mode, deckId) => setRoute({ type: 'smart-study', mode, deckId })}
+          onRequireAuth={() => {
+            setPendingRoute(route);
+            setRoute({ type: 'auth' });
+          }}
         />
       ) : null}
       {!showOnboarding && route.type === 'shared' ? (
@@ -183,6 +231,20 @@ export function StudyBoltNavigator() {
             setRoute({ type: 'auth' });
           }}
           onOpenSavedDeck={(deckId) => setRoute({ type: 'deck', deckId })}
+        />
+      ) : null}
+      {!showOnboarding && route.type === 'community-class' ? (
+        <CommunityClassScreen
+          classId={route.classId}
+          onBack={() => {
+            setTab('discover');
+            setRoute({ type: 'main' });
+          }}
+          onPreviewSet={(token) => setRoute({ type: 'shared', token })}
+          onRequireAuth={() => {
+            setPendingRoute(route);
+            setRoute({ type: 'auth' });
+          }}
         />
       ) : null}
       {!showOnboarding && route.type === 'processing' ? (

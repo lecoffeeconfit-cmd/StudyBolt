@@ -6,12 +6,13 @@ import { useStudyBolt } from '../StudyBoltContext';
 import { Icon } from './ui';
 import type { IconName } from './ui';
 
-export type MainTab = 'home' | 'library' | 'planner' | 'stats' | 'profile';
+export type MainTab = 'home' | 'library' | 'planner' | 'discover' | 'stats' | 'profile';
 
 const TABS: Array<{ id: MainTab; label: string; icon: IconName; activeIcon: IconName }> = [
   { id: 'home', label: 'Home', icon: 'home-outline', activeIcon: 'home-variant' },
   { id: 'library', label: 'Library', icon: 'bookshelf', activeIcon: 'book-open-page-variant' },
   { id: 'planner', label: 'Planner', icon: 'calendar-blank-outline', activeIcon: 'calendar-check' },
+  { id: 'discover', label: 'Discover', icon: 'compass-outline', activeIcon: 'compass' },
   { id: 'stats', label: 'Stats', icon: 'chart-bar', activeIcon: 'chart-box' },
   { id: 'profile', label: 'Profile', icon: 'account-outline', activeIcon: 'account-circle' },
 ];
@@ -61,7 +62,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     borderTopWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
-    paddingHorizontal: 8,
+    paddingHorizontal: 5,
     paddingTop: 7,
     shadowOffset: { width: 0, height: -6 },
     shadowOpacity: Platform.OS === 'ios' ? 0.05 : 0,
@@ -70,5 +71,5 @@ const styles = StyleSheet.create({
   },
   tab: { flex: 1, alignItems: 'center', justifyContent: 'flex-start', gap: 2, minHeight: 48 },
   iconWrap: { width: 35, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  label: { fontSize: 10, fontWeight: '700' },
+  label: { fontSize: 9, fontWeight: '700' },
 });

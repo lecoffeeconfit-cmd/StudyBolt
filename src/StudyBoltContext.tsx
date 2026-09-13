@@ -3,7 +3,8 @@ import type { ReactNode } from 'react';
 import { useColorScheme } from 'react-native';
 
 import { initialState } from './data/mockStudyPacks';
-import type { QuizQuestionCount, StudyBoltState, StudyClass, StudyEventInput, StudyPack, StudyPlan, ThemePreference } from './models';
+import type { FlaggedItemInput, LibrarySort, QuizQuestionCount, RetentionMode, StudyBoltState, StudyClass, StudyEventInput, StudyPack, StudyPlan, ThemePreference } from './models';
+import { getFlaggedItemId } from './models';
 import { loadStudyBoltState, saveStudyBoltState } from './services/persistence';
 import { AppColors, resolveColors } from './theme';
 
@@ -12,15 +13,20 @@ interface StudyBoltContextValue {
   colors: AppColors;
   hydrated: boolean;
   setTheme: (theme: ThemePreference) => void;
+  setRetentionMode: (mode: RetentionMode) => void;
   completeOnboarding: () => void;
   resetLocalData: () => void;
   setQuizQuestionCount: (count: QuizQuestionCount) => void;
+  setLibrarySort: (sort: LibrarySort) => void;
   addClass: (studyClass: StudyClass) => void;
   updateDeck: (deckId: string, updater: (deck: StudyPack) => StudyPack) => void;
   addDeck: (deck: StudyPack) => void;
   setPlan: (plan: StudyPlan) => void;
   setFocusMinutes: (minutes: number) => void;
   recordStudyEvent: (event: StudyEventInput) => void;
+  toggleFlag: (item: FlaggedItemInput) => void;
+  removeFlag: (flagId: string) => void;
+  isFlagged: (flagId: string) => boolean;
 }
 
 const StudyBoltContext = createContext<StudyBoltContextValue | null>(null);
@@ -53,9 +59,11 @@ export function StudyBoltProvider({ children }: { children: ReactNode }) {
       hydrated,
       colors: resolveColors(state.theme, systemScheme),
       setTheme: (theme) => setState((current) => ({ ...current, theme })),
+      setRetentionMode: (retentionMode) => setState((current) => ({ ...current, retentionMode })),
       completeOnboarding: () => setState((current) => ({ ...current, hasCompletedOnboarding: true })),
       resetLocalData: () => setState({ ...initialState, hasCompletedOnboarding: true }),
       setQuizQuestionCount: (quizQuestionCount) => setState((current) => ({ ...current, quizQuestionCount })),
+      setLibrarySort: (librarySort) => setState((current) => ({ ...current, librarySort })),
       addClass: (studyClass) =>
         setState((current) => ({
           ...current,
@@ -100,6 +108,21 @@ export function StudyBoltProvider({ children }: { children: ReactNode }) {
           },
         ].slice(-1500),
       })),
+      toggleFlag: (item) => setState((current) => {
+        const id = item.id ?? getFlaggedItemId(item.deckId, item.kind, item.itemId);
+        const alreadyFlagged = current.flaggedItems.some((flag) => flag.id === id);
+        return {
+          ...current,
+          flaggedItems: alreadyFlagged
+            ? current.flaggedItems.filter((flag) => flag.id !== id)
+            : [...current.flaggedItems, { ...item, id, flaggedAt: new Date().toISOString() }],
+        };
+      }),
+      removeFlag: (flagId) => setState((current) => ({
+        ...current,
+        flaggedItems: current.flaggedItems.filter((flag) => flag.id !== flagId),
+      })),
+      isFlagged: (flagId) => state.flaggedItems.some((flag) => flag.id === flagId),
     }),
     [hydrated, state, systemScheme],
   );

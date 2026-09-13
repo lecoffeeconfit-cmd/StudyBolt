@@ -1,4 +1,5 @@
 import type { ImportAsset, StudyTool } from '../models';
+import type { SmartStudyMode } from '../services/adaptiveStudy';
 
 export type Route =
   | { type: 'main' }
@@ -7,6 +8,10 @@ export type Route =
   | { type: 'account' }
   | { type: 'legal' }
   | { type: 'reset-password' }
+  | { type: 'smart-study'; mode?: SmartStudyMode; deckId?: string }
+  | { type: 'mistakes' }
+  | { type: 'flagged' }
   | { type: 'deck'; deckId: string; tool?: StudyTool }
   | { type: 'shared'; token: string }
+  | { type: 'community-class'; classId: string }
   | { type: 'processing'; asset: ImportAsset; courseId?: string; courseName?: string };
