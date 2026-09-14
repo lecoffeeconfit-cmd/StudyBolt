@@ -509,6 +509,7 @@ export const initialState: StudyBoltState = {
   focusMinutes: 347,
   streakDays: 5,
   dailyStudyGoalMinutes: 30,
+  examAttempts: [],
   activityEvents: [
     { id: 'seed-focus-6', type: 'focus', occurredAt: recentTimestamp(6, 18), durationMinutes: 32 },
     { id: 'seed-card-6-1', type: 'flashcard-review', occurredAt: recentTimestamp(6, 18, 34), deckId: 'biology-cells', courseId: 'biology-101', cardId: 'card-1', confidence: 'known', previousConfidence: 'learning', durationMinutes: 2 },

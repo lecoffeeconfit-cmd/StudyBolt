@@ -1,4 +1,4 @@
-export type VoiceSessionState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'paused' | 'ended';
+export type VoiceSessionState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'interrupted' | 'paused' | 'error' | 'ended';
 export type VoiceCommand = 'pause' | 'continue' | 'repeat' | 'back' | 'skip' | 'exit' | 'unknown';
 
 /** Pure command parsing keeps the hands-free controller testable and offline. */
@@ -19,7 +19,9 @@ export function interactionStateLabel(state: VoiceSessionState): string {
     case 'listening': return 'Listening';
     case 'thinking': return 'Thinking';
     case 'speaking': return 'StudyBolt is speaking';
+    case 'interrupted': return 'Listening after interruption';
     case 'paused': return 'Paused';
+    case 'error': return 'Voice needs attention';
     case 'ended': return 'Session ended';
     default: return 'Ready when you are';
   }
@@ -29,9 +31,14 @@ export interface BrowserSpeechInput {
   stop: () => void;
 }
 
+export interface BrowserSpeechInputOptions {
+  continuous?: boolean;
+  onEnd?: () => void;
+}
+
 /** Optional web adapter. Native builds intentionally return null until a speech
  * recognizer module is installed and granted microphone permission. */
-export function startBrowserSpeechInput(onTranscript: (transcript: string) => void, onError?: () => void): BrowserSpeechInput | null {
+export function startBrowserSpeechInput(onTranscript: (transcript: string) => void, onError?: () => void, options: BrowserSpeechInputOptions = {}): BrowserSpeechInput | null {
   if (typeof window === 'undefined') return null;
   const browserWindow = window as typeof window & { SpeechRecognition?: new () => any; webkitSpeechRecognition?: new () => any };
   const Recognition = browserWindow.SpeechRecognition ?? browserWindow.webkitSpeechRecognition;
@@ -39,9 +46,10 @@ export function startBrowserSpeechInput(onTranscript: (transcript: string) => vo
   const recognition = new Recognition();
   recognition.lang = 'en-US';
   recognition.interimResults = false;
-  recognition.continuous = false;
+  recognition.continuous = options.continuous ?? false;
   recognition.onresult = (event: any) => onTranscript(String(event.results?.[0]?.[0]?.transcript ?? ''));
   recognition.onerror = () => onError?.();
+  recognition.onend = () => options.onEnd?.();
   try { recognition.start(); } catch { onError?.(); return null; }
   return { stop: () => { try { recognition.stop(); } catch { /* already stopped */ } } };
 }

@@ -3,6 +3,7 @@ import { Animated, Easing, KeyboardAvoidingView, Platform, Pressable, StyleSheet
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon, Pill, PrimaryButton, ProgressBar } from '../components/ui';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 import { useStudyBolt } from '../StudyBoltContext';
 import type { ImportAsset, StudyPack } from '../models';
 import { processDocument, StudyBoltProcessingError, validateImport } from '../services/documentProcessor';
@@ -18,6 +19,7 @@ const STAGES = [
 
 export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSuccess, onTrySample }: { asset: ImportAsset; courseId?: string; courseName?: string; onCancel: () => void; onSuccess: (deck: StudyPack) => void; onTrySample: () => void }) {
   const { colors } = useStudyBolt();
+  const reducedMotion = useReducedMotion();
   const insets = useSafeAreaInsets();
   const [stage, setStage] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -27,15 +29,18 @@ export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSucc
   const pulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    pulse.stopAnimation();
+    pulse.setValue(0);
+    if (!started || error || reducedMotion) return;
     const animation = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulse, { toValue: 1, duration: 780, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 0, duration: 780, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1, duration: 780, easing: Easing.inOut(Easing.ease), useNativeDriver: Platform.OS !== 'web' }),
+        Animated.timing(pulse, { toValue: 0, duration: 780, easing: Easing.inOut(Easing.ease), useNativeDriver: Platform.OS !== 'web' }),
       ]),
     );
     animation.start();
     return () => animation.stop();
-  }, [pulse]);
+  }, [error, pulse, reducedMotion, started]);
 
   useEffect(() => {
     setClassName(courseName ?? '');
@@ -99,9 +104,9 @@ export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSucc
       </View>
 
       <View style={styles.center}>
-        <Animated.View style={[styles.boltOrb, !started && !error && styles.setupBoltOrb, { backgroundColor: error ? `${colors.danger}18` : colors.primarySoft, transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] }) }] }]}>
-          <View style={[styles.boltInner, !started && !error && styles.setupBoltInner, { backgroundColor: error ? colors.danger : colors.primary }]}>
-            <Icon name={error ? 'alert-outline' : 'lightning-bolt'} size={!started && !error ? 32 : 50} color={colors.primaryText} />
+        <Animated.View style={[styles.boltOrb, !started && !error && styles.setupBoltOrb, { backgroundColor: error ? `${colors.danger}18` : colors.goldSoft, transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] }) }] }]}>
+          <View style={[styles.boltInner, !started && !error && styles.setupBoltInner, { backgroundColor: error ? colors.danger : colors.goldBright }]}>
+            <Icon name={error ? 'alert-outline' : 'lightning-bolt'} size={!started && !error ? 32 : 50} color={error ? '#FFFFFF' : colors.onGold} />
           </View>
         </Animated.View>
 
@@ -163,11 +168,11 @@ export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSucc
                 const current = index === stage;
                 return (
                   <View key={label} style={styles.stageRow}>
-                    <View style={[styles.stageIcon, { backgroundColor: complete ? colors.mintSoft : current ? colors.primarySoft : colors.cardStrong }]}>
-                      <Icon name={complete ? 'check' : current ? 'lightning-bolt' : 'circle-small'} size={17} color={complete ? colors.mint : current ? colors.primary : colors.textMuted} />
+                    <View style={[styles.stageIcon, { backgroundColor: complete ? colors.mintSoft : current ? colors.goldSoft : colors.cardStrong }]}>
+                      <Icon name={complete ? 'check' : current ? 'lightning-bolt' : 'circle-small'} size={17} color={complete ? colors.mint : current ? colors.goldText : colors.textMuted} />
                     </View>
                     <Text style={[styles.stageText, { color: current ? colors.text : colors.textMuted, fontWeight: current ? '800' : '500' }]}>{label}</Text>
-                    {current ? <Text style={[styles.working, { color: colors.primary }]}>Working…</Text> : null}
+                    {current ? <Text style={[styles.working, { color: colors.goldText }]}>Working…</Text> : null}
                   </View>
                 );
               })}

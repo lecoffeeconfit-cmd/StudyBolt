@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 
 import StudyBoltOnDeviceAI from '../../modules/studybolt-on-device-ai';
-import type { AiTutorAction, AiTutorContext, AiTutorResponse } from '../models';
+import type { AiTutorAction, AiTutorContext, AiTutorConversation, AiTutorResponse } from '../models';
 
 export type OnDeviceAIStatus = 'checking' | 'available' | 'downloadable' | 'downloading' | 'unavailable' | 'unsupported';
 export type OnDeviceAIProvider = 'apple-intelligence' | 'gemini-nano';
@@ -50,10 +50,12 @@ export async function askOnDeviceTutor({
   action,
   question,
   context,
+  conversation,
 }: {
   action: AiTutorAction;
   question?: string;
   context: AiTutorContext;
+  conversation?: AiTutorConversation;
 }): Promise<OnDeviceTutorResult> {
   let availability = await getOnDeviceAIAvailability();
   if (!StudyBoltOnDeviceAI || availability.status === 'unsupported' || availability.status === 'unavailable') {
@@ -81,7 +83,7 @@ export async function askOnDeviceTutor({
   }
 
   try {
-    const raw = await StudyBoltOnDeviceAI.generate(buildPrompt(action, question, context), buildInstructions(action));
+    const raw = await StudyBoltOnDeviceAI.generate(buildPrompt(action, question, context, conversation), buildInstructions(action));
     const response = parseTutorResponse(raw.text, action);
     if (!response) {
       return { availability, error: 'Your phone’s AI returned an incomplete answer. Please try again.' };
@@ -121,7 +123,7 @@ function buildInstructions(action: AiTutorAction): string {
   ].join(' ');
 }
 
-function buildPrompt(action: AiTutorAction, question: string | undefined, context: AiTutorContext): string {
+function buildPrompt(action: AiTutorAction, question: string | undefined, context: AiTutorContext, conversation?: AiTutorConversation): string {
   const requests: Record<AiTutorAction, string> = {
     explain: 'Explain the current idea and why it matters.',
     simplify: 'Restate the current idea in simpler language without losing its meaning.',
@@ -136,11 +138,18 @@ function buildPrompt(action: AiTutorAction, question: string | undefined, contex
     .slice(0, 2)
     .map((chunk) => `NEARBY — ${chunk.title}\n${chunk.text.slice(0, 2_500)}`)
     .join('\n\n');
+  const recentConversation = (conversation?.turns ?? []).slice(-4).map((turn) => `${turn.role.toUpperCase()}: ${turn.content.slice(0, 500)}`).join('\n');
+  const questionContext = context.currentQuestion
+    ? `CURRENT QUESTION — ${context.currentQuestion.prompt}\nUSER ANSWER — ${context.currentQuestion.userAnswer ?? 'not answered'}\nCORRECT ANSWER — ${context.currentQuestion.correctAnswer ?? 'not provided'}\nCONCEPT — ${context.currentQuestion.concept ?? 'current section'}`
+    : '';
   return [
     `STUDY SET: ${context.studySetTitle.slice(0, 180)}`,
     `SUBJECT: ${context.subject.slice(0, 120)}`,
     `CURRENT CHUNK — ${context.currentChunk.title.slice(0, 180)}\n${context.currentChunk.text.slice(0, 3_500)}`,
     nearby,
+    questionContext,
+    context.mastery === undefined ? '' : `ESTIMATED MASTERY: ${context.mastery}%`,
+    recentConversation ? `RECENT CONVERSATION\n${recentConversation}` : '',
     `STUDENT REQUEST: ${requests[action]}`,
   ].filter(Boolean).join('\n\n').slice(0, 9_500);
 }

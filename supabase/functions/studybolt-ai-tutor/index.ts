@@ -17,7 +17,7 @@ interface TutorRequest {
   question?: string;
   depth?: TutorDepth;
   conversation?: { summary?: string; turns?: ConversationTurn[] };
-  context: { studySetTitle: string; subject: string; currentChunk: TutorChunk; nearbyChunks: TutorChunk[] };
+  context: { studySetTitle: string; subject: string; currentChunk: TutorChunk; nearbyChunks: TutorChunk[]; currentQuestion?: { prompt?: string; userAnswer?: string; correctAnswer?: string; concept?: string; source?: string }; mastery?: number };
 }
 interface AiConfig {
   model: string;
@@ -157,6 +157,10 @@ function buildTutorInput(body: TutorRequest): string {
     important: 'Identify the five most important ideas in this material.', confuse: 'Name the most likely confusion or contrast with nearby ideas.',
   };
   const nearby = body.context.nearbyChunks.map((chunk) => `NEARBY — ${cleanString(chunk.title, 180)}\n${cleanString(chunk.text, 2_800)}`).join('\n\n');
+  const examQuestion = body.context.currentQuestion
+    ? `CURRENT QUESTION\n${cleanString(body.context.currentQuestion.prompt, 900)}\nUSER ANSWER\n${cleanString(body.context.currentQuestion.userAnswer, 900) || 'not answered'}\nCORRECT ANSWER\n${cleanString(body.context.currentQuestion.correctAnswer, 900) || 'not provided'}\nCONCEPT\n${cleanString(body.context.currentQuestion.concept, 240)}`
+    : '';
+  const mastery = typeof body.context.mastery === 'number' ? `ESTIMATED MASTERY: ${Math.max(0, Math.min(100, body.context.mastery))}%` : '';
   const conversation = body.conversation ? [
     body.conversation.summary ? `CONVERSATION SUMMARY\n${cleanString(body.conversation.summary, 1_000)}` : '',
     ...(body.conversation.turns ?? []).slice(-4).map((turn) => `${turn.role.toUpperCase()}: ${cleanString(turn.content, 500)}`),
@@ -164,7 +168,7 @@ function buildTutorInput(body: TutorRequest): string {
   return [
     `STUDY SET: ${cleanString(body.context.studySetTitle, 180)}`, `SUBJECT: ${cleanString(body.context.subject, 120)}`,
     `CURRENT CHUNK — ${cleanString(body.context.currentChunk.title, 180)}\n${cleanString(body.context.currentChunk.text, 2_800)}`,
-    nearby, conversation, `STUDENT REQUEST: ${prompts[body.action]}`,
+    nearby, examQuestion, mastery, conversation, `STUDENT REQUEST: ${prompts[body.action]}`,
   ].filter(Boolean).join('\n\n').slice(0, MAX_CONTEXT_CHARS);
 }
 

@@ -2,7 +2,7 @@ import React, { useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Card, Header, Icon, Pill, PrimaryButton, ProgressBar, Screen } from '../components/ui';
+import { BoltMark, Card, Header, Icon, Pill, PrimaryButton, ProgressBar, Screen } from '../components/ui';
 import type { IconName } from '../components/ui';
 import { useStudyBolt } from '../StudyBoltContext';
 import type { AnswerConfidence, QuizAnswerRecord } from '../models';
@@ -20,9 +20,11 @@ const MODES: Array<{ id: SmartStudyMode; label: string; icon: IconName; detail: 
 
 const FORMAT_LABELS: Record<SmartStudyItem['format'], string> = {
   'multiple-choice': 'Recognition',
+  'multiple-select': 'Multi-select',
   'true-false': 'True / false',
   'short-answer': 'Free recall',
   'fill-blank': 'Fill in',
+  definition: 'Definition',
   application: 'Apply it',
 };
 
@@ -41,9 +43,13 @@ export function SmartStudyScreen({ initialMode = 'smart', focusDeckId, onBack }:
   const sessionStartedAt = useRef(Date.now());
   const brief = useMemo(() => buildSmartStudyBrief(state, mode, focusDeckId), [focusDeckId, mode, state]);
   const item = brief.items[index];
-  const introPalette = colors.mode === 'dark'
-    ? { background: '#151D31', eyebrow: '#8FB6F5', title: '#F6F8FF', body: '#BAC5DD', estimate: '#DDE7FA', icon: '#9EC2FF' }
-    : { background: '#EEF4FF', eyebrow: colors.primary, title: colors.text, body: colors.textSecondary, estimate: colors.textSecondary, icon: colors.primary };
+  const introPalette = mode === 'smart'
+    ? colors.mode === 'dark'
+      ? { background: '#17243A', eyebrow: colors.goldText, title: '#F8FBFF', body: '#C1CDDD', estimate: '#D7E1EE', icon: colors.gold }
+      : { background: '#EDF4FF', eyebrow: colors.goldText, title: colors.text, body: colors.textSecondary, estimate: colors.textSecondary, icon: colors.goldText }
+    : colors.mode === 'dark'
+      ? { background: '#151D31', eyebrow: '#8FB6F5', title: '#F6F8FF', body: '#BAC5DD', estimate: '#DDE7FA', icon: '#9EC2FF' }
+      : { background: '#EEF4FF', eyebrow: colors.primary, title: colors.text, body: colors.textSecondary, estimate: colors.textSecondary, icon: colors.primary };
 
   const resetQuestion = () => {
     setConfidence(null);
@@ -157,9 +163,16 @@ export function SmartStudyScreen({ initialMode = 'smart', focusDeckId, onBack }:
       <Screen>
         <Header title="Adaptive study" onBack={onBack} />
         <View style={[styles.introHero, { backgroundColor: introPalette.background }]}> 
+          {mode === 'smart' ? <View style={[styles.heroGoldGlow, { backgroundColor: colors.goldSoft }]} /> : null}
           <View style={styles.heroTop}>
-            <View style={styles.heroBolt}><Icon name={mode === 'cram' ? 'fire' : mode === 'pretest' ? 'radar' : 'lightning-bolt'} color="#FFFFFF" size={27} /></View>
-            <Pill label={mode === 'smart' ? 'INTERLEAVED' : mode === 'pretest' ? 'DIAGNOSTIC' : 'SHORT-TERM'} tone="purple" />
+            {mode === 'smart' ? (
+              <BoltMark size={48} iconSize={28} backgroundColor={colors.goldBright} color={colors.onGold} style={styles.heroBolt} />
+            ) : (
+              <View style={[styles.heroBolt, { backgroundColor: mode === 'cram' ? colors.warning : colors.primary }]}>
+                <Icon name={mode === 'cram' ? 'fire' : 'radar'} color={mode === 'cram' ? colors.onGold : colors.primaryText} size={27} />
+              </View>
+            )}
+            <Pill label={mode === 'smart' ? 'INTERLEAVED' : mode === 'pretest' ? 'DIAGNOSTIC' : 'SHORT-TERM'} tone={mode === 'smart' ? 'gold' : 'purple'} />
           </View>
           <Text style={[styles.heroEyebrow, { color: introPalette.eyebrow }]}>{mode === 'smart' ? 'YOUR NEXT BEST SESSION' : mode === 'pretest' ? 'FIND YOUR STARTING POINT' : 'EXAM-READY PRIORITIES'}</Text>
           <Text style={[styles.heroTitle, { color: introPalette.title }]}>{mode === 'smart' ? 'No choosing. Just start.' : mode === 'pretest' ? 'Study less of what you know.' : 'Make every minute count.'}</Text>
@@ -179,9 +192,10 @@ export function SmartStudyScreen({ initialMode = 'smart', focusDeckId, onBack }:
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.modeRow}>
           {MODES.map((candidate) => {
             const active = candidate.id === mode;
+            const smartAccent = candidate.id === 'smart';
             return (
-              <Pressable key={candidate.id} onPress={() => chooseMode(candidate.id)} style={[styles.modeCard, { backgroundColor: active ? colors.primarySoft : colors.card, borderColor: active ? colors.primary : colors.border }]}>
-                <Icon name={candidate.icon} size={19} color={active ? colors.primary : colors.textMuted} />
+              <Pressable key={candidate.id} onPress={() => chooseMode(candidate.id)} style={[styles.modeCard, { backgroundColor: active ? colors.primarySoft : colors.card, borderColor: active ? (smartAccent ? colors.gold : colors.primary) : colors.border }]}>
+                <Icon name={candidate.icon} size={19} color={active ? (smartAccent ? colors.goldText : colors.primary) : colors.textMuted} />
                 <View>
                   <Text style={[styles.modeLabel, { color: active ? colors.primary : colors.text }]}>{candidate.label}</Text>
                   <Text style={[styles.modeDetail, { color: colors.textMuted }]}>{candidate.detail}</Text>
@@ -365,9 +379,10 @@ function ReviewMetric({ value, label, color }: { value: string; label: string; c
 }
 
 const styles = StyleSheet.create({
-  introHero: { borderRadius: 22, padding: 19, marginTop: 5 },
+  introHero: { borderRadius: 22, padding: 19, marginTop: 5, overflow: 'hidden' },
+  heroGoldGlow: { position: 'absolute', width: 170, height: 170, borderRadius: 85, right: -72, top: -92, opacity: 0.55 },
   heroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  heroBolt: { width: 48, height: 48, borderRadius: 16, backgroundColor: '#277EFF', alignItems: 'center', justifyContent: 'center' },
+  heroBolt: { width: 48, height: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   heroEyebrow: { fontSize: 9, fontWeight: '900', letterSpacing: 1.3, marginTop: 18 },
   heroTitle: { fontSize: 26, lineHeight: 32, fontWeight: '900', letterSpacing: -0.8, marginTop: 7 },
   heroText: { fontSize: 12, lineHeight: 18, marginTop: 7 },

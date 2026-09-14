@@ -130,6 +130,7 @@ export function AskStudyBoltSheet({
   onRequireAuth,
   onClose,
   onQuizAnswered,
+  initialQuestion,
 }: {
   visible: boolean;
   sectionTitle: string;
@@ -148,6 +149,7 @@ export function AskStudyBoltSheet({
   onRequireAuth?: () => void;
   onClose: () => void;
   onQuizAnswered: (correct: boolean) => void;
+  initialQuestion?: string;
 }) {
   const { colors } = useStudyBolt();
   const [question, setQuestion] = useState('');
@@ -157,8 +159,10 @@ export function AskStudyBoltSheet({
     if (!visible) {
       setQuestion('');
       setSelectedOption(null);
+    } else if (initialQuestion) {
+      setQuestion(initialQuestion);
     }
-  }, [visible]);
+  }, [initialQuestion, visible]);
 
   useEffect(() => setSelectedOption(null), [response?.quiz?.question]);
 

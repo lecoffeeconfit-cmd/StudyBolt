@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import type { FlaggedItem, LibrarySort, QuizQuestionCount, RetentionMode, StudyBoltState, StudyClass, StudyPack, StudyPlan } from '../models';
+import type { ExamAttempt, FlaggedItem, LibrarySort, QuizQuestionCount, RetentionMode, StudyBoltState, StudyClass, StudyPack, StudyPlan } from '../models';
 import { initialState } from '../data/mockStudyPacks';
 import { ensureDistinctNoteLayers } from './noteLayers';
 
@@ -108,6 +108,7 @@ export async function loadStudyBoltState(): Promise<StudyBoltState> {
         ? parsed.activityEvents
         : decks.every((deck) => deck.fileType === 'demo') ? initialState.activityEvents : [],
       dailyStudyGoalMinutes: typeof parsed.dailyStudyGoalMinutes === 'number' ? parsed.dailyStudyGoalMinutes : initialState.dailyStudyGoalMinutes,
+      examAttempts: Array.isArray(parsed.examAttempts) ? (parsed.examAttempts as ExamAttempt[]).slice(-100) : [],
     };
   } catch {
     return initialState;

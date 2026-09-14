@@ -9,6 +9,7 @@ export type Route =
   | { type: 'legal' }
   | { type: 'reset-password' }
   | { type: 'smart-study'; mode?: SmartStudyMode; deckId?: string }
+  | { type: 'exam'; deckId?: string }
   | { type: 'mistakes' }
   | { type: 'flagged' }
   | { type: 'deck'; deckId: string; tool?: StudyTool }

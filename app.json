@@ -20,7 +20,8 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.studybolt.app"
+      "bundleIdentifier": "com.lecoffeeconfit.studybolt",
+      "buildNumber": "1"
     },
     "android": {
       "package": "com.studybolt.app",

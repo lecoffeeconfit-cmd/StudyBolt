@@ -12,8 +12,8 @@ const TABS: Array<{ id: MainTab; label: string; icon: IconName; activeIcon: Icon
   { id: 'home', label: 'Home', icon: 'home-outline', activeIcon: 'home-variant' },
   { id: 'library', label: 'Library', icon: 'bookshelf', activeIcon: 'book-open-page-variant' },
   { id: 'planner', label: 'Planner', icon: 'calendar-blank-outline', activeIcon: 'calendar-check' },
-  { id: 'discover', label: 'Discover', icon: 'compass-outline', activeIcon: 'compass' },
   { id: 'stats', label: 'Stats', icon: 'chart-bar', activeIcon: 'chart-box' },
+  { id: 'discover', label: 'Discover', icon: 'compass-outline', activeIcon: 'compass' },
   { id: 'profile', label: 'Profile', icon: 'account-outline', activeIcon: 'account-circle' },
 ];
 

@@ -11,7 +11,7 @@ import type { IconName } from '../components/ui';
 import { StudyPackShareSheet } from '../components/StudyPackShareSheet';
 import { useStudyBolt } from '../StudyBoltContext';
 import { getFlaggedItemId } from '../models';
-import type { AiTutorAction, AiTutorQuota, AiTutorResponse, AnswerConfidence, FlaggedItemInput, Flashcard, FlashcardConfidence, NoteBlock, QuizAnswerRecord, QuizQuestion, QuizQuestionCount, SharedStudyPackMetadata, StudyPack, StudyTool } from '../models';
+import type { AiTutorAction, AiTutorConversation, AiTutorQuota, AiTutorResponse, AnswerConfidence, FlaggedItemInput, Flashcard, FlashcardConfidence, NoteBlock, QuizAnswerRecord, QuizQuestion, QuizQuestionCount, SharedStudyPackMetadata, StudyPack, StudyTool } from '../models';
 import { fetchTutorQuota, isAiTutorConfigured, tutorContextAtPosition } from '../services/aiTutor';
 import { runStudyBoltAI } from '../services/aiRouter';
 import { canAttemptOnDeviceAI, getOnDeviceAIAvailability, initialOnDeviceAIAvailability } from '../services/onDeviceAI';
@@ -25,7 +25,7 @@ const TABS: Array<{ id: StudyTool; label: string }> = [
   { id: 'overview', label: 'Overview' },
   { id: 'notes', label: 'Notes' },
   { id: 'flashcards', label: 'Flashcards' },
-  { id: 'quiz', label: 'Quiz' },
+  { id: 'quiz', label: 'Exam' },
   { id: 'audio', label: 'Listen' },
   { id: 'coach', label: 'Coach' },
 ];
@@ -93,6 +93,7 @@ export function StudyPackScreen({
   onBack,
   onPlan,
   onStartStudy,
+  onOpenExam,
   onRequireAuth,
 }: {
   deckId: string;
@@ -104,6 +105,7 @@ export function StudyPackScreen({
   onBack: () => void;
   onPlan: (deckId: string) => void;
   onStartStudy?: (mode: SmartStudyMode, deckId: string) => void;
+  onOpenExam?: (deckId?: string) => void;
   onRequireAuth?: () => void;
 }) {
   const { colors, state } = useStudyBolt();
@@ -167,7 +169,7 @@ export function StudyPackScreen({
         {tool === 'overview' ? <Overview deck={deck} onTool={setTool} onPlan={() => onPlan(deck.id)} onStartStudy={onStartStudy ? (mode) => onStartStudy(mode, deck.id) : undefined} shared={shared} /> : null}
         {tool === 'notes' ? <Notes deck={deck} readOnly={shared} /> : null}
         {tool === 'flashcards' ? <Flashcards deck={deck} readOnly={shared} /> : null}
-        {tool === 'quiz' ? <Quiz deck={deck} readOnly={shared} /> : null}
+        {tool === 'quiz' ? <Quiz deck={deck} readOnly={shared} onOpenExam={onOpenExam} /> : null}
         {tool === 'audio' ? <AudioPlayer deck={deck} readOnly={shared} onRequireAuth={onRequireAuth} /> : null}
         {tool === 'coach' ? <StudyCoach deck={deck} onTool={setTool} onStartStudy={onStartStudy ? (mode) => onStartStudy(mode, deck.id) : undefined} /> : null}
       </ScrollView>
@@ -206,7 +208,7 @@ function Overview({ deck, onTool, onPlan, onStartStudy, shared }: { deck: StudyP
             <Text style={[styles.masteryLabel, { color: colors.textSecondary }]}>ESTIMATED MASTERY</Text>
             <Text style={[styles.masteryValue, { color: colors.text }]}>{mastery.overall}%</Text>
           </View>
-          <View style={[styles.masteryRing, { borderColor: colors.primary }]}><Icon name="lightning-bolt" size={24} color={colors.primary} /></View>
+          <View style={[styles.masteryRing, { backgroundColor: colors.goldSoft, borderColor: colors.gold }]}><Icon name="lightning-bolt" size={24} color={colors.goldText} /></View>
         </View>
         <ProgressBar progress={mastery.overall} />
         <Text style={[styles.masteryHint, { color: colors.textSecondary }]}>{mastery.weakCount} flashcards still need retrieval practice.</Text>
@@ -230,7 +232,7 @@ function Overview({ deck, onTool, onPlan, onStartStudy, shared }: { deck: StudyP
 
       {!shared && onStartStudy ? (
         <View style={styles.deckAdaptiveActions}>
-          <Pressable onPress={() => onStartStudy('smart')} style={[styles.deckAdaptivePrimary, { backgroundColor: colors.primary }]}><Icon name="lightning-bolt" color={colors.primaryText} /><View><Text style={[styles.deckAdaptiveTitle, { color: colors.primaryText }]}>Study this pack</Text><Text style={[styles.deckAdaptiveText, { color: colors.primaryText }]}>Adaptive mix</Text></View></Pressable>
+          <Pressable onPress={() => onStartStudy('smart')} style={[styles.deckAdaptivePrimary, { backgroundColor: colors.primary }]}><Icon name="lightning-bolt" color={colors.goldBright} /><View><Text style={[styles.deckAdaptiveTitle, { color: colors.primaryText }]}>Study this pack</Text><Text style={[styles.deckAdaptiveText, { color: colors.primaryText }]}>Adaptive mix</Text></View></Pressable>
           <Pressable onPress={() => onStartStudy('pretest')} style={[styles.deckAdaptiveSecondary, { backgroundColor: colors.card, borderColor: colors.border }]}><Icon name="radar" color={colors.primary} /><View><Text style={[styles.deckAdaptiveTitle, { color: colors.text }]}>Pre-test</Text><Text style={[styles.deckAdaptiveText, { color: colors.textMuted }]}>Find your baseline</Text></View></Pressable>
         </View>
       ) : null}
@@ -545,7 +547,7 @@ function ConfidenceButton({ icon, label, color, background, onPress }: { icon: I
   );
 }
 
-function Quiz({ deck, readOnly = false }: { deck: StudyPack; readOnly?: boolean }) {
+function Quiz({ deck, readOnly = false, onOpenExam }: { deck: StudyPack; readOnly?: boolean; onOpenExam?: (deckId?: string) => void }) {
   const { colors, recordStudyEvent, state, setQuizQuestionCount, updateDeck, toggleFlag, isFlagged } = useStudyBolt();
   const [kind, setKind] = useState<AssessmentKind>('practice');
   const [index, setIndex] = useState(0);
@@ -666,7 +668,7 @@ function Quiz({ deck, readOnly = false }: { deck: StudyPack; readOnly?: boolean 
         })}
       </View>
 
-      <Card style={[styles.quizSetup, { backgroundColor: kind === 'practice' ? colors.primarySoft : colors.mintSoft }]}>
+      <Card style={[styles.quizSetup, { backgroundColor: kind === 'practice' ? colors.primarySoft : colors.mintSoft }]}> 
         <View style={styles.quizSetupTop}>
           <View style={{ flex: 1 }}>
             <Text style={[styles.quizSetupTitle, { color: colors.text }]}>{kind === 'practice' ? 'Choose your quiz length' : 'Complete source coverage'}</Text>
@@ -697,6 +699,13 @@ function Quiz({ deck, readOnly = false }: { deck: StudyPack; readOnly?: boolean 
             <Text style={[styles.coverageText, { color: colors.textSecondary }]}>{questions.length} distinct questions · cumulative · source ordered</Text>
           </View>
         )}
+        {!readOnly && onOpenExam ? (
+          <Pressable onPress={() => onOpenExam(deck.id)} style={[styles.adaptiveExamLink, { backgroundColor: colors.card, borderColor: colors.primary }]}> 
+            <Icon name="lightning-bolt" size={17} color={colors.primary} />
+            <View style={{ flex: 1 }}><Text style={[styles.adaptiveExamLinkTitle, { color: colors.text }]}>Open Adaptive Exam</Text><Text style={[styles.adaptiveExamLinkText, { color: colors.textSecondary }]}>Multi-pack sources, targeted concepts, timer, and full analytics</Text></View>
+            <Icon name="arrow-right" size={18} color={colors.primary} />
+          </Pressable>
+        ) : null}
       </Card>
 
       <View style={styles.toolHeadingRow}>
@@ -986,6 +995,7 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
   const [tutorError, setTutorError] = useState<string>();
   const [tutorResponse, setTutorResponse] = useState<AiTutorResponse>();
   const [tutorQuota, setTutorQuota] = useState<AiTutorQuota>();
+  const [tutorConversation, setTutorConversation] = useState<AiTutorConversation>({ turns: [] });
   const [onDeviceAI, setOnDeviceAI] = useState(initialOnDeviceAIAvailability);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const sessionStartRef = useRef<number | null>(null);
@@ -1128,6 +1138,7 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
       question,
       context: tutorContextAtPosition(deck, askResumePositionRef.current, words.length),
       accessToken,
+      conversation: tutorConversation,
     });
     setOnDeviceAI(result.availability);
     if (result.quota) setTutorQuota(result.quota);
@@ -1135,6 +1146,11 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
     else {
       if (result.routeUsed === 'on-device') setTutorQuota(undefined);
       setTutorResponse(result.response);
+      setTutorConversation((current) => ({ turns: [
+        ...(current.turns ?? []),
+        ...(question?.trim() ? [{ role: 'user' as const, content: question.trim() }] : []),
+        { role: 'assistant' as const, content: result.response!.answer || result.response!.quiz?.question || '' },
+      ].slice(-8) }));
       if (!readOnly) recordStudyEvent({ type: 'ai-tutor-question', deckId: deck.id, courseId: deck.courseId, tutorAction: action });
     }
     setTutorLoading(false);
@@ -1146,6 +1162,7 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
     else await Speech.stop();
     setTutorError(undefined);
     setTutorResponse(undefined);
+    setTutorConversation({ turns: [] });
     setAskVisible(true);
     if (!action && canAttemptOnDeviceAI(onDeviceAI)) setTutorQuota(undefined);
     else if (user && !action) void loadQuota();
@@ -1476,6 +1493,9 @@ const styles = StyleSheet.create({
   countText: { fontSize: 12, fontWeight: '900' },
   coverageRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 12 },
   coverageText: { flex: 1, fontSize: 10, fontWeight: '700' },
+  adaptiveExamLink: { flexDirection: 'row', alignItems: 'center', gap: 9, borderWidth: 1, borderRadius: 14, padding: 10, marginTop: 13 },
+  adaptiveExamLinkTitle: { fontSize: 11, fontWeight: '900' },
+  adaptiveExamLinkText: { fontSize: 9, lineHeight: 13, marginTop: 2 },
   questionCard: { marginTop: 18, padding: 18 },
   questionMeta: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   questionMetaRight: { flexDirection: 'row', alignItems: 'center', gap: 9 },

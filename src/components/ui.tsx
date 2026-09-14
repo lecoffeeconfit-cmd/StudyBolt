@@ -4,6 +4,8 @@ import React from 'react';
 import type { ReactNode } from 'react';
 import {
   ActivityIndicator,
+  Animated,
+  Easing,
   GestureResponderEvent,
   Platform,
   Pressable,
@@ -17,6 +19,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useStudyBolt } from '../StudyBoltContext';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 import { radius } from '../theme';
 
 export type IconName = keyof typeof MaterialCommunityIcons.glyphMap;
@@ -46,13 +49,84 @@ export function FlagButton({ flagged, onPress, label = 'Flag for later' }: { fla
   );
 }
 
+export function BoltMark({
+  size = 36,
+  iconSize = 24,
+  animated = true,
+  backgroundColor,
+  color,
+  style,
+}: {
+  size?: number;
+  iconSize?: number;
+  animated?: boolean;
+  backgroundColor?: string;
+  color?: string;
+  style?: StyleProp<ViewStyle>;
+}) {
+  const { colors } = useStudyBolt();
+  const reducedMotion = useReducedMotion();
+  const charge = React.useRef(new Animated.Value(0)).current;
+
+  React.useEffect(() => {
+    charge.stopAnimation();
+    charge.setValue(0);
+    if (!animated || reducedMotion) return;
+    const animation = Animated.sequence([
+      Animated.delay(380),
+      Animated.timing(charge, {
+        toValue: 1,
+        duration: 520,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: Platform.OS !== 'web',
+      }),
+    ]);
+    animation.start();
+    return () => animation.stop();
+  }, [animated, charge, reducedMotion]);
+
+  const motionStyle = animated && !reducedMotion
+    ? {
+        transform: [
+          { scale: charge.interpolate({ inputRange: [0, 0.55, 1], outputRange: [1, 1.09, 1] }) },
+          { rotate: charge.interpolate({ inputRange: [0, 0.55, 1], outputRange: ['0deg', '-6deg', '0deg'] }) },
+        ],
+      }
+    : undefined;
+
+  return (
+    <Animated.View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      style={[
+        styles.logoBolt,
+        { width: size, height: size, borderRadius: Math.round(size * 0.33), backgroundColor: backgroundColor ?? colors.goldSoft, pointerEvents: 'none' },
+        style,
+        motionStyle,
+      ]}
+    >
+      <Icon name="lightning-bolt" size={iconSize} color={color ?? colors.goldText} />
+    </Animated.View>
+  );
+}
+
 export function BoltLogo({ compact = false }: { compact?: boolean }) {
   const { colors } = useStudyBolt();
   return (
     <View style={styles.logoRow}>
-      <View style={[styles.logoBolt, { backgroundColor: colors.primarySoft }]}>
-        <Icon name="lightning-bolt" size={compact ? 21 : 27} color={colors.primary} />
-      </View>
+      <BoltMark
+        size={36}
+        iconSize={compact ? 21 : 27}
+        backgroundColor={colors.primary}
+        color={colors.mode === 'dark' ? '#FFE68A' : '#FFE04F'}
+        style={{
+          shadowColor: colors.primary,
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: colors.mode === 'dark' ? 0.5 : 0.34,
+          shadowRadius: 8,
+          elevation: 5,
+        }}
+      />
       <Text style={[compact ? styles.logoTextCompact : styles.logoText, { color: colors.text }]}>Study Bolt</Text>
     </View>
   );
@@ -178,10 +252,10 @@ export function Header({ title, subtitle, onBack, right }: { title: string; subt
   );
 }
 
-export function Pill({ label, tone = 'blue' }: { label: string; tone?: 'blue' | 'mint' | 'purple' | 'neutral' }) {
+export function Pill({ label, tone = 'blue' }: { label: string; tone?: 'blue' | 'gold' | 'mint' | 'purple' | 'neutral' }) {
   const { colors } = useStudyBolt();
-  const background = tone === 'mint' ? colors.mintSoft : tone === 'purple' ? colors.purpleSoft : tone === 'neutral' ? colors.cardStrong : colors.primarySoft;
-  const foreground = tone === 'mint' ? colors.mint : tone === 'purple' ? colors.purple : tone === 'neutral' ? colors.textSecondary : colors.primary;
+  const background = tone === 'gold' ? colors.goldSoft : tone === 'mint' ? colors.mintSoft : tone === 'purple' ? colors.purpleSoft : tone === 'neutral' ? colors.cardStrong : colors.primarySoft;
+  const foreground = tone === 'gold' ? colors.goldText : tone === 'mint' ? colors.mint : tone === 'purple' ? colors.purple : tone === 'neutral' ? colors.textSecondary : colors.primary;
   return (
     <View style={[styles.pill, { backgroundColor: background }]}>
       <Text style={[styles.pillText, { color: foreground }]}>{label}</Text>

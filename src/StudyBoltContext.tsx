@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { useColorScheme } from 'react-native';
 
 import { initialState } from './data/mockStudyPacks';
-import type { FlaggedItemInput, LibrarySort, QuizQuestionCount, RetentionMode, StudyBoltState, StudyClass, StudyEventInput, StudyPack, StudyPlan, ThemePreference } from './models';
+import type { ExamAttempt, FlaggedItemInput, LibrarySort, QuizQuestionCount, RetentionMode, StudyBoltState, StudyClass, StudyEventInput, StudyPack, StudyPlan, ThemePreference } from './models';
 import { getFlaggedItemId } from './models';
 import { loadStudyBoltState, saveStudyBoltState } from './services/persistence';
 import { AppColors, resolveColors } from './theme';
@@ -24,6 +24,7 @@ interface StudyBoltContextValue {
   setPlan: (plan: StudyPlan) => void;
   setFocusMinutes: (minutes: number) => void;
   recordStudyEvent: (event: StudyEventInput) => void;
+  saveExamAttempt: (attempt: ExamAttempt) => void;
   toggleFlag: (item: FlaggedItemInput) => void;
   removeFlag: (flagId: string) => void;
   isFlagged: (flagId: string) => boolean;
@@ -107,6 +108,10 @@ export function StudyBoltProvider({ children }: { children: ReactNode }) {
             occurredAt: event.occurredAt ?? new Date().toISOString(),
           },
         ].slice(-1500),
+      })),
+      saveExamAttempt: (attempt) => setState((current) => ({
+        ...current,
+        examAttempts: [...(current.examAttempts ?? []), attempt].slice(-100),
       })),
       toggleFlag: (item) => setState((current) => {
         const id = item.id ?? getFlaggedItemId(item.deckId, item.kind, item.itemId);

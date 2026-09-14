@@ -17,6 +17,7 @@ import { useAuth } from '../AuthContext';
 import { AuthField } from '../components/AuthField';
 import { GoogleLogo } from '../components/GoogleLogo';
 import { BoltLogo, Icon, PrimaryButton } from '../components/ui';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 import { useStudyBolt } from '../StudyBoltContext';
 import { radius } from '../theme';
 
@@ -30,6 +31,7 @@ export function LoginScreen({
   onContinueAsGuest: () => void;
 }) {
   const { colors } = useStudyBolt();
+  const reducedMotion = useReducedMotion();
   const { configured, signIn, signUp, signInWithProvider, forgotPassword, resendConfirmationEmail } = useAuth();
   const insets = useSafeAreaInsets();
   const [mode, setMode] = useState<AuthMode>('signin');
@@ -45,21 +47,28 @@ export function LoginScreen({
 
   useEffect(() => {
     entrance.setValue(0);
+    if (reducedMotion) {
+      entrance.setValue(1);
+      return;
+    }
     Animated.timing(entrance, {
       toValue: 1,
       duration: 380,
       useNativeDriver: Platform.OS !== 'web',
     }).start();
-  }, [entrance, mode]);
+  }, [entrance, mode, reducedMotion]);
 
   useEffect(() => {
+    bob.stopAnimation();
+    bob.setValue(0);
+    if (reducedMotion) return;
     const animation = Animated.loop(Animated.sequence([
       Animated.timing(bob, { toValue: 1, duration: 1700, useNativeDriver: Platform.OS !== 'web' }),
       Animated.timing(bob, { toValue: 0, duration: 1700, useNativeDriver: Platform.OS !== 'web' }),
     ]));
     animation.start();
     return () => animation.stop();
-  }, [bob]);
+  }, [bob, reducedMotion]);
 
   const changeMode = (next: AuthMode) => {
     setMode(next);
@@ -139,21 +148,22 @@ export function LoginScreen({
         </View>
 
         <LinearGradient
-          colors={colors.mode === 'dark' ? ['#172536', '#10161D'] : ['#E8F2FF', '#F6FAFF']}
+          colors={colors.mode === 'dark' ? ['#172536', '#10161D', '#302713'] : ['#E8F2FF', '#F6FAFF', '#FFF4D2']}
+          locations={[0, 0.72, 1]}
           style={[styles.hero, { borderColor: colors.border }]}
         >
-          <View style={[styles.heroOrb, { backgroundColor: `${colors.mint}1F` }]} />
+          <View style={[styles.heroOrb, { backgroundColor: `${colors.goldBright}22` }]} />
           <Animated.View
             style={[
               styles.heroMark,
               {
-                backgroundColor: colors.primary,
-                shadowColor: colors.primary,
+                backgroundColor: colors.goldBright,
+                shadowColor: colors.gold,
                 transform: [{ translateY: bob.interpolate({ inputRange: [0, 1], outputRange: [-3, 5] }) }, { rotate: '-6deg' }],
               },
             ]}
           >
-            <Icon name="lightning-bolt" size={39} color={colors.primaryText} />
+            <Icon name="lightning-bolt" size={39} color={colors.onGold} />
           </Animated.View>
           <View style={[styles.floatingMini, styles.miniCards, { backgroundColor: colors.card }]}><Icon name="cards-outline" size={20} color={colors.purple} /></View>
           <View style={[styles.floatingMini, styles.miniBrain, { backgroundColor: colors.card }]}><Icon name="brain" size={20} color={colors.mint} /></View>

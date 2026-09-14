@@ -1,7 +1,7 @@
 export type ThemePreference = 'system' | 'light' | 'dark';
 export type RetentionMode = 'standard' | 'fsrs' | 'sm2';
 export type FlashcardConfidence = 'new' | 'learning' | 'known';
-export type QuizQuestionType = 'multiple-choice' | 'true-false' | 'short-answer' | 'fill-blank' | 'application';
+export type QuizQuestionType = 'multiple-choice' | 'multiple-select' | 'true-false' | 'short-answer' | 'fill-blank' | 'definition' | 'application';
 export type QuizDifficulty = 'easy' | 'medium' | 'hard';
 export type AnswerConfidence = 'unsure' | 'somewhat-sure' | 'very-sure';
 export type StudyTool = 'overview' | 'notes' | 'flashcards' | 'quiz' | 'audio' | 'coach';
@@ -81,9 +81,19 @@ export interface QuizQuestion {
   prompt: string;
   options: string[];
   correctIndex: number;
+  correctIndices?: number[];
   explanation: string;
   source: SourceReference;
   difficulty?: QuizDifficulty;
+  sourceDeckId?: string;
+  conceptId?: string;
+  conceptTitle?: string;
+  importance?: number;
+  masteryImpact?: number;
+  examId?: string;
+  aiGenerated?: boolean;
+  createdAt?: string;
+  acceptedAnswers?: string[];
 }
 
 export interface QuizAnswerRecord {
@@ -100,6 +110,14 @@ export interface QuizAnswerRecord {
   answeredAt?: string;
   confidence?: AnswerConfidence;
   sequence?: number;
+  selectedIndices?: number[];
+  openAnswer?: string;
+  partialCredit?: number;
+  skipped?: boolean;
+  flagged?: boolean;
+  sourceDeckId?: string;
+  conceptId?: string;
+  examId?: string;
 }
 
 export type StudyEventType =
@@ -114,7 +132,18 @@ export type StudyEventType =
   | 'shared-pack-opened'
   | 'shared-pack-saved'
   | 'ai-tutor-question'
-  | 'tutor-quiz';
+  | 'tutor-quiz'
+  | 'exam-created'
+  | 'exam-started'
+  | 'exam-completed'
+  | 'exam-abandoned'
+  | 'exam-retake'
+  | 'weak-area-exam-started'
+  | 'ask-ai-from-exam'
+  | 'voice-tutor-started'
+  | 'voice-tutor-completed'
+  | 'voice-tutor-interrupted'
+  | 'ai-limit-warning';
 
 export interface StudyEvent {
   id: string;
@@ -130,7 +159,13 @@ export interface StudyEvent {
   responseTimeMs?: number;
   quizScore?: number;
   quizAnswers?: QuizAnswerRecord[];
-  assessmentKind?: 'practice' | 'comprehensive';
+  assessmentKind?: 'practice' | 'comprehensive' | 'adaptive' | 'targeted';
+  examId?: string;
+  examAttemptId?: string;
+  examName?: string;
+  sourceDeckIds?: string[];
+  masteryBefore?: number;
+  masteryAfter?: number;
   audioMode?: 'original' | 'summary';
   completionPercent?: number;
   tutorAction?: AiTutorAction;
@@ -260,6 +295,14 @@ export interface AiTutorContext {
   subject: string;
   currentChunk: AiTutorContextChunk;
   nearbyChunks: AiTutorContextChunk[];
+  currentQuestion?: {
+    prompt: string;
+    userAnswer?: string;
+    correctAnswer?: string;
+    concept?: string;
+    source?: string;
+  };
+  mastery?: number;
 }
 
 export interface AiTutorQuota {
@@ -289,6 +332,51 @@ export interface AiTutorResponse {
   quiz?: AiTutorQuiz;
   quota?: AiTutorQuota;
   provider: 'on-device' | 'cloud';
+}
+
+export type ExamMode = 'adaptive' | 'standard' | 'targeted';
+export type ExamDifficulty = QuizDifficulty | 'balanced' | 'adaptive';
+export type ExamLengthPreset = 'quick' | 'standard' | 'full' | 'custom';
+
+export interface ExamSettings {
+  title: string;
+  sourceDeckIds: string[];
+  sourceSectionIds?: string[];
+  questionCount: number;
+  lengthPreset: ExamLengthPreset;
+  difficulty: ExamDifficulty;
+  questionTypes: QuizQuestionType[];
+  timeLimitMinutes?: number;
+  immediateFeedback: boolean;
+  randomizeQuestions: boolean;
+  randomizeAnswers: boolean;
+  mode: ExamMode;
+  targetedConceptIds?: string[];
+  excludedQuestionIds?: string[];
+}
+
+export interface ExamAttempt {
+  id: string;
+  examId: string;
+  title: string;
+  sourceDeckIds: string[];
+  sourceLabels: string[];
+  createdAt: string;
+  completedAt?: string;
+  status: 'completed' | 'abandoned';
+  score: number;
+  correctCount: number;
+  questionCount: number;
+  durationSeconds: number;
+  masteryBefore: number;
+  masteryAfter: number;
+  improvement: number;
+  weakTopics: string[];
+  strongestTopics: string[];
+  flaggedQuestionIds: string[];
+  settings: ExamSettings;
+  questions: QuizQuestion[];
+  answers: QuizAnswerRecord[];
 }
 
 export interface StudyClass {
@@ -340,6 +428,7 @@ export interface StudyBoltState {
   streakDays: number;
   activityEvents: StudyEvent[];
   dailyStudyGoalMinutes: number;
+  examAttempts?: ExamAttempt[];
 }
 
 export interface ImportAsset {

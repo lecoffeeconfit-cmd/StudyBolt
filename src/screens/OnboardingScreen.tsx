@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BoltLogo, Icon, PrimaryButton } from '../components/ui';
 import type { IconName } from '../components/ui';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 import { useStudyBolt } from '../StudyBoltContext';
 import { radius } from '../theme';
 
@@ -44,6 +45,7 @@ export function OnboardingScreen({
   onTrySample: () => void;
 }) {
   const { colors } = useStudyBolt();
+  const reducedMotion = useReducedMotion();
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
   const [pageIndex, setPageIndex] = useState(0);
@@ -54,13 +56,17 @@ export function OnboardingScreen({
 
   useEffect(() => {
     pageEntrance.setValue(0);
+    if (reducedMotion) {
+      pageEntrance.setValue(1);
+      return;
+    }
     Animated.spring(pageEntrance, {
       toValue: 1,
       damping: 18,
       stiffness: 170,
       useNativeDriver: Platform.OS !== 'web',
     }).start();
-  }, [pageEntrance, pageIndex]);
+  }, [pageEntrance, pageIndex, reducedMotion]);
 
   const next = () => {
     if (isLast) onComplete();
@@ -91,22 +97,23 @@ export function OnboardingScreen({
 
       <Animated.View style={[styles.content, compact && styles.contentCompact, { opacity: pageEntrance, transform: [{ translateX: pageEntrance.interpolate({ inputRange: [0, 1], outputRange: [18, 0] }) }] }]}>
         <LinearGradient
-          colors={colors.mode === 'dark' ? ['#182839', '#11171F'] : ['#E7F1FF', '#F6FAFF']}
+          colors={colors.mode === 'dark' ? ['#182839', '#11171F', '#302713'] : ['#E7F1FF', '#F6FAFF', '#FFF4D2']}
+          locations={[0, 0.72, 1]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={[styles.visual, compact && styles.visualCompact, { borderColor: colors.border }]}
         >
-          <View style={[styles.orb, styles.orbTop, { backgroundColor: `${colors.primary}22` }]} />
+          <View style={[styles.orb, styles.orbTop, { backgroundColor: `${colors.goldBright}24` }]} />
           <View style={[styles.orb, styles.orbBottom, { backgroundColor: `${colors.mint}22` }]} />
           {pageIndex === 0 ? <UploadVisual /> : pageIndex === 1 ? <ToolkitVisual /> : <PlanVisual />}
         </LinearGradient>
 
         <View style={[styles.copy, compact && styles.copyCompact]}>
           <View style={styles.eyebrowRow}>
-            <View style={[styles.eyebrowIcon, { backgroundColor: colors.primarySoft }]}>
-              <Icon name={page.icon} size={15} color={colors.primary} />
+            <View style={[styles.eyebrowIcon, { backgroundColor: colors.goldSoft }]}>
+              <Icon name={page.icon} size={15} color={colors.goldText} />
             </View>
-            <Text style={[styles.eyebrow, { color: colors.primary }]}>{page.eyebrow}</Text>
+            <Text style={[styles.eyebrow, { color: colors.goldText }]}>{page.eyebrow}</Text>
           </View>
           <Text style={[styles.title, compact && styles.titleCompact, { color: colors.text }]}>{page.title}</Text>
           <Text style={[styles.body, compact && styles.bodyCompact, { color: colors.textSecondary }]}>{page.body}</Text>
@@ -176,8 +183,8 @@ function UploadVisual() {
         <Icon name="file-pdf-box" size={19} color={colors.mode === 'dark' ? '#F08A95' : '#EC5362'} />
         <Text style={[styles.pdfText, colors.mode === 'dark' && { color: '#F08A95' }]}>PDF</Text>
       </View>
-      <View style={[styles.uploadBubble, { backgroundColor: colors.primary, shadowColor: colors.primary }]}>
-        <Icon name="arrow-up" size={27} color={colors.primaryText} />
+      <View style={[styles.uploadBubble, { backgroundColor: colors.goldBright, shadowColor: colors.gold }]}>
+        <Icon name="arrow-up" size={27} color={colors.onGold} />
       </View>
       <View style={[styles.readyBadge, { backgroundColor: colors.mintSoft }]}>
         <Icon name="check-circle" size={18} color={colors.mint} />
@@ -212,7 +219,7 @@ function ToolkitVisual() {
           <Text style={[styles.sourceTitle, { color: colors.text }]}>Biology lecture</Text>
           <Text style={[styles.sourceMeta, { color: colors.textMuted }]}>42 slides</Text>
         </View>
-        <Icon name="lightning-bolt" size={19} color={colors.primary} />
+        <Icon name="lightning-bolt" size={19} color={colors.goldText} />
       </View>
       <View style={styles.toolGrid}>
         {[TOOLS.slice(0, 2), TOOLS.slice(2, 4)].map((row, rowIndex) => (
@@ -242,7 +249,7 @@ function PlanVisual() {
           <Text style={[styles.planKicker, { color: colors.primary }]}>EXAM IN 3 DAYS</Text>
           <Text style={[styles.planTitle, { color: colors.text }]}>Your study rhythm</Text>
         </View>
-        <View style={[styles.planBolt, { backgroundColor: colors.primarySoft }]}><Icon name="lightning-bolt" size={20} color={colors.primary} /></View>
+        <View style={[styles.planBolt, { backgroundColor: colors.goldSoft }]}><Icon name="lightning-bolt" size={20} color={colors.goldText} /></View>
       </View>
       <PlanRow day="Today" task="Notes + cards" minutes="25 min" progress={1} />
       <PlanRow day="Tomorrow" task="Quiz weak spots" minutes="20 min" progress={0.66} />

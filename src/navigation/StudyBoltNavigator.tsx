@@ -9,6 +9,7 @@ import { useStudyBolt } from '../StudyBoltContext';
 import { AccountScreen } from '../screens/AccountScreen';
 import { CommunityClassScreen } from '../screens/CommunityClassScreen';
 import { DiscoverScreen } from '../screens/DiscoverScreen';
+import { ExamModeScreen } from '../screens/ExamModeScreen';
 import { HomeScreen } from '../screens/HomeScreen';
 import { LibraryScreen } from '../screens/LibraryScreen';
 import { LegalScreen } from '../screens/LegalScreen';
@@ -187,6 +188,7 @@ export function StudyBoltNavigator() {
       {!showOnboarding && route.type === 'legal' ? <LegalScreen onBack={() => setRoute({ type: 'main' })} /> : null}
       {!showOnboarding && route.type === 'reset-password' ? <ResetPasswordScreen onComplete={() => setRoute({ type: 'main' })} /> : null}
       {!showOnboarding && route.type === 'smart-study' ? <SmartStudyScreen initialMode={route.mode} focusDeckId={route.deckId} onBack={() => setRoute(route.deckId ? { type: 'deck', deckId: route.deckId } : { type: 'main' })} /> : null}
+      {!showOnboarding && route.type === 'exam' ? <ExamModeScreen deckId={route.deckId} onBack={() => setRoute(route.deckId ? { type: 'deck', deckId: route.deckId, tool: 'quiz' } : { type: 'main' })} /> : null}
       {!showOnboarding && route.type === 'mistakes' ? (
         <MistakeNotebookScreen
           onBack={() => setRoute({ type: 'main' })}
@@ -216,6 +218,7 @@ export function StudyBoltNavigator() {
             setRoute({ type: 'main' });
           }}
           onStartStudy={(mode, deckId) => setRoute({ type: 'smart-study', mode, deckId })}
+          onOpenExam={(deckId) => setRoute({ type: 'exam', deckId })}
           onRequireAuth={() => {
             setPendingRoute(route);
             setRoute({ type: 'auth' });

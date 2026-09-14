@@ -14,6 +14,11 @@ export interface AppColors {
   primary: string;
   primarySoft: string;
   primaryText: string;
+  gold: string;
+  goldBright: string;
+  goldSoft: string;
+  goldText: string;
+  onGold: string;
   mint: string;
   mintSoft: string;
   border: string;
@@ -37,6 +42,11 @@ const light: AppColors = {
   primary: '#1678FF',
   primarySoft: '#E9F2FF',
   primaryText: '#FFFFFF',
+  gold: '#C47C00',
+  goldBright: '#FFCB3D',
+  goldSoft: '#FFF4C2',
+  goldText: '#8A5A00',
+  onGold: '#382500',
   mint: '#19B88A',
   mintSoft: '#E3F8F2',
   border: '#E4EAF4',
@@ -62,6 +72,11 @@ const dark: AppColors = {
   primary: '#7AA8F5',
   primarySoft: '#1A2B42',
   primaryText: '#0A111B',
+  gold: '#F4C44E',
+  goldBright: '#FFD45E',
+  goldSoft: '#3A2E12',
+  goldText: '#F4C44E',
+  onGold: '#2C1D00',
   mint: '#78C9AE',
   mintSoft: '#16352E',
   border: '#344250',

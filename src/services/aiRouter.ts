@@ -30,7 +30,7 @@ export async function runStudyBoltAI({
   depth?: AiTutorDepth;
   conversation?: AiTutorConversation;
 }): Promise<StudyBoltAIResult> {
-  const localResult = await askOnDeviceTutor({ action, question, context });
+  const localResult = await askOnDeviceTutor({ action, question, context, conversation });
   if (localResult.response) {
     return { response: localResult.response, availability: localResult.availability, routeUsed: 'on-device' };
   }
