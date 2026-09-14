@@ -223,7 +223,7 @@ function packCompletion(deck: StudyPack, events: StudyEvent[]): number {
 }
 
 function accuracy(answers: QuizAnswerRecord[]): number | null {
-  return answers.length ? clamp((answers.filter((answer) => answer.correct).length / answers.length) * 100) : null;
+  return answers.length ? clamp((answers.reduce((sum, answer) => sum + (answer.partialCredit ?? (answer.correct ? 1 : 0)), 0) / answers.length) * 100) : null;
 }
 
 function groupAccuracy<T extends string>(answers: QuizAnswerRecord[], values: readonly T[], select: (answer: QuizAnswerRecord) => T): BreakdownValue[] {
@@ -296,7 +296,7 @@ export function buildAnalytics(state: StudyBoltState, now = new Date()): Analyti
   const answerByDeckAndSection = new Map<string, QuizAnswerRecord[]>();
   const latestQuizEvidenceAt = new Map<string, string>();
   quizEvents.forEach((event) => (event.quizAnswers ?? []).forEach((answer) => {
-    const key = `${event.deckId}:${answer.sourceSectionId}`;
+    const key = `${answer.sourceDeckId ?? event.deckId}:${answer.sourceSectionId}`;
     answerByDeckAndSection.set(key, [...(answerByDeckAndSection.get(key) ?? []), answer]);
     latestQuizEvidenceAt.set(key, answer.answeredAt ?? event.occurredAt);
   }));
@@ -307,7 +307,9 @@ export function buildAnalytics(state: StudyBoltState, now = new Date()): Analyti
     const quizEvidence = answerByDeckAndSection.get(`${deck.id}:${card.source.sectionId}`) ?? [];
     const selfRating = confidenceValue(card.confidence);
     const quizAccuracy = accuracy(quizEvidence);
-    const mastery = clamp(quizAccuracy === null ? selfRating : selfRating * 0.6 + quizAccuracy * 0.4);
+    const stored = state.conceptMastery?.find((item) => item.sourceDeckId === deck.id && item.sourceSectionId === card.source.sectionId);
+    const derivedMastery = quizAccuracy === null ? selfRating : selfRating * 0.6 + quizAccuracy * 0.4;
+    const mastery = clamp(stored ? stored.mastery * 0.7 + derivedMastery * 0.3 : derivedMastery);
     const latest = matching[matching.length - 1];
     const hadKnown = matching.some((event) => event.confidence === 'known' || event.previousConfidence === 'known');
     const declined = hadKnown && card.confidence !== 'known';
@@ -412,15 +414,16 @@ export function buildAnalytics(state: StudyBoltState, now = new Date()): Analyti
   const firstAnswers = new Map<string, QuizAnswerRecord>();
   const repeatAnswers: QuizAnswerRecord[] = [];
   quizEvents.forEach((event) => (event.quizAnswers ?? []).forEach((answer) => {
-    const key = `${event.deckId}:${answer.questionId}`;
+    const key = `${answer.sourceDeckId ?? event.deckId}:${answer.originQuestionId ?? answer.questionId}`;
     if (!firstAnswers.has(key)) firstAnswers.set(key, answer);
     else repeatAnswers.push(answer);
   }));
   const missGroups = new Map<string, { misses: number; deckId?: string }>();
   quizEvents.forEach((event) => (event.quizAnswers ?? []).forEach((answer) => {
     if (answer.correct) return;
-    const key = `${event.deckId}:${answer.questionId}`;
-    const current = missGroups.get(key) ?? { misses: 0, deckId: event.deckId };
+    const answerDeckId = answer.sourceDeckId ?? event.deckId;
+    const key = `${answerDeckId}:${answer.originQuestionId ?? answer.questionId}`;
+    const current = missGroups.get(key) ?? { misses: 0, deckId: answerDeckId };
     current.misses += 1;
     missGroups.set(key, current);
   }));

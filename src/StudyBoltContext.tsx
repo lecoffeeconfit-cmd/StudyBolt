@@ -112,6 +112,31 @@ export function StudyBoltProvider({ children }: { children: ReactNode }) {
       saveExamAttempt: (attempt) => setState((current) => ({
         ...current,
         examAttempts: [...(current.examAttempts ?? []), attempt].slice(-100),
+        decks: attempt.status !== 'completed' ? current.decks : current.decks.map((deck) => {
+          if (!attempt.sourceDeckIds.includes(deck.id)) return deck;
+          const conceptResults = attempt.conceptResults?.filter((result) => result.sourceDeckId === deck.id) ?? [];
+          const deckScore = conceptResults.length
+            ? Math.round(conceptResults.reduce((sum, result) => sum + result.score * result.evidenceCount, 0) / conceptResults.reduce((sum, result) => sum + result.evidenceCount, 0))
+            : attempt.score;
+          return { ...deck, testAttempts: [...(deck.testAttempts ?? []), deckScore] };
+        }),
+        conceptMastery: attempt.status !== 'completed' ? current.conceptMastery ?? [] : (attempt.conceptResults ?? []).reduce((records, result) => {
+          const question = attempt.questions.find((item) => item.conceptId === result.conceptId);
+          const existing = records.find((item) => item.conceptId === result.conceptId);
+          const next = {
+            conceptId: result.conceptId,
+            title: result.title,
+            sourceDeckId: result.sourceDeckId,
+            sourceSectionId: question?.source.sectionId ?? existing?.sourceSectionId ?? result.sourceLabel,
+            mastery: result.masteryAfter,
+            evidenceCount: (existing?.evidenceCount ?? 0) + result.evidenceCount,
+            correctStreak: result.score >= 80 ? (existing?.correctStreak ?? 0) + 1 : 0,
+            lastAnsweredAt: attempt.completedAt ?? attempt.createdAt,
+            lastDifficulty: question?.difficulty ?? existing?.lastDifficulty ?? 'medium' as const,
+            lastQuestionType: question?.type ?? existing?.lastQuestionType ?? 'multiple-choice' as const,
+          };
+          return [...records.filter((item) => item.conceptId !== result.conceptId), next];
+        }, [...(current.conceptMastery ?? [])]),
       })),
       toggleFlag: (item) => setState((current) => {
         const id = item.id ?? getFlaggedItemId(item.deckId, item.kind, item.itemId);

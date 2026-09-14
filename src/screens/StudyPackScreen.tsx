@@ -1,7 +1,7 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Speech from 'expo-speech';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '../AuthContext';
@@ -11,7 +11,7 @@ import type { IconName } from '../components/ui';
 import { StudyPackShareSheet } from '../components/StudyPackShareSheet';
 import { useStudyBolt } from '../StudyBoltContext';
 import { getFlaggedItemId } from '../models';
-import type { AiTutorAction, AiTutorConversation, AiTutorQuota, AiTutorResponse, AnswerConfidence, FlaggedItemInput, Flashcard, FlashcardConfidence, NoteBlock, QuizAnswerRecord, QuizQuestion, QuizQuestionCount, SharedStudyPackMetadata, StudyPack, StudyTool } from '../models';
+import type { AiRequestChannel, AiTutorAction, AiTutorConversation, AiTutorQuota, AiTutorResponse, AnswerConfidence, FlaggedItemInput, Flashcard, FlashcardConfidence, NoteBlock, QuizAnswerRecord, QuizQuestion, QuizQuestionCount, SharedStudyPackMetadata, StudyPack, StudyTool } from '../models';
 import { fetchTutorQuota, isAiTutorConfigured, tutorContextAtPosition } from '../services/aiTutor';
 import { runStudyBoltAI } from '../services/aiRouter';
 import { canAttemptOnDeviceAI, getOnDeviceAIAvailability, initialOnDeviceAIAvailability } from '../services/onDeviceAI';
@@ -592,8 +592,12 @@ function Quiz({ deck, readOnly = false, onOpenExam }: { deck: StudyPack; readOnl
     if (correct) setCorrectCount((count) => count + 1);
     setAnswers((current) => [...current, {
       questionId: question.id,
+      originQuestionId: question.originQuestionId ?? question.id,
       sourceSectionId: question.source.sectionId,
+      sourceDeckId: deck.id,
+      conceptId: question.conceptId ?? `${deck.id}:${question.source.sectionId}`,
       correct,
+      partialCredit: correct ? 1 : 0,
       questionType: question.type,
       difficulty: question.difficulty ?? (index === 0 ? 'easy' : index === questions.length - 1 ? 'hard' : 'medium'),
       selectedIndex: optionIndex,
@@ -990,12 +994,24 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
   const [interactiveMode, setInteractiveMode] = useState(false);
   const [driveModeVisible, setDriveModeVisible] = useState(false);
   const [voiceSessionState, setVoiceSessionState] = useState<VoiceSessionState>('idle');
+  const [voiceTranscript, setVoiceTranscript] = useState('');
+  const [voiceReply, setVoiceReply] = useState('');
+  const [voiceTextInput, setVoiceTextInput] = useState('');
+  const [voiceMuted, setVoiceMuted] = useState(false);
+  const [voiceRecognizerAvailable, setVoiceRecognizerAvailable] = useState<boolean | null>(null);
+  const [voiceError, setVoiceError] = useState<string>();
   const voiceInputRef = useRef<BrowserSpeechInput | null>(null);
+  const voiceReplyRef = useRef('');
+  const driveModeActiveRef = useRef(false);
+  const voiceAutoListenRef = useRef(true);
+  const voiceSpeechGenerationRef = useRef(0);
   const [tutorLoading, setTutorLoading] = useState(false);
   const [tutorError, setTutorError] = useState<string>();
   const [tutorResponse, setTutorResponse] = useState<AiTutorResponse>();
   const [tutorQuota, setTutorQuota] = useState<AiTutorQuota>();
   const [tutorConversation, setTutorConversation] = useState<AiTutorConversation>({ turns: [] });
+  const tutorConversationRef = useRef<AiTutorConversation>({ turns: [] });
+  const tutorResponseRef = useRef<AiTutorResponse | undefined>(undefined);
   const [onDeviceAI, setOnDeviceAI] = useState(initialOnDeviceAIAvailability);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const sessionStartRef = useRef<number | null>(null);
@@ -1012,6 +1028,9 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
       setVoices((english.length ? english : available).sort((a, b) => a.name.localeCompare(b.name)).slice(0, 60));
     }).catch(() => setVoices([]));
     return () => {
+      driveModeActiveRef.current = false;
+      voiceAutoListenRef.current = false;
+      voiceSpeechGenerationRef.current += 1;
       if (intervalRef.current) clearInterval(intervalRef.current);
       voiceInputRef.current?.stop();
       void Speech.stop();
@@ -1127,33 +1146,49 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
     const result = await fetchTutorQuota(accessToken);
     if (result.quota) setTutorQuota(result.quota);
   };
-  const runTutor = async (action: AiTutorAction, question?: string) => {
+  const runTutor = async (action: AiTutorAction, question?: string, channel: AiRequestChannel = 'text'): Promise<AiTutorResponse | undefined> => {
     lastTutorRequestRef.current = { action, ...(question ? { question } : {}) };
     setTutorLoading(true);
     setTutorError(undefined);
     setTutorResponse(undefined);
-    const accessToken = await getAccessToken();
-    const result = await runStudyBoltAI({
-      action,
-      question,
-      context: tutorContextAtPosition(deck, askResumePositionRef.current, words.length),
-      accessToken,
-      conversation: tutorConversation,
-    });
-    setOnDeviceAI(result.availability);
-    if (result.quota) setTutorQuota(result.quota);
-    if (result.error || !result.response) setTutorError(result.error ?? 'StudyBolt couldn’t answer that right now.');
-    else {
+    try {
+      const accessToken = await getAccessToken();
+      const result = await runStudyBoltAI({
+        action,
+        question,
+        context: tutorContextAtPosition(deck, channel === 'voice' ? position : askResumePositionRef.current, words.length),
+        accessToken,
+        conversation: tutorConversationRef.current,
+        depth: action === 'teach' || action === 'deep-dive' ? 'deep' : action === 'quick-answer' ? 'quick' : 'normal',
+        channel,
+      });
+      setOnDeviceAI(result.availability);
+      if (result.quota) {
+        setTutorQuota(result.quota);
+        if (result.quota.softWarning && !readOnly) recordStudyEvent({ type: 'ai-limit-warning', deckId: deck.id, courseId: deck.courseId });
+      }
+      if (result.error || !result.response) {
+        setTutorError(result.error ?? 'StudyBolt couldn’t answer that right now.');
+        return undefined;
+      }
       if (result.routeUsed === 'on-device') setTutorQuota(undefined);
       setTutorResponse(result.response);
-      setTutorConversation((current) => ({ turns: [
-        ...(current.turns ?? []),
+      tutorResponseRef.current = result.response;
+      const nextConversation: AiTutorConversation = { turns: [
+        ...(tutorConversationRef.current.turns ?? []),
         ...(question?.trim() ? [{ role: 'user' as const, content: question.trim() }] : []),
-        { role: 'assistant' as const, content: result.response!.answer || result.response!.quiz?.question || '' },
-      ].slice(-8) }));
+        { role: 'assistant' as const, content: result.response.answer || result.response.quiz?.question || '' },
+      ].slice(-8) };
+      tutorConversationRef.current = nextConversation;
+      setTutorConversation(nextConversation);
       if (!readOnly) recordStudyEvent({ type: 'ai-tutor-question', deckId: deck.id, courseId: deck.courseId, tutorAction: action });
+      return result.response;
+    } catch {
+      setTutorError('StudyBolt couldn’t answer that right now. Your StudyCast remains available.');
+      return undefined;
+    } finally {
+      setTutorLoading(false);
     }
-    setTutorLoading(false);
   };
   const openAsk = async (action?: AiTutorAction) => {
     const currentPosition = position;
@@ -1162,6 +1197,7 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
     else await Speech.stop();
     setTutorError(undefined);
     setTutorResponse(undefined);
+    tutorConversationRef.current = { turns: [] };
     setTutorConversation({ turns: [] });
     setAskVisible(true);
     if (!action && canAttemptOnDeviceAI(onDeviceAI)) setTutorQuota(undefined);
@@ -1175,6 +1211,9 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
   };
   const toggleInteractive = async () => {
     if (interactiveMode) {
+      voiceAutoListenRef.current = false;
+      voiceInputRef.current?.stop();
+      voiceInputRef.current = null;
       setInteractiveMode(false);
       setVoiceSessionState('idle');
       return;
@@ -1185,39 +1224,183 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
   };
   const openDriveMode = async () => {
     if (playing) await stopAt(position);
+    driveModeActiveRef.current = true;
+    voiceAutoListenRef.current = true;
+    voiceSpeechGenerationRef.current += 1;
+    tutorConversationRef.current = { turns: [] };
+    tutorResponseRef.current = undefined;
+    setTutorConversation({ turns: [] });
+    setTutorResponse(undefined);
+    setVoiceTranscript('');
+    setVoiceReply('');
+    setVoiceTextInput('');
+    setVoiceError(undefined);
     setInteractiveMode(true);
-    setVoiceSessionState('paused');
+    setVoiceSessionState('listening');
     setDriveModeVisible(true);
+    if (!readOnly) recordStudyEvent({ type: 'voice-tutor-started', deckId: deck.id, courseId: deck.courseId });
+    setTimeout(() => startVoiceInput(), 100);
   };
   const closeDriveMode = async () => {
+    const wasActive = driveModeActiveRef.current;
+    driveModeActiveRef.current = false;
+    voiceAutoListenRef.current = false;
+    voiceSpeechGenerationRef.current += 1;
     voiceInputRef.current?.stop();
     voiceInputRef.current = null;
     await Speech.stop();
     setPlaying(false);
     setDriveModeVisible(false);
     setVoiceSessionState('ended');
+    if (wasActive && !readOnly) recordStudyEvent({ type: 'voice-tutor-completed', deckId: deck.id, courseId: deck.courseId });
   };
+
+  const speakVoiceReply = (textToSpeak: string) => {
+    const clean = textToSpeak.trim();
+    if (!clean || !driveModeActiveRef.current) return;
+    setVoiceReply(clean);
+    voiceReplyRef.current = clean;
+    setVoiceError(undefined);
+    if (voiceMuted) {
+      setVoiceSessionState('paused');
+      if (voiceAutoListenRef.current) setTimeout(() => startVoiceInput(), 120);
+      return;
+    }
+    const generation = ++voiceSpeechGenerationRef.current;
+    setVoiceSessionState('speaking');
+    void Speech.stop().then(() => Speech.speak(clean, {
+      rate: 1,
+      voice: voice?.identifier,
+      onDone: () => {
+        if (generation !== voiceSpeechGenerationRef.current || !driveModeActiveRef.current) return;
+        if (voiceAutoListenRef.current) startVoiceInput();
+        else setVoiceSessionState('paused');
+      },
+      onError: () => {
+        if (generation !== voiceSpeechGenerationRef.current) return;
+        setVoiceError('The device voice could not speak this answer. You can still read it below.');
+        setVoiceSessionState('error');
+      },
+    }));
+  };
+
+  const quizOptionFromTranscript = (transcript: string, response: AiTutorResponse): number | null => {
+    const quiz = response.quiz;
+    if (!quiz) return null;
+    const normalized = transcript.trim().toLowerCase().replace(/[.,!?]/g, '');
+    const letterMatch = normalized.match(/^(?:option\s+)?([a-z])(?:\b|$)/);
+    if (letterMatch) {
+      const index = letterMatch[1]!.charCodeAt(0) - 97;
+      if (index >= 0 && index < quiz.options.length) return index;
+    }
+    const exactIndex = quiz.options.findIndex((option) => option.toLowerCase().replace(/[.,!?]/g, '') === normalized);
+    return exactIndex >= 0 ? exactIndex : null;
+  };
+
+  const handleVoiceTranscript = async (rawTranscript: string) => {
+    const transcript = rawTranscript.trim();
+    if (!transcript || !driveModeActiveRef.current) return;
+    setVoiceTranscript(transcript);
+    setVoiceError(undefined);
+
+    const command = parseVoiceCommand(transcript);
+    if (command === 'pause') {
+      voiceAutoListenRef.current = false;
+      setVoiceSessionState('paused');
+      return;
+    }
+    if (command === 'exit') { await closeDriveMode(); return; }
+    if (command === 'continue') { voiceAutoListenRef.current = false; playFrom(position); return; }
+    if (command === 'back') { await skip(-34); speakVoiceReply('Moved back about fifteen seconds.'); return; }
+    if (command === 'skip') { await skip(34); speakVoiceReply('Moved forward about fifteen seconds.'); return; }
+    if (command === 'repeat') {
+      if (voiceReplyRef.current) speakVoiceReply(voiceReplyRef.current);
+      else playFrom(Math.max(0, position - 34));
+      return;
+    }
+
+    const currentResponse = tutorResponseRef.current;
+    if (currentResponse?.kind === 'quiz' && currentResponse.quiz) {
+      const selectedIndex = quizOptionFromTranscript(transcript, currentResponse);
+      if (selectedIndex !== null) {
+        const correct = selectedIndex === currentResponse.quiz.correctIndex;
+        if (!readOnly) recordStudyEvent({ type: 'tutor-quiz', deckId: deck.id, courseId: deck.courseId, tutorQuizCorrect: correct });
+        speakVoiceReply(`${correct ? 'Correct.' : `Not quite. The correct answer is ${currentResponse.quiz.options[currentResponse.quiz.correctIndex]}.`} ${currentResponse.quiz.explanation} You can say quiz me for another question.`);
+        return;
+      }
+    }
+
+    setVoiceSessionState('processing');
+    const action: AiTutorAction = /\bquiz me|question me|test me\b/i.test(transcript) ? 'quiz' : /\bsocratic|guide me\b/i.test(transcript) ? 'socratic' : /\bdeep dive|go deeper\b/i.test(transcript) ? 'deep-dive' : /\bteach me\b/i.test(transcript) ? 'teach' : /\bquick answer|briefly\b/i.test(transcript) ? 'quick-answer' : 'ask';
+    const response = await runTutor(action, action === 'ask' ? transcript : undefined, 'voice');
+    if (!driveModeActiveRef.current) return;
+    if (!response) {
+      setVoiceError('I could not answer that. Check your connection, sign in if needed, or type another question.');
+      setVoiceSessionState('error');
+      return;
+    }
+    const reply = response.kind === 'quiz' && response.quiz
+      ? `${response.quiz.question} ${response.quiz.options.map((option, optionIndex) => `${String.fromCharCode(65 + optionIndex)}. ${option}`).join('. ')}`
+      : response.answer;
+    speakVoiceReply(reply);
+  };
+
   const startVoiceInput = () => {
+    if (!driveModeActiveRef.current) return;
+    voiceAutoListenRef.current = true;
+    voiceSpeechGenerationRef.current += 1;
     voiceInputRef.current?.stop();
     void Speech.stop();
     setPlaying(false);
+    setVoiceError(undefined);
+    let handled = false;
     const input = startBrowserSpeechInput((transcript) => {
+      handled = true;
       voiceInputRef.current = null;
-      const command = parseVoiceCommand(transcript);
-      if (command === 'pause') { void stopAt(position); setVoiceSessionState('paused'); return; }
-      if (command === 'continue') { playFrom(position); return; }
-      if (command === 'back') { void skip(-34); return; }
-      if (command === 'skip') { void skip(34); return; }
-      if (command === 'repeat') { playFrom(Math.max(0, position - 34)); return; }
-      if (command === 'exit') { void closeDriveMode(); return; }
-      setDriveModeVisible(false);
-      void openAsk('ask');
+      void handleVoiceTranscript(transcript);
     }, () => {
+      handled = true;
       voiceInputRef.current = null;
-      setVoiceSessionState('paused');
-    });
+      setVoiceError('Speech recognition stopped. Tap the microphone to retry, or type your question.');
+      setVoiceSessionState('error');
+    }, { onEnd: () => {
+      voiceInputRef.current = null;
+      if (!handled && driveModeActiveRef.current) setVoiceSessionState('paused');
+    } });
     voiceInputRef.current = input;
-    setVoiceSessionState(input ? 'listening' : 'paused');
+    setVoiceRecognizerAvailable(Boolean(input));
+    if (input) setVoiceSessionState('listening');
+    else {
+      setVoiceError('Automatic speech recognition is unavailable in this build. Type below; StudyBolt can still answer aloud with your device voice.');
+      setVoiceSessionState('paused');
+    }
+  };
+
+  const pauseVoiceSession = async () => {
+    voiceAutoListenRef.current = false;
+    voiceSpeechGenerationRef.current += 1;
+    voiceInputRef.current?.stop();
+    voiceInputRef.current = null;
+    await Speech.stop();
+    setVoiceSessionState('paused');
+  };
+
+  const interruptVoice = async () => {
+    voiceSpeechGenerationRef.current += 1;
+    await Speech.stop();
+    setVoiceSessionState('interrupted');
+    if (!readOnly) recordStudyEvent({ type: 'voice-tutor-interrupted', deckId: deck.id, courseId: deck.courseId });
+    startVoiceInput();
+  };
+
+  const submitVoiceText = () => {
+    const question = voiceTextInput.trim();
+    if (!question || voiceSessionState === 'processing') return;
+    setVoiceTextInput('');
+    voiceInputRef.current?.stop();
+    voiceInputRef.current = null;
+    void Speech.stop();
+    void handleVoiceTranscript(question);
   };
   const resumeStudy = () => {
     void Speech.stop().then(() => {
@@ -1340,10 +1523,20 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
         onQuizAnswered={(correct) => { if (!readOnly) recordStudyEvent({ type: 'tutor-quiz', deckId: deck.id, courseId: deck.courseId, tutorQuizCorrect: correct }); }}
       />
       <Modal visible={driveModeVisible} animationType="fade" onRequestClose={() => void closeDriveMode()}>
-        <View style={[styles.driveRoot, { backgroundColor: colors.mode === 'dark' ? '#09111B' : '#11162F' }]}>
+        <View style={[styles.driveRoot, { backgroundColor: colors.mode === 'dark' ? '#09111B' : '#11162F' }]}> 
           <View style={styles.driveTop}><View><Text style={styles.driveEyebrow}>STUDYBOLT DRIVE MODE</Text><Text style={styles.driveTitle}>{deck.title}</Text></View><Pressable accessibilityLabel="Exit Drive mode" onPress={() => void closeDriveMode()} style={styles.driveClose}><Icon name="close" color="#E8E9F7" size={23} /></Pressable></View>
-          <View style={styles.driveCenter}><View style={[styles.driveOrb, { backgroundColor: colors.purple }]}><Icon name={playing ? 'volume-high' : 'pause'} color={colors.primaryText} size={44} /></View><Text style={styles.driveState}>{playing ? 'StudyCast is playing' : interactionStateLabel(voiceSessionState)}</Text><Text style={styles.driveSection}>{tutorContext.currentChunk.title}</Text><View style={styles.driveProgress}><ProgressBar progress={progress} color={colors.purple} /></View><Text style={styles.driveHint}>Large controls keep your attention on the road. Voice commands can be connected in a native build.</Text></View>
-          <View style={styles.driveControls}><Pressable onPress={() => void skip(-34)} style={styles.driveControl}><Icon name="rewind-15" color="#E8E9F7" size={28} /><Text style={styles.driveControlText}>Back</Text></Pressable><Pressable onPress={() => void togglePlay()} style={[styles.drivePlay, { backgroundColor: colors.purple }]}><Icon name={playing ? 'pause' : 'play'} color={colors.primaryText} size={39} /></Pressable><Pressable onPress={startVoiceInput} style={styles.driveControl}><Icon name="microphone" color="#E8E9F7" size={27} /><Text style={styles.driveControlText}>Voice</Text></Pressable></View>
+          <View style={styles.driveCenter}>
+            <View style={[styles.driveOrb, { backgroundColor: colors.purple }]}>{voiceSessionState === 'processing' || tutorLoading ? <ActivityIndicator color={colors.primaryText} size="large" /> : <Icon name={playing || voiceSessionState === 'speaking' ? 'volume-high' : voiceSessionState === 'listening' || voiceSessionState === 'interrupted' ? 'microphone' : 'pause'} color={colors.primaryText} size={44} />}</View>
+            <Text style={styles.driveState}>{playing ? 'StudyCast is playing' : interactionStateLabel(voiceSessionState)}</Text>
+            <Text style={styles.driveSection}>{tutorContext.currentChunk.title}</Text>
+            <View style={styles.driveProgress}><ProgressBar progress={progress} color={colors.purple} /></View>
+            {voiceTranscript ? <View style={styles.driveTranscript}><Text style={styles.driveMessageLabel}>YOU</Text><Text numberOfLines={2} style={styles.driveTranscriptText}>{voiceTranscript}</Text></View> : null}
+            {voiceReply ? <View style={styles.driveReply}><Text style={styles.driveMessageLabel}>STUDYBOLT</Text><Text numberOfLines={5} style={styles.driveReplyText}>{voiceReply}</Text></View> : null}
+            {voiceError ? <Text style={styles.driveError}>{voiceError}</Text> : <Text style={styles.driveHint}>{voiceRecognizerAvailable === false ? 'Text fallback is active. Answers still use your device voice unless muted.' : 'Ask about this section, say “quiz me,” or say pause, repeat, back, skip, continue, or exit.'}</Text>}
+            {!user && !onDeviceTutorPossible && onRequireAuth ? <Pressable onPress={onRequireAuth} style={styles.driveSignIn}><Icon name="account-lock-outline" color="#C8B5FF" /><Text style={styles.driveSignInText}>Sign in for secure cloud answers</Text></Pressable> : null}
+          </View>
+          <View style={styles.driveInputRow}><TextInput accessibilityLabel="Type a voice tutor question" value={voiceTextInput} onChangeText={setVoiceTextInput} onSubmitEditing={submitVoiceText} returnKeyType="send" placeholder="Type if speech input is unavailable…" placeholderTextColor="#7F819E" style={styles.driveInput} /><Pressable accessibilityLabel="Send typed tutor question" disabled={!voiceTextInput.trim() || voiceSessionState === 'processing'} onPress={submitVoiceText} style={[styles.driveSend, (!voiceTextInput.trim() || voiceSessionState === 'processing') && styles.driveControlDisabled]}><Icon name="arrow-up" color="#FFFFFF" size={20} /></Pressable></View>
+          <View style={styles.driveControls}><Pressable onPress={() => voiceSessionState === 'paused' || voiceSessionState === 'error' ? startVoiceInput() : void pauseVoiceSession()} style={styles.driveControl}><Icon name={voiceSessionState === 'paused' || voiceSessionState === 'error' ? 'play' : 'pause'} color="#E8E9F7" size={28} /><Text style={styles.driveControlText}>{voiceSessionState === 'paused' || voiceSessionState === 'error' ? 'Resume' : 'Pause'}</Text></Pressable><Pressable accessibilityLabel={voiceSessionState === 'speaking' ? 'Interrupt StudyBolt and speak' : 'Start listening'} onPress={() => voiceSessionState === 'speaking' ? void interruptVoice() : startVoiceInput()} style={[styles.drivePlay, { backgroundColor: colors.purple }]}><Icon name={voiceSessionState === 'speaking' ? 'hand-back-right-outline' : 'microphone'} color={colors.primaryText} size={35} /></Pressable><Pressable onPress={() => { const nextMuted = !voiceMuted; setVoiceMuted(nextMuted); if (nextMuted && voiceSessionState === 'speaking') void interruptVoice(); }} style={styles.driveControl}><Icon name={voiceMuted ? 'volume-off' : 'volume-high'} color="#E8E9F7" size={27} /><Text style={styles.driveControlText}>{voiceMuted ? 'Unmute' : 'Mute'}</Text></Pressable></View>
         </View>
       </Modal>
     </>
@@ -1623,6 +1816,18 @@ const styles = StyleSheet.create({
   driveSection: { color: '#B9BAD0', fontSize: 12, fontWeight: '700', textAlign: 'center', marginTop: 8 },
   driveProgress: { width: '100%', marginTop: 26 },
   driveHint: { color: '#8F91AB', fontSize: 11, lineHeight: 17, textAlign: 'center', maxWidth: 300, marginTop: 22 },
+  driveTranscript: { width: '100%', borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.08)', padding: 11, marginTop: 16 },
+  driveReply: { width: '100%', borderRadius: 14, backgroundColor: 'rgba(139,92,246,0.18)', padding: 11, marginTop: 8 },
+  driveMessageLabel: { color: '#AFA9D4', fontSize: 8, fontWeight: '900', letterSpacing: 1 },
+  driveTranscriptText: { color: '#E4E5F2', fontSize: 11, lineHeight: 16, marginTop: 4 },
+  driveReplyText: { color: '#F4F4FF', fontSize: 11, lineHeight: 17, marginTop: 4 },
+  driveError: { color: '#FFB9C2', fontSize: 10, lineHeight: 15, textAlign: 'center', maxWidth: 330, marginTop: 15 },
+  driveSignIn: { flexDirection: 'row', alignItems: 'center', gap: 7, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.09)', paddingHorizontal: 12, paddingVertical: 10, marginTop: 12 },
+  driveSignInText: { color: '#E7E3FF', fontSize: 10, fontWeight: '900' },
+  driveInputRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 15, backgroundColor: 'rgba(255,255,255,0.09)', paddingLeft: 13, paddingRight: 6, marginBottom: 14 },
+  driveInput: { flex: 1, minWidth: 0, color: '#F4F4FF', fontSize: 11, paddingVertical: 11 },
+  driveSend: { width: 38, height: 38, borderRadius: 12, backgroundColor: '#7656F6', alignItems: 'center', justifyContent: 'center' },
+  driveControlDisabled: { opacity: 0.35 },
   driveControls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around' },
   driveControl: { width: 74, minHeight: 66, alignItems: 'center', justifyContent: 'center', gap: 6 },
   driveControlText: { color: '#D9DCF0', fontSize: 10, fontWeight: '900' },

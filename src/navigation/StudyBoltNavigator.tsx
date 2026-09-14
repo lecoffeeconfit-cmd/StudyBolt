@@ -188,7 +188,20 @@ export function StudyBoltNavigator() {
       {!showOnboarding && route.type === 'legal' ? <LegalScreen onBack={() => setRoute({ type: 'main' })} /> : null}
       {!showOnboarding && route.type === 'reset-password' ? <ResetPasswordScreen onComplete={() => setRoute({ type: 'main' })} /> : null}
       {!showOnboarding && route.type === 'smart-study' ? <SmartStudyScreen initialMode={route.mode} focusDeckId={route.deckId} onBack={() => setRoute(route.deckId ? { type: 'deck', deckId: route.deckId } : { type: 'main' })} /> : null}
-      {!showOnboarding && route.type === 'exam' ? <ExamModeScreen deckId={route.deckId} onBack={() => setRoute(route.deckId ? { type: 'deck', deckId: route.deckId, tool: 'quiz' } : { type: 'main' })} /> : null}
+      {!showOnboarding && route.type === 'exam' ? <ExamModeScreen
+        deckId={route.deckId}
+        onBack={(tool = 'quiz', targetDeckId) => setRoute(targetDeckId || route.deckId ? { type: 'deck', deckId: targetDeckId ?? route.deckId!, tool } : { type: 'main' })}
+        onStudyWeakAreas={(focusDeckId) => setRoute({ type: 'smart-study', mode: 'smart', deckId: focusDeckId })}
+        onUpdateStudyPlan={(focusDeckId) => {
+          setPlannerFocusDeckId(focusDeckId);
+          setTab('planner');
+          setRoute({ type: 'main' });
+        }}
+        onRequireAuth={() => {
+          setPendingRoute(route);
+          setRoute({ type: 'auth' });
+        }}
+      /> : null}
       {!showOnboarding && route.type === 'mistakes' ? (
         <MistakeNotebookScreen
           onBack={() => setRoute({ type: 'main' })}

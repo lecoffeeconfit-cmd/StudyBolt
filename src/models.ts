@@ -9,8 +9,9 @@ export type QuizQuestionCount = 10 | 15 | 20;
 export type LibrarySort = 'default' | 'recent' | 'oldest' | 'alphabetical';
 export type SharedStudyPackVisibility = 'private' | 'link' | 'public';
 export type DiscoverSort = 'newest' | 'popular' | 'saved';
-export type AiTutorAction = 'explain' | 'simplify' | 'example' | 'quiz' | 'ask' | 'teach-back' | 'important' | 'confuse';
+export type AiTutorAction = 'explain' | 'teach' | 'quick-answer' | 'deep-dive' | 'simplify' | 'example' | 'quiz' | 'socratic' | 'ask' | 'teach-back' | 'important' | 'confuse';
 export type AiTutorDepth = 'quick' | 'normal' | 'deep';
+export type AiRequestChannel = 'text' | 'voice' | 'exam';
 export type StudyModality = 'notes' | 'audio' | 'flashcards' | 'quiz' | 'test';
 export type FlaggedItemKind = 'note' | 'flashcard' | 'quiz';
 export type StudyScope =
@@ -94,10 +95,13 @@ export interface QuizQuestion {
   aiGenerated?: boolean;
   createdAt?: string;
   acceptedAnswers?: string[];
+  /** Stable source-pool ID used to avoid repeating a prior generated variant. */
+  originQuestionId?: string;
 }
 
 export interface QuizAnswerRecord {
   questionId: string;
+  originQuestionId?: string;
   sourceSectionId: string;
   correct: boolean;
   questionType: QuizQuestionType;
@@ -118,6 +122,9 @@ export interface QuizAnswerRecord {
   sourceDeckId?: string;
   conceptId?: string;
   examId?: string;
+  gradingFeedback?: string;
+  missingIdeas?: string[];
+  gradingProvider?: 'local' | 'cloud';
 }
 
 export type StudyEventType =
@@ -312,6 +319,7 @@ export interface AiTutorQuota {
   periodStart: string;
   periodEnd: string;
   plan: 'free' | 'premium';
+  softWarning?: boolean;
 }
 
 export interface AiTutorConversation {
@@ -377,6 +385,35 @@ export interface ExamAttempt {
   settings: ExamSettings;
   questions: QuizQuestion[];
   answers: QuizAnswerRecord[];
+  conceptResults?: ExamConceptResult[];
+  scoreChangeFromPrevious?: number;
+  gradingMode?: 'local' | 'cloud-assisted';
+}
+
+export interface ExamConceptResult {
+  conceptId: string;
+  title: string;
+  sourceDeckId: string;
+  sourceLabel: string;
+  score: number;
+  responseTimeMs: number;
+  masteryBefore: number;
+  masteryAfter: number;
+  improvement: number;
+  evidenceCount: number;
+}
+
+export interface ConceptMasteryRecord {
+  conceptId: string;
+  title: string;
+  sourceDeckId: string;
+  sourceSectionId: string;
+  mastery: number;
+  evidenceCount: number;
+  correctStreak: number;
+  lastAnsweredAt: string;
+  lastDifficulty: QuizDifficulty;
+  lastQuestionType: QuizQuestionType;
 }
 
 export interface StudyClass {
@@ -429,6 +466,7 @@ export interface StudyBoltState {
   activityEvents: StudyEvent[];
   dailyStudyGoalMinutes: number;
   examAttempts?: ExamAttempt[];
+  conceptMastery?: ConceptMasteryRecord[];
 }
 
 export interface ImportAsset {

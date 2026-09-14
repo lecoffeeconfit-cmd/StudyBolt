@@ -126,9 +126,13 @@ function buildInstructions(action: AiTutorAction): string {
 function buildPrompt(action: AiTutorAction, question: string | undefined, context: AiTutorContext, conversation?: AiTutorConversation): string {
   const requests: Record<AiTutorAction, string> = {
     explain: 'Explain the current idea and why it matters.',
+    teach: 'Teach the current idea step by step, checking prerequisites and ending with one retrieval prompt.',
+    'quick-answer': question?.trim().slice(0, 600) || 'Give a direct answer in no more than three short sentences.',
+    'deep-dive': question?.trim().slice(0, 600) || 'Explain the current idea thoroughly, including connections and one misconception check.',
     simplify: 'Restate the current idea in simpler language without losing its meaning.',
     example: 'Give one concrete, grounded example. Label an analogy if you use one.',
     quiz: 'Create one multiple-choice retrieval question about the current idea.',
+    socratic: question?.trim().slice(0, 600) || 'Ask one guiding question that helps the student reason to the next step without immediately giving the answer.',
     ask: question?.trim().slice(0, 600) || 'Explain the current idea.',
     'teach-back': question?.trim().slice(0, 600) || 'Check the student explanation for missing ideas and misconceptions.',
     important: 'Identify the most important ideas in the supplied study material.',

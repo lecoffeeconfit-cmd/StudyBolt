@@ -66,11 +66,13 @@ function daysUntil(value?: string): number | null {
 function missCounts(state: StudyBoltState) {
   const byQuestion = new Map<string, { misses: number; confidentlyWrong: number }>();
   const bySection = new Map<string, number>();
-  state.activityEvents.filter((event) => event.type === 'quiz' && event.deckId).forEach((event) => {
+  state.activityEvents.filter((event) => event.type === 'quiz' && (event.deckId || event.quizAnswers?.some((answer) => answer.sourceDeckId))).forEach((event) => {
     (event.quizAnswers ?? []).forEach((answer) => {
       if (answer.correct) return;
-      const questionKey = `${event.deckId}:${answer.questionId}`;
-      const sectionKey = `${event.deckId}:${answer.sourceSectionId}`;
+      const answerDeckId = answer.sourceDeckId ?? event.deckId;
+      if (!answerDeckId) return;
+      const questionKey = `${answerDeckId}:${answer.originQuestionId ?? answer.questionId}`;
+      const sectionKey = `${answerDeckId}:${answer.sourceSectionId}`;
       const current = byQuestion.get(questionKey) ?? { misses: 0, confidentlyWrong: 0 };
       current.misses += 1;
       if (answer.confidence === 'very-sure') current.confidentlyWrong += 1;

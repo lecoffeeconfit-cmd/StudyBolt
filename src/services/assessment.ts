@@ -1,4 +1,5 @@
 import type {
+  ExamConceptResult,
   ExamDifficulty,
   ExamSettings,
   QuizAnswerRecord,
@@ -140,7 +141,7 @@ export interface AdaptiveExamBuild {
   readiness: ExamReadiness;
 }
 
-interface CandidateSignal {
+export interface CandidateSignal {
   mastery: number;
   misses: number;
   exposures: number;
@@ -154,10 +155,21 @@ function normalized(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
 }
 
+export function sourceSectionKey(deckId: string, sectionId: string): string {
+  return `${deckId}:${sectionId}`;
+}
+
+function sectionIsSelected(settings: ExamSettings, deckId: string, sectionId: string): boolean {
+  if (!settings.sourceSectionIds?.length) return true;
+  const scoped = sourceSectionKey(deckId, sectionId);
+  return settings.sourceSectionIds.includes(scoped)
+    || (settings.sourceDeckIds.length === 1 && settings.sourceSectionIds.includes(sectionId));
+}
+
 function topicFor(deck: StudyPack, question: QuizQuestion): { id: string; title: string } {
   const note = deck.notes.find((item) => item.source.sectionId === question.source.sectionId);
   return {
-    id: question.conceptId ?? `${deck.id}:section:${question.source.sectionId}`,
+    id: question.conceptId ?? sourceSectionKey(deck.id, question.source.sectionId),
     title: question.conceptTitle ?? note?.title ?? question.source.label,
   };
 }
@@ -177,16 +189,31 @@ function meaningfulTokens(value: string): string[] {
   return [...new Set(normalized(value).split(' ').filter((word) => word.length >= 4 && !ignored.has(word)))];
 }
 
-function signalFor(state: StudyBoltState, deck: StudyPack, question: QuizQuestion, conceptId: string): CandidateSignal {
-  const matchingCard = deck.flashcards.find((card) => card.source.sectionId === question.source.sectionId && (conceptId.endsWith(card.id) || normalized(card.front) === normalized(question.conceptTitle ?? '')));
-  const selfMastery = matchingCard?.confidence === 'known' ? 86 : matchingCard?.confidence === 'learning' ? 52 : 12;
-  const observations = state.activityEvents.flatMap((event) => event.type === 'quiz' && event.quizAnswers ? event.quizAnswers.map((answer) => ({ event, answer })) : [])
-    .filter(({ event, answer }) => (event.deckId === deck.id || answer.sourceDeckId === deck.id) && answer.sourceSectionId === question.source.sectionId);
-  const correct = observations.filter(({ answer }) => answer.correct).length;
-  const accuracy = observations.length ? (correct / observations.length) * 100 : null;
-  const mastery = accuracy === null ? selfMastery : selfMastery * 0.55 + accuracy * 0.45;
-  const lastSeenAt = observations.map(({ answer, event }) => answer.answeredAt ?? event.occurredAt).sort((a, b) => +new Date(b) - +new Date(a))[0] ?? null;
-  return { mastery, misses: observations.filter(({ answer }) => !answer.correct).length, exposures: observations.length, lastSeenAt, untested: observations.length === 0 && (matchingCard?.confidence ?? 'new') === 'new' };
+export function signalFor(state: StudyBoltState, deck: StudyPack, question: QuizQuestion, conceptId: string): CandidateSignal {
+  const matchingCards = deck.flashcards.filter((card) => card.source.sectionId === question.source.sectionId);
+  const selfScores = matchingCards.map((card) => card.confidence === 'known' ? 86 : card.confidence === 'learning' ? 52 : 12);
+  const selfMastery = selfScores.length ? selfScores.reduce((sum, score) => sum + score, 0) / selfScores.length : 12;
+  const observations = state.activityEvents.flatMap((event) => event.quizAnswers?.map((answer) => ({ event, answer })) ?? [])
+    .filter(({ event, answer }) => (answer.sourceDeckId ?? event.deckId) === deck.id && answer.sourceSectionId === question.source.sectionId);
+  const weightedScores = observations.map(({ answer }) => {
+    const base = answer.partialCredit ?? (answer.correct ? 1 : 0);
+    const recallWeight = ['short-answer', 'definition', 'application', 'fill-blank'].includes(answer.questionType) ? 1.15 : 1;
+    const confidenceWeight = answer.correct && answer.confidence === 'unsure' ? 0.8 : !answer.correct && answer.confidence === 'very-sure' ? 1.15 : 1;
+    return Math.max(0, Math.min(1, base * recallWeight / confidenceWeight));
+  });
+  const observedMastery = weightedScores.length ? (weightedScores.reduce((sum, score) => sum + score, 0) / weightedScores.length) * 100 : null;
+  const stored = state.conceptMastery?.find((item) => item.conceptId === conceptId || (item.sourceDeckId === deck.id && item.sourceSectionId === question.source.sectionId));
+  const evidenceBlend = Math.min(0.72, 0.38 + observations.length * 0.06);
+  const historyMastery = observedMastery === null ? selfMastery : selfMastery * (1 - evidenceBlend) + observedMastery * evidenceBlend;
+  const mastery = stored ? stored.mastery * 0.65 + historyMastery * 0.35 : historyMastery;
+  const reviewTimes = state.activityEvents
+    .filter((event) => event.deckId === deck.id && ((event.type === 'flashcard-review' && matchingCards.some((card) => card.id === event.cardId)) || (event.type === 'note-review' && deck.notes.some((note) => note.id === event.noteId && note.source.sectionId === question.source.sectionId))))
+    .map((event) => event.occurredAt);
+  const lastSeenAt = [...observations.map(({ answer, event }) => answer.answeredAt ?? event.occurredAt), ...reviewTimes, ...(stored ? [stored.lastAnsweredAt] : [])]
+    .filter((value) => Number.isFinite(+new Date(value)))
+    .sort((a, b) => +new Date(b) - +new Date(a))[0] ?? null;
+  const exposures = Math.max(observations.length, stored?.evidenceCount ?? 0);
+  return { mastery, misses: observations.filter(({ answer }) => !answer.correct).length, exposures, lastSeenAt, untested: exposures === 0 && matchingCards.every((card) => card.confidence === 'new') };
 }
 
 function toExamQuestion(
@@ -206,9 +233,11 @@ function toExamQuestion(
   const acceptedAnswers = [correct, ...(question.acceptedAnswers ?? [])].filter(Boolean);
 
   if (type === 'true-false') {
-    prompt = `True or false: ${correct}`;
+    const useTrueStatement = stableHash(`${examId}:${question.id}`) % 2 === 0;
+    const falseStatement = question.options.find((option, index) => index !== question.correctIndex && normalized(option) !== normalized(correct));
+    prompt = `True or false: ${useTrueStatement || !falseStatement ? correct : falseStatement}`;
     options = ['True', 'False'];
-    correctIndex = 0;
+    correctIndex = useTrueStatement || !falseStatement ? 0 : 1;
     correctIndices = undefined;
   } else if (type === 'fill-blank') {
     const token = meaningfulTokens(correct)[0];
@@ -245,14 +274,19 @@ function toExamQuestion(
     prompt,
     options,
     correctIndex,
-    ...(correctIndices ? { correctIndices } : {}),
+    correctIndices,
     acceptedAnswers,
     difficulty,
     importance: question.importance ?? (note?.keyIdea ? 0.9 : 0.7),
     masteryImpact: type === 'short-answer' || type === 'definition' || type === 'application' || type === 'fill-blank' ? 1.2 : 1,
     aiGenerated: question.aiGenerated ?? false,
     createdAt: question.createdAt ?? new Date().toISOString(),
+    originQuestionId: question.originQuestionId ?? question.id,
   };
+}
+
+function stableHash(value: string): number {
+  return [...value].reduce((hash, character) => (hash * 31 + character.charCodeAt(0)) >>> 0, 7);
 }
 
 function seededShuffle<T>(values: T[], seed: string): T[] {
@@ -277,19 +311,37 @@ function randomizeAnswerOrder(question: QuizQuestion, seed: string): QuizQuestio
     ...question,
     options: order.map((index) => question.options[index]!),
     correctIndex: remapped[0] ?? 0,
-    ...(remapped.length > 1 ? { correctIndices: remapped } : {}),
+    correctIndices: question.correctIndices ? remapped : undefined,
   };
 }
 
 export function getExamReadiness(state: StudyBoltState, sourceDeckIds: string[]): ExamReadiness {
   const decks = state.decks.filter((deck) => sourceDeckIds.includes(deck.id));
-  const concepts = decks.flatMap((deck) => deck.flashcards.map((card) => {
-    const topic = { id: `${deck.id}:card:${card.id}`, title: card.front };
-    const sourceQuestion: QuizQuestion = { id: card.id, type: 'short-answer', prompt: card.front, options: [card.back], correctIndex: 0, explanation: card.explanation ?? card.back, source: card.source };
+  const concepts = decks.flatMap((deck) => deck.outline.map((section) => {
+    const card = deck.flashcards.find((item) => item.source.sectionId === section.id);
+    const note = deck.notes.find((item) => item.source.sectionId === section.id);
+    const topic = { id: sourceSectionKey(deck.id, section.id), title: note?.title ?? section.title };
+    const sourceQuestion: QuizQuestion = {
+      id: card?.id ?? note?.id ?? section.id,
+      type: card ? 'short-answer' : 'multiple-choice',
+      prompt: card?.front ?? note?.recallPrompts?.[0] ?? section.title,
+      options: [card?.back ?? note?.bullets[0] ?? section.title],
+      correctIndex: 0,
+      explanation: card?.explanation ?? note?.keyIdea ?? note?.bullets[0] ?? section.title,
+      source: card?.source ?? note?.source ?? { sectionId: section.id, label: section.range },
+    };
     return { topic, signal: signalFor(state, deck, sourceQuestion, topic.id) };
   }));
-  const scores = concepts.map(({ signal }) => signal.mastery);
-  const score = concepts.length ? clamp(scores.reduce((sum, value) => sum + value, 0) / concepts.length) : 0;
+  const now = Date.now();
+  const scores = concepts.map(({ signal }) => {
+    const recencyDays = signal.lastSeenAt ? Math.max(0, (now - +new Date(signal.lastSeenAt)) / 86400000) : 30;
+    const recencyFactor = Math.max(0.72, 1 - Math.max(0, recencyDays - 3) * 0.012);
+    const evidenceConfidence = Math.min(1, 0.62 + signal.exposures * 0.075);
+    return signal.mastery * recencyFactor * evidenceConfidence;
+  });
+  const coverage = concepts.length ? concepts.filter(({ signal }) => !signal.untested).length / concepts.length : 0;
+  const performance = scores.length ? scores.reduce((sum, value) => sum + value, 0) / scores.length : 0;
+  const score = concepts.length ? clamp(performance * 0.85 + coverage * 100 * 0.15) : 0;
   const ready = concepts.filter(({ signal }) => signal.mastery >= 75 && !signal.untested).sort((a, b) => b.signal.mastery - a.signal.mastery).slice(0, 5).map(({ topic }) => topic.title);
   const needsReview = concepts.filter(({ signal }) => signal.mastery < 70 || signal.untested).sort((a, b) => a.signal.mastery - b.signal.mastery).slice(0, 5).map(({ topic }) => topic.title);
   return { score, ready, needsReview, conceptCount: concepts.length };
@@ -303,22 +355,30 @@ export function buildAdaptiveExam(state: StudyBoltState, settings: ExamSettings)
   const requestedTypes: QuizQuestionType[] = settings.questionTypes.length ? settings.questionTypes : ['multiple-choice'];
   const excluded = new Set(settings.excludedQuestionIds ?? []);
   const targetIds = new Set(settings.targetedConceptIds ?? []);
+  const conceptFrequency = new Map<string, number>();
+  decks.forEach((deck) => deck.notes.forEach((note) => {
+    const key = normalized(note.title);
+    conceptFrequency.set(key, (conceptFrequency.get(key) ?? 0) + 1);
+  }));
   const candidates = decks.flatMap((deck) => {
     const pool = [...deck.quiz, ...buildAssessment(deck, 'comprehensive')];
     const unique = [...new Map(pool.map((question) => [question.id, question])).values()];
-    return unique.filter((question) => !settings.sourceSectionIds?.length || settings.sourceSectionIds.includes(question.source.sectionId)).map((question, index) => {
+    return unique.filter((question) => sectionIsSelected(settings, deck.id, question.source.sectionId)).map((question, index) => {
       const topic = topicFor(deck, question);
       const signal = signalFor(state, deck, question, topic.id);
       const targeted = targetIds.size > 0 && (targetIds.has(topic.id) || targetIds.has(question.source.sectionId) || [...targetIds].some((value) => normalized(value) === normalized(topic.title)));
       const bucketWeight = signal.untested ? 32 : signal.mastery < 45 ? 40 : signal.mastery < 75 ? 30 : 15;
-      const priority = (targetIds.size && !targeted ? -200 : 0) + bucketWeight + signal.misses * 12 + (question.importance ?? 0.7) * 10 + (signal.untested ? 10 : 0) - Math.min(8, signal.exposures) + (signal.lastSeenAt ? Math.max(0, Math.min(7, (Date.now() - +new Date(signal.lastSeenAt)) / 86400000)) : 6);
-      return { deck, question, topic, signal, priority, index, targeted };
+      const frequency = conceptFrequency.get(normalized(topic.title)) ?? 1;
+      const emphasized = /\b(key|important|exam|review|summary|objective)\b/i.test(topic.title) ? 1 : 0;
+      const priority = (targetIds.size && !targeted ? -200 : 0) + bucketWeight + signal.misses * 12 + (question.importance ?? 0.7) * 10 + Math.min(12, (frequency - 1) * 5) + emphasized * 6 + (signal.untested ? 10 : 0) - Math.min(8, signal.exposures) + (signal.lastSeenAt ? Math.max(0, Math.min(7, (Date.now() - +new Date(signal.lastSeenAt)) / 86400000)) : 6);
+      const bucket = signal.untested ? 'new' : signal.mastery < 45 ? 'weak' : signal.mastery < 75 ? 'medium' : 'strong';
+      return { deck, question, topic, signal, priority, index, targeted, bucket };
     });
-  }).filter((candidate) => !excluded.has(candidate.question.id));
+  }).filter((candidate) => !excluded.has(candidate.question.id) && !excluded.has(candidate.question.originQuestionId ?? ''));
   const ranked = candidates.sort((a, b) => b.priority - a.priority);
   const chosen: typeof ranked = [];
   const seenPrompts = new Set<string>();
-  const desired = Math.max(1, Math.min(50, Math.round(settings.questionCount || 10)));
+  const desired = Math.max(1, Math.min(settings.lengthPreset === 'custom' ? 100 : 50, Math.round(settings.questionCount || 10)));
   const addCandidate = (candidate: typeof ranked[number]) => {
     const key = `${candidate.topic.id}:${normalized(candidate.question.prompt)}`;
     if (seenPrompts.has(key)) return false;
@@ -331,6 +391,14 @@ export function buildAdaptiveExam(state: StudyBoltState, settings: ExamSettings)
     const candidate = ranked.find((item) => item.deck.id === deck.id && (targetIds.size === 0 || item.targeted));
     if (candidate) addCandidate(candidate);
   });
+  const ratios: Record<'weak' | 'medium' | 'strong' | 'new', number> = { weak: 0.4, medium: 0.3, strong: 0.15, new: 0.15 };
+  (['weak', 'medium', 'strong', 'new'] as const).forEach((bucket) => {
+    const quota = Math.max(0, Math.round(desired * ratios[bucket]));
+    ranked.filter((candidate) => candidate.bucket === bucket && (targetIds.size === 0 || candidate.targeted)).forEach((candidate) => {
+      if (chosen.filter((item) => item.bucket === bucket).length < quota && chosen.length < desired) addCandidate(candidate);
+    });
+  });
+  if (targetIds.size) ranked.filter((candidate) => candidate.targeted).forEach((candidate) => { if (chosen.length < desired) addCandidate(candidate); });
   ranked.forEach((candidate) => { if (chosen.length < desired) addCandidate(candidate); });
   let questions = chosen.map((candidate, index) => toExamQuestion(candidate.question, candidate.deck, candidate.topic, requestedTypes[index % requestedTypes.length]!, questionDifficulty(settings.difficulty, candidate.signal.mastery, index), examId));
   if (settings.randomizeQuestions) questions = seededShuffle(questions, examId);
@@ -358,6 +426,64 @@ export function evaluateExamAnswer(question: QuizQuestion, selectedIndices: numb
   const overlap = expectedTokens.filter((token) => actualTokens.has(token)).length;
   const partialCredit = expectedTokens.length ? Math.min(1, overlap / Math.min(expectedTokens.length, 5)) : 0;
   return { correct: partialCredit >= 0.6, partialCredit };
+}
+
+export function buildExamConceptResults(
+  state: StudyBoltState,
+  questions: QuizQuestion[],
+  answers: QuizAnswerRecord[],
+): ExamConceptResult[] {
+  const answersById = new Map(answers.map((answer) => [answer.questionId, answer]));
+  const grouped = new Map<string, { title: string; sourceDeckId: string; sourceLabel: string; questions: QuizQuestion[] }>();
+  questions.forEach((question) => {
+    const sourceDeckId = question.sourceDeckId ?? '';
+    const conceptId = question.conceptId ?? sourceSectionKey(sourceDeckId, question.source.sectionId);
+    const current = grouped.get(conceptId) ?? {
+      title: question.conceptTitle ?? question.source.label,
+      sourceDeckId,
+      sourceLabel: question.source.label,
+      questions: [],
+    };
+    current.questions.push(question);
+    grouped.set(conceptId, current);
+  });
+
+  return [...grouped.entries()].map(([conceptId, group]) => {
+    const deck = state.decks.find((item) => item.id === group.sourceDeckId);
+    const first = group.questions[0]!;
+    const priorSignal = deck ? signalFor(state, deck, first, conceptId) : { mastery: 0, exposures: 0 };
+    const points = group.questions.reduce((sum, item) => {
+      const answer = answersById.get(item.id);
+      return sum + (answer?.partialCredit ?? (answer?.correct ? 1 : 0));
+    }, 0);
+    const score = clamp((points / Math.max(1, group.questions.length)) * 100);
+    const responseTimes = group.questions.map((item) => answersById.get(item.id)?.responseTimeMs).filter((value): value is number => typeof value === 'number');
+    const averageResponseTime = responseTimes.length ? Math.round(responseTimes.reduce((sum, value) => sum + value, 0) / responseTimes.length) : 0;
+    const evidenceStrength = group.questions.reduce((sum, item) => {
+      const answer = answersById.get(item.id);
+      const type = ['short-answer', 'definition', 'application', 'fill-blank'].includes(item.type) ? 1.2 : 1;
+      const difficulty = item.difficulty === 'hard' ? 1.15 : item.difficulty === 'easy' ? 0.85 : 1;
+      const confidence = answer?.correct && answer.confidence === 'unsure' ? 0.82 : !answer?.correct && answer?.confidence === 'very-sure' ? 1.15 : 1;
+      return sum + type * difficulty * confidence;
+    }, 0);
+    const updateWeight = Math.min(0.3, 0.065 * evidenceStrength + Math.min(0.08, priorSignal.exposures * 0.008));
+    const rawAfter = priorSignal.mastery + (score - priorSignal.mastery) * updateWeight;
+    // A small batch of evidence should move confidence, not erase a durable history.
+    const masteryAfter = clamp(Math.max(priorSignal.mastery - 10, Math.min(priorSignal.mastery + 14, rawAfter)));
+    const masteryBefore = clamp(priorSignal.mastery);
+    return {
+      conceptId,
+      title: group.title,
+      sourceDeckId: group.sourceDeckId,
+      sourceLabel: group.sourceLabel,
+      score,
+      responseTimeMs: averageResponseTime,
+      masteryBefore,
+      masteryAfter,
+      improvement: masteryAfter - masteryBefore,
+      evidenceCount: group.questions.length,
+    };
+  }).sort((a, b) => b.score - a.score);
 }
 
 export function calculateExamScore(questions: QuizQuestion[], answers: QuizAnswerRecord[]): number {

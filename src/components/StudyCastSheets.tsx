@@ -107,6 +107,10 @@ export function VoicePickerSheet({ visible, voices, selectedIdentifier, onSelect
 
 const SHORTCUTS: Array<{ id: Exclude<AiTutorAction, 'ask'>; label: string; icon: IconName }> = [
   { id: 'explain', label: 'Explain this', icon: 'lightbulb-on-outline' },
+  { id: 'teach', label: 'Teach me', icon: 'school-outline' },
+  { id: 'quick-answer', label: 'Quick answer', icon: 'flash-outline' },
+  { id: 'deep-dive', label: 'Deep dive', icon: 'arrow-expand-down' },
+  { id: 'socratic', label: 'Socratic guide', icon: 'head-question-outline' },
   { id: 'simplify', label: 'Simplify', icon: 'creation' },
   { id: 'example', label: 'Give an example', icon: 'flask-outline' },
   { id: 'quiz', label: 'Quiz me', icon: 'brain' },
@@ -199,6 +203,7 @@ export function AskStudyBoltSheet({
               </View>
             </View>
             {provider === 'cloud' && quota ? <View style={styles.quotaRow}><Pill label={`${quota.remaining} StudyBolt AI interactions remaining`} tone={quota.remaining > 2 ? 'purple' : 'neutral'} /><Text style={[styles.quotaPlan, { color: colors.textMuted }]}>{quota.plan === 'premium' ? 'Premium' : 'Free'} · this period</Text></View> : null}
+            {provider === 'cloud' && quota?.softWarning ? <View style={[styles.quotaWarning, { backgroundColor: colors.primarySoft }]}><Icon name="information-outline" size={17} color={colors.primary} /><Text style={[styles.quotaWarningText, { color: colors.textSecondary }]}>You’re approaching this period’s secure-cloud AI limit. Cached and on-device answers do not consume it.</Text></View> : null}
 
             {!signedIn || !configured ? (
               <View style={[styles.tutorState, { backgroundColor: colors.primarySoft }]}>
@@ -317,6 +322,8 @@ const styles = StyleSheet.create({
   askContent: { paddingBottom: 12 },
   quotaRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   quotaPlan: { fontSize: 8, fontWeight: '700' },
+  quotaWarning: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, borderRadius: 11, padding: 9, marginTop: 8 },
+  quotaWarningText: { flex: 1, fontSize: 9, lineHeight: 13 },
   providerRow: { flexDirection: 'row', alignItems: 'center', gap: 11, borderRadius: 14, paddingHorizontal: 13, paddingVertical: 11 },
   providerCopy: { flex: 1, minWidth: 0 },
   providerTitle: { fontSize: 9, fontWeight: '900', letterSpacing: 0.8 },

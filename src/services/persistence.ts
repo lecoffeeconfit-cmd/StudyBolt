@@ -109,6 +109,7 @@ export async function loadStudyBoltState(): Promise<StudyBoltState> {
         : decks.every((deck) => deck.fileType === 'demo') ? initialState.activityEvents : [],
       dailyStudyGoalMinutes: typeof parsed.dailyStudyGoalMinutes === 'number' ? parsed.dailyStudyGoalMinutes : initialState.dailyStudyGoalMinutes,
       examAttempts: Array.isArray(parsed.examAttempts) ? (parsed.examAttempts as ExamAttempt[]).slice(-100) : [],
+      conceptMastery: Array.isArray(parsed.conceptMastery) ? parsed.conceptMastery.slice(-2_000) : [],
     };
   } catch {
     return initialState;

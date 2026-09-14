@@ -5,6 +5,7 @@ import type {
   AiTutorDepth,
   AiTutorQuota,
   AiTutorResponse,
+  AiRequestChannel,
   NoteBlock,
   StudyPack,
 } from '../models';
@@ -65,16 +66,23 @@ export function tutorContextAtPosition(deck: StudyPack, position: number, totalW
   };
 }
 
-async function tutorRequest(path: string, accessToken: string, init?: RequestInit): Promise<Response> {
-  return fetch(`${supabaseUrl}/functions/v1/studybolt-ai-tutor${path}`, {
-    ...init,
-    headers: {
-      apikey: supabaseAnonKey,
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-      ...init?.headers,
-    },
-  });
+export async function studyBoltAiRequest(path: string, accessToken: string, init?: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30_000);
+  try {
+    return await fetch(`${supabaseUrl}/functions/v1/studybolt-ai-tutor${path}`, {
+      ...init,
+      signal: controller.signal,
+      headers: {
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        ...init?.headers,
+      },
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function readPayload(response: Response): Promise<Record<string, unknown>> {
@@ -106,7 +114,7 @@ function friendlyTutorError(status: number, payload: Record<string, unknown>): s
 export async function fetchTutorQuota(accessToken: string): Promise<TutorCallResult> {
   if (!isAiTutorConfigured) return { error: 'AI Tutor needs the secure StudyBolt backend connection.' };
   try {
-    const response = await tutorRequest('', accessToken, { method: 'GET' });
+    const response = await studyBoltAiRequest('', accessToken, { method: 'GET' });
     const payload = await readPayload(response);
     if (!response.ok || !isQuota(payload.quota)) return { error: friendlyTutorError(response.status, payload) };
     return { quota: payload.quota };
@@ -122,6 +130,7 @@ export async function askAiTutor({
   accessToken,
   depth = 'normal',
   conversation,
+  channel = 'text',
 }: {
   action: AiTutorAction;
   question?: string;
@@ -129,12 +138,13 @@ export async function askAiTutor({
   accessToken: string;
   depth?: AiTutorDepth;
   conversation?: AiTutorConversation;
+  channel?: AiRequestChannel;
 }): Promise<TutorCallResult> {
   if (!isAiTutorConfigured) return { error: 'AI Tutor needs the secure StudyBolt backend connection.' };
   try {
-    const response = await tutorRequest('', accessToken, {
+    const response = await studyBoltAiRequest('', accessToken, {
       method: 'POST',
-      body: JSON.stringify({ action, question: question?.trim(), context, depth, conversation }),
+      body: JSON.stringify({ action, question: question?.trim(), context, depth, conversation, channel }),
     });
     const payload = await readPayload(response);
     const quota = isQuota(payload.quota) ? payload.quota : undefined;

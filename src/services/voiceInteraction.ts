@@ -1,4 +1,4 @@
-export type VoiceSessionState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'interrupted' | 'paused' | 'error' | 'ended';
+export type VoiceSessionState = 'idle' | 'listening' | 'processing' | 'speaking' | 'interrupted' | 'paused' | 'error' | 'ended';
 export type VoiceCommand = 'pause' | 'continue' | 'repeat' | 'back' | 'skip' | 'exit' | 'unknown';
 
 /** Pure command parsing keeps the hands-free controller testable and offline. */
@@ -17,7 +17,7 @@ export function parseVoiceCommand(transcript: string): VoiceCommand {
 export function interactionStateLabel(state: VoiceSessionState): string {
   switch (state) {
     case 'listening': return 'Listening';
-    case 'thinking': return 'Thinking';
+    case 'processing': return 'Processing';
     case 'speaking': return 'StudyBolt is speaking';
     case 'interrupted': return 'Listening after interruption';
     case 'paused': return 'Paused';

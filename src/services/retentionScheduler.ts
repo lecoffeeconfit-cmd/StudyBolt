@@ -65,14 +65,16 @@ function quizObservation(answer: NonNullable<StudyEvent['quizAnswers']>[number],
 
 function reviewObservations(state: StudyBoltState, deckId: string, cardId: string): ReviewObservation[] {
   const history: ReviewObservation[] = [];
+  const cardSectionId = state.decks.find((deck) => deck.id === deckId)?.flashcards.find((card) => card.id === cardId)?.source.sectionId;
   state.activityEvents.forEach((event) => {
     if (event.type === 'flashcard-review' && event.deckId === deckId && event.cardId === cardId) {
       const observation = flashcardObservation(event);
       if (observation) history.push(observation);
     }
-    if (event.type !== 'quiz' || event.deckId !== deckId) return;
+    if (event.type !== 'quiz') return;
     (event.quizAnswers ?? []).forEach((answer) => {
-      if (smartCardId(deckId, answer.questionId) !== cardId) return;
+      if ((answer.sourceDeckId ?? event.deckId) !== deckId) return;
+      if (smartCardId(deckId, answer.originQuestionId ?? answer.questionId) !== cardId && (!cardSectionId || answer.sourceSectionId !== cardSectionId)) return;
       const observation = quizObservation(answer, event.occurredAt);
       if (observation) history.push(observation);
     });
