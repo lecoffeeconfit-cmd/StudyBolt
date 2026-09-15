@@ -1,0 +1,5 @@
+# Uploads are available to guest users in the app. The processor does not
+# persist source files; add an edge rate limit or require a user JWT before
+# exposing it publicly in a production deployment.
+[functions.studybolt-process-document]
+verify_jwt = false

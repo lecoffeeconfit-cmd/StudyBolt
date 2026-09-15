@@ -6,11 +6,13 @@ import { Icon, Pill, PrimaryButton, ProgressBar } from '../components/ui';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import { useStudyBolt } from '../StudyBoltContext';
 import type { ImportAsset, StudyPack } from '../models';
+import { documentIcon, documentTypeLabel, getImportDocumentType } from '../services/documentTypes';
 import { processDocument, StudyBoltProcessingError, validateImport } from '../services/documentProcessor';
+import { useAuth } from '../AuthContext';
 
 const STAGES = [
-  'Uploading slides',
-  'Reading your lecture',
+  'Uploading your material',
+  'Reading your source',
   'Finding important concepts',
   'Building simplified and detailed notes',
   'Creating flashcards, quiz, and full test',
@@ -19,8 +21,11 @@ const STAGES = [
 
 export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSuccess, onTrySample }: { asset: ImportAsset; courseId?: string; courseName?: string; onCancel: () => void; onSuccess: (deck: StudyPack) => void; onTrySample: () => void }) {
   const { colors } = useStudyBolt();
+  const { getAccessToken } = useAuth();
   const reducedMotion = useReducedMotion();
   const insets = useSafeAreaInsets();
+  const importDocumentType = getImportDocumentType(asset.name, asset.mimeType);
+  const importLabel = importDocumentType ? documentTypeLabel(importDocumentType) : 'document';
   const [stage, setStage] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
@@ -57,7 +62,8 @@ export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSucc
     try {
       validateImport(asset);
       ticker = setInterval(() => setStage((value) => Math.min(STAGES.length - 1, value + 1)), 1100);
-      processDocument(asset, className.trim())
+      void getAccessToken()
+        .then((accessToken) => processDocument(asset, className.trim(), accessToken))
         .then((deck) => {
           if (!mounted) return;
           onSuccess({
@@ -74,14 +80,14 @@ export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSucc
           setError(message);
         });
     } catch (reason) {
-      const message = reason instanceof StudyBoltProcessingError ? reason.userMessage : 'Choose a PDF or PowerPoint file and try again.';
+      const message = reason instanceof StudyBoltProcessingError ? reason.userMessage : 'Choose a PDF, PowerPoint, or notes file and try again.';
       setError(message);
     }
     return () => {
       mounted = false;
       if (ticker) clearInterval(ticker);
     };
-  }, [asset, className, courseId, onSuccess, started]);
+  }, [asset, className, courseId, getAccessToken, onSuccess, started]);
 
   const startProcessing = () => {
     const name = className.trim();
@@ -112,10 +118,10 @@ export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSucc
 
         {error ? (
           <>
-            <Text style={[styles.title, { color: colors.text }]}>Processing isn’t connected yet</Text>
+            <Text style={[styles.title, { color: colors.text }]}>We couldn’t build that Study Pack</Text>
             <Text style={[styles.description, { color: colors.textSecondary }]}>{error}</Text>
             <View style={[styles.fileCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Icon name="file-document-outline" color={colors.primary} />
+              <Icon name={importDocumentType ? documentIcon(importDocumentType) : 'file-document-outline'} color={colors.primary} />
               <Text numberOfLines={1} style={[styles.fileName, { color: colors.text }]}>{asset.name}</Text>
               <Icon name="shield-check-outline" color={colors.mint} />
             </View>
@@ -127,9 +133,9 @@ export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSucc
         ) : !started ? (
           <>
             <Text style={[styles.title, { color: colors.text }]}>Name this class</Text>
-            <Text style={[styles.description, { color: colors.textSecondary }]}>Your slides will be turned into one organized Study Pack inside this class.</Text>
+            <Text style={[styles.description, { color: colors.textSecondary }]}>Your {importLabel} will be turned into one organized Study Pack inside this class.</Text>
             <View style={[styles.fileCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Icon name="file-document-outline" color={colors.primary} />
+              <Icon name={importDocumentType ? documentIcon(importDocumentType) : 'file-document-outline'} color={colors.primary} />
               <Text numberOfLines={1} style={[styles.fileName, { color: colors.text }]}>{asset.name}</Text>
               <Icon name="shield-check-outline" color={colors.mint} />
             </View>

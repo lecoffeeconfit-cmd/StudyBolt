@@ -188,7 +188,7 @@ function parseContent(value: unknown): SharedStudyPackContent | null {
     courseName,
     title,
     subtitle: stringValue(value.subtitle, 'Shared Study Pack'),
-    fileType: value.fileType === 'pdf' || value.fileType === 'pptx' ? value.fileType : 'demo',
+    fileType: value.fileType === 'pdf' || value.fileType === 'pptx' || value.fileType === 'notes' ? value.fileType : 'demo',
     pageCount: typeof value.pageCount === 'number' ? Math.max(0, value.pageCount) : 0,
     color: stringValue(value.color, '#1678FF'),
     emoji: stringValue(value.emoji, '📚'),

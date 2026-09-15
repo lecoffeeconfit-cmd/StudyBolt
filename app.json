@@ -5,6 +5,7 @@
     "scheme": "studybolt",
     "version": "1.0.0",
     "orientation": "portrait",
+    "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "plugins": [
       "expo-notifications",
@@ -21,16 +22,26 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.lecoffeeconfit.studybolt",
-      "buildNumber": "1"
+      "buildNumber": "1",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.studybolt.app",
       "adaptiveIcon": {
-        "backgroundColor": "#F4F8FF"
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0B1D41"
       }
     },
     "web": {
-      "bundler": "metro"
+      "bundler": "metro",
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "df2b547d-f9a0-47dc-8ea0-586fbfbfd4bb"
+      }
     }
   }
 }

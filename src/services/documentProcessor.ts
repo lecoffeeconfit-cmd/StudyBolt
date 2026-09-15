@@ -1,7 +1,14 @@
 import type { DeckOutlineItem, ImportAsset, NoteBlock, StudyPack } from '../models';
 import { ensureDistinctNoteLayers } from './noteLayers';
+import {
+  getFileExtension,
+  getImportFileName,
+  getImportDocumentType,
+  studyPackFileType,
+  SUPPORTED_DOCUMENT_EXTENSIONS,
+} from './documentTypes';
 
-const ALLOWED_EXTENSIONS = ['pdf', 'ppt', 'pptx'];
+const MAX_IMPORT_BYTES = 50 * 1024 * 1024;
 
 export class StudyBoltProcessingError extends Error {
   constructor(
@@ -13,14 +20,15 @@ export class StudyBoltProcessingError extends Error {
 }
 
 export function validateImport(asset: ImportAsset): void {
-  const extension = asset.name.split('.').pop()?.toLowerCase();
-  if (!extension || !ALLOWED_EXTENSIONS.includes(extension)) {
+  const extension = getFileExtension(asset.name);
+  const documentType = getImportDocumentType(asset.name, asset.mimeType);
+  if (!documentType || (extension && !SUPPORTED_DOCUMENT_EXTENSIONS.includes(extension as typeof SUPPORTED_DOCUMENT_EXTENSIONS[number]))) {
     throw new StudyBoltProcessingError(
       `Unsupported document extension: ${extension ?? 'none'}`,
-      'StudyBolt currently accepts PDF, PPT, and PPTX files.',
+      'Choose a PDF, PowerPoint, or notes file (.txt, .md, .rtf, .doc, or .docx).',
     );
   }
-  if (asset.size && asset.size > 50 * 1024 * 1024) {
+  if (typeof asset.size === 'number' && asset.size > MAX_IMPORT_BYTES) {
     throw new StudyBoltProcessingError('Document exceeds 50 MB', 'Choose a file smaller than 50 MB and try again.');
   }
 }
@@ -79,35 +87,59 @@ function isStudyPack(value: unknown): value is StudyPack {
   );
 }
 
-export async function processDocument(asset: ImportAsset, courseName: string): Promise<StudyPack> {
+export async function processDocument(asset: ImportAsset, courseName: string, accessToken?: string | null): Promise<StudyPack> {
   validateImport(asset);
-  const endpoint = process.env.EXPO_PUBLIC_STUDYBOLT_PROCESSOR_URL;
+  const documentType = getImportDocumentType(asset.name, asset.mimeType);
+  if (!documentType) {
+    throw new StudyBoltProcessingError('Unsupported document type', 'Choose a PDF, PowerPoint, or notes file and try again.');
+  }
+  const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL?.replace(/\/$/, '');
+  const endpoint = process.env.EXPO_PUBLIC_STUDYBOLT_PROCESSOR_URL?.trim()
+    || (supabaseUrl ? `${supabaseUrl}/functions/v1/studybolt-process-document` : '');
+  const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
   if (!endpoint) {
     throw new StudyBoltProcessingError(
       'EXPO_PUBLIC_STUDYBOLT_PROCESSOR_URL is not configured',
-      'Your file is valid, but secure slide processing has not been connected yet. Use the sample pack to explore every study feature.',
+      'Your file is valid, but secure document processing has not been connected yet. Add a processor endpoint and try again.',
     );
   }
 
   const form = new FormData();
-  if (asset.file instanceof Blob) {
-    form.append('file', asset.file, asset.name);
+  const fileName = getImportFileName(asset.name, asset.mimeType);
+  if (typeof Blob !== 'undefined' && asset.file instanceof Blob) {
+    form.append('file', asset.file, fileName);
   } else {
-    const nativeFile = { uri: asset.uri, name: asset.name, type: asset.mimeType ?? 'application/octet-stream' };
+    const nativeFile = { uri: asset.uri, name: fileName, type: asset.mimeType ?? 'application/octet-stream' };
     form.append('file', nativeFile as unknown as Blob);
   }
   form.append('courseName', courseName);
+  form.append('documentType', documentType);
+  form.append('extension', getFileExtension(fileName));
 
   let response: Response;
   try {
-    response = await fetch(endpoint, { method: 'POST', body: form });
+    response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        ...(anonKey ? { apikey: anonKey } : {}),
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : anonKey ? { Authorization: `Bearer ${anonKey}` } : {}),
+      },
+      body: form,
+    });
   } catch {
     throw new StudyBoltProcessingError('Processor request failed', 'StudyBolt could not reach the secure processor. Check your connection and try again.');
   }
   if (!response.ok) {
+    let serverMessage = '';
+    try {
+      const body = await response.json() as { error?: unknown; message?: unknown };
+      serverMessage = typeof body.error === 'string' ? body.error : typeof body.message === 'string' ? body.message : '';
+    } catch {
+      // Keep the stable client message when the processor did not return JSON.
+    }
     throw new StudyBoltProcessingError(
-      `Processor returned ${response.status}`,
-      'StudyBolt could not process this file. The original file was not added to your library.',
+      `Processor returned ${response.status}${serverMessage ? `: ${serverMessage}` : ''}`,
+      serverMessage || 'StudyBolt could not process this file. The original file was not added to your library.',
     );
   }
   const payload: unknown = await response.json();
@@ -116,6 +148,11 @@ export async function processDocument(asset: ImportAsset, courseName: string): P
   }
   return {
     ...payload,
+    fileName: payload.fileName || fileName,
+    fileType: payload.fileType === 'pdf' || payload.fileType === 'notes' || payload.fileType === 'pptx'
+      ? payload.fileType
+      : studyPackFileType(documentType),
+    courseName: payload.courseName || courseName,
     detailedNotes: ensureDistinctNoteLayers(payload.notes, payload.detailedNotes, payload.originalText, payload.outline),
   };
 }

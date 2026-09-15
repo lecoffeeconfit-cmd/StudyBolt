@@ -18,6 +18,7 @@ import { canAttemptOnDeviceAI, getOnDeviceAIAvailability, initialOnDeviceAIAvail
 import { buildAssessment, getAssessmentCoverage } from '../services/assessment';
 import type { AssessmentKind } from '../services/assessment';
 import { calculateMastery } from '../services/mastery';
+import { pageLabel } from '../services/documentTypes';
 import type { SmartStudyMode } from '../services/adaptiveStudy';
 import { interactionStateLabel, parseVoiceCommand, startBrowserSpeechInput, type BrowserSpeechInput, type VoiceSessionState } from '../services/voiceInteraction';
 
@@ -188,7 +189,7 @@ function Overview({ deck, onTool, onPlan, onStartStudy, shared }: { deck: StudyP
         <View style={styles.deckHeroCopy}>
           <View style={styles.deckLabelRow}>
             <Pill label={deck.fileType === 'demo' ? 'INTERACTIVE SAMPLE' : 'STUDY PACK'} tone={deck.fileType === 'demo' ? 'purple' : 'blue'} />
-            <Text style={[styles.slideCount, { color: colors.textMuted }]}>{deck.pageCount} slides</Text>
+            <Text style={[styles.slideCount, { color: colors.textMuted }]}>{deck.pageCount} {pageLabel(deck.fileType)}</Text>
           </View>
           <Text style={[styles.deckTitle, { color: colors.text }]}>{deck.title}</Text>
           <Text style={[styles.deckSubtitle, { color: colors.textSecondary }]}>{deck.subtitle}</Text>
@@ -1523,7 +1524,7 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
         onQuizAnswered={(correct) => { if (!readOnly) recordStudyEvent({ type: 'tutor-quiz', deckId: deck.id, courseId: deck.courseId, tutorQuizCorrect: correct }); }}
       />
       <Modal visible={driveModeVisible} animationType="fade" onRequestClose={() => void closeDriveMode()}>
-        <View style={[styles.driveRoot, { backgroundColor: colors.mode === 'dark' ? '#09111B' : '#11162F' }]}> 
+        <View style={[styles.driveRoot, { backgroundColor: colors.mode === 'dark' ? '#09111B' : '#11162F' }]}>
           <View style={styles.driveTop}><View><Text style={styles.driveEyebrow}>STUDYBOLT DRIVE MODE</Text><Text style={styles.driveTitle}>{deck.title}</Text></View><Pressable accessibilityLabel="Exit Drive mode" onPress={() => void closeDriveMode()} style={styles.driveClose}><Icon name="close" color="#E8E9F7" size={23} /></Pressable></View>
           <View style={styles.driveCenter}>
             <View style={[styles.driveOrb, { backgroundColor: colors.purple }]}>{voiceSessionState === 'processing' || tutorLoading ? <ActivityIndicator color={colors.primaryText} size="large" /> : <Icon name={playing || voiceSessionState === 'speaking' ? 'volume-high' : voiceSessionState === 'listening' || voiceSessionState === 'interrupted' ? 'microphone' : 'pause'} color={colors.primaryText} size={44} />}</View>

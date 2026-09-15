@@ -8,6 +8,7 @@ import type { ImportAsset, StudyPack } from '../models';
 import { calculateMastery } from '../services/mastery';
 import { buildMistakeNotebook, buildSmartStudyBrief } from '../services/adaptiveStudy';
 import type { SmartStudyMode } from '../services/adaptiveStudy';
+import { DOCUMENT_PICKER_TYPE, pageLabel } from '../services/documentTypes';
 import { BoltMark, Card, Header, Icon, Pill, ProgressBar, Screen, SectionHeader } from '../components/ui';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import { useAuth } from '../AuthContext';
@@ -96,11 +97,7 @@ export function HomeScreen({
   const pickDocument = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: [
-          'application/pdf',
-          'application/vnd.ms-powerpoint',
-          'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-        ],
+        type: DOCUMENT_PICKER_TYPE,
         copyToCacheDirectory: true,
         multiple: false,
       });
@@ -234,12 +231,11 @@ export function HomeScreen({
         </View>
         <Text style={[styles.uploadTitle, { color: colors.text }]}>Drop your files here</Text>
         <Text style={[styles.uploadHint, { color: colors.textSecondary }]}>or tap to upload</Text>
-        <Text style={[styles.formats, { color: colors.textMuted }]}>PPT, PPTX, or PDF</Text>
+        <Text style={[styles.formats, { color: colors.textMuted }]}>PPT, PPTX, PDF, or notes</Text>
         <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.fileTypes}>
           <FileTypeIcon icon="microsoft-powerpoint" color="#D9472F" background="#FFF0EC" />
           <FileTypeIcon icon="file-pdf-box" color="#E5535D" background="#FFF0F2" />
-          <FileTypeIcon icon="file-presentation-box" color="#E5A400" background="#FFF7D7" />
-          <FileTypeIcon icon="google-drive" color="#35A56A" background="#EAF8F0" />
+          <FileTypeIcon icon="note-text-outline" color="#7D5CFF" background="#F0ECFF" />
         </View>
       </Pressable>
 
@@ -287,7 +283,7 @@ function RecentDeck({ deck, onPress }: { deck: StudyPack; onPress: () => void })
         </View>
         <Text numberOfLines={1} style={[styles.deckSubtitle, { color: colors.textSecondary }]}>{deck.title}</Text>
         <View style={styles.deckMetaRow}>
-          <Text style={[styles.deckMeta, { color: colors.textMuted }]}>{deck.pageCount} slides</Text>
+          <Text style={[styles.deckMeta, { color: colors.textMuted }]}>{deck.pageCount} {pageLabel(deck.fileType)}</Text>
           <View style={[styles.dot, { backgroundColor: colors.textMuted }]} />
           <Text style={[styles.deckMeta, { color: colors.textMuted }]}>Available offline</Text>
         </View>

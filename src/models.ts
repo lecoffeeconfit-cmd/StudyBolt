@@ -188,7 +188,7 @@ export interface StudyPack {
   title: string;
   subtitle: string;
   fileName: string;
-  fileType: 'pptx' | 'pdf' | 'demo';
+  fileType: 'pptx' | 'pdf' | 'notes' | 'demo';
   pageCount: number;
   createdAt: string;
   order: number;

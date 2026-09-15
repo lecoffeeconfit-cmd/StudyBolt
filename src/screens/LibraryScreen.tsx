@@ -7,6 +7,7 @@ import { Card, Header, Icon, type IconName, Pill, PrimaryButton, Screen } from '
 import { useStudyBolt } from '../StudyBoltContext';
 import type { ImportAsset, LibrarySort, StudyClass, StudyPack } from '../models';
 import { calculateCourseMastery, calculateMastery } from '../services/mastery';
+import { DOCUMENT_PICKER_TYPE, pageLabel } from '../services/documentTypes';
 import { radius } from '../theme';
 
 const CLASS_COLORS = ['#39BFA3', '#F26D8B', '#418DFF', '#F3A633', '#7D5CFF', '#11A7A2'];
@@ -115,11 +116,7 @@ export function LibraryScreen({
   const pickDocument = async (course: StudyClass) => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: [
-          'application/pdf',
-          'application/vnd.ms-powerpoint',
-          'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-        ],
+        type: DOCUMENT_PICKER_TYPE,
         copyToCacheDirectory: true,
         multiple: false,
       });
@@ -230,7 +227,7 @@ export function LibraryScreen({
                       </View>
                       <View style={styles.emptyClassCopy}>
                         <Text style={[styles.emptyClassTitle, { color: colors.text }]}>Add your first study pack</Text>
-                        <Text style={[styles.emptyClassSubtitle, { color: colors.textSecondary }]}>Upload slides or a PDF for {course.name}.</Text>
+                        <Text style={[styles.emptyClassSubtitle, { color: colors.textSecondary }]}>Upload slides, a PDF, or notes for {course.name}.</Text>
                       </View>
                       <Pressable accessibilityRole="button" accessibilityLabel={`Add slides to ${course.name}`} onPress={() => void pickDocument(course)} style={[styles.addSlidesButton, { backgroundColor: course.color }]}>
                         <Icon name="plus" size={18} color="#FFFFFF" />
@@ -244,6 +241,8 @@ export function LibraryScreen({
                           ? { icon: 'file-pdf-box' as IconName, label: 'PDF', color: '#E5535D', background: colors.mode === 'dark' ? '#3A2228' : '#FFF0F2' }
                           : deck.fileType === 'pptx'
                             ? { icon: 'microsoft-powerpoint' as IconName, label: 'POWERPOINT', color: '#D95738', background: colors.mode === 'dark' ? '#38241F' : '#FFF0EC' }
+                            : deck.fileType === 'notes'
+                              ? { icon: 'note-text-outline' as IconName, label: 'NOTES', color: '#7D5CFF', background: colors.mode === 'dark' ? '#2C2548' : '#F0ECFF' }
                             : { icon: 'file-presentation-box' as IconName, label: 'SAMPLE PACK', color: colors.goldText, background: colors.goldSoft };
                         return (
                           <Card key={deck.id} onPress={() => selecting ? toggle(deck.id) : onOpenDeck(deck)} style={[styles.deckCard, styles.flatCard, { backgroundColor: colors.card }, isSelected && { borderColor: colors.primary, borderWidth: 1.5 }]}>
@@ -261,7 +260,7 @@ export function LibraryScreen({
                               <View style={styles.deckMetaRow}>
                                 <Text style={[styles.deckKind, { color: fileVisual.color }]}>{fileVisual.label} {index + 1}</Text>
                                 <View style={[styles.deckMetaDot, { backgroundColor: colors.border }]} />
-                                <Text style={[styles.deckMeta, { color: colors.textMuted }]}>{deck.pageCount} slides · {calculateMastery(deck).overall}% mastered</Text>
+                                <Text style={[styles.deckMeta, { color: colors.textMuted }]}>{deck.pageCount} {pageLabel(deck.fileType)} · {calculateMastery(deck).overall}% mastered</Text>
                               </View>
                             </View>
                             <Icon name={selecting ? 'checkbox-multiple-marked-outline' : 'chevron-right'} color={isSelected ? colors.primary : colors.textMuted} />

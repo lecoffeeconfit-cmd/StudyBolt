@@ -41,7 +41,7 @@ When adding a feature, keep domain transformations in `src/services`, shared dat
 - Deterministic mastery estimates, progress stats, exam-review combination, modality-aware deadline plans, light/dark/system themes
 - Local iOS/Android study reminders scheduled across active days in a learning plan
 - Offline persistence with AsyncStorage
-- PDF/PPT/PPTX picker and honest validation/error states
+- PDF/PPT/PPTX picker plus notes-file uploads (`.txt`, `.md`, `.rtf`, `.doc`, and `.docx`) with honest validation/error states
 - First-run onboarding plus an optional guest path
 - Email/password, Google, and Apple sign-in UI with password recovery and account management
 
@@ -49,13 +49,20 @@ The additional Psychology and Chemistry cards are visual development content; Bi
 
 ## Secure processor contract
 
-Real PDF and PowerPoint extraction/generation requires a server because model credentials must never ship in the app and robust PPTX extraction is not reliably portable on-device. Set:
+Real PDF and PowerPoint extraction/generation requires a server because model credentials must never ship in the app and robust PPTX extraction is not reliably portable on-device. The app uses this Supabase Edge Function by default when `EXPO_PUBLIC_SUPABASE_URL` is set; a custom processor can still be supplied with:
 
 ```bash
 EXPO_PUBLIC_STUDYBOLT_PROCESSOR_URL=https://your-private-endpoint.example/process
 ```
 
-The endpoint receives multipart form fields `file` and `courseName`. It must keep uploads private, extract source content, generate a grounded Study Pack once, validate the response, and return the `StudyPack` JSON shape from `src/models.ts`. Both `notes` and `detailedNotes` must cover every source-outline section and retain a source reference for every chunk. Simplified notes are the fast layer: a condensed, one-sentence organizing summary, a short set of core ideas, one key relationship, and retrieval prompts. Detailed notes are intentionally not a second copy of that summary: they preserve most meaningful source claims and wording in hierarchical subsections, explicitly connect related ideas, include grounded examples when the source supports them, and end with self-explanation or retrieval prompts. A useful processor target is roughly 20–35% of source wording in `quickReview` versus 70–100% of meaningful claims in `detailedNotes`. Content must remain source-grounded rather than filling apparent gaps with invented facts. StudyBolt uses the generated notes and flashcards to build a cumulative test whose prompts are separate from the practice-quiz pool. Malformed or incompletely covered responses are rejected by the client, and legacy/shared packs are normalized into distinct layers on load.
+The included `supabase/functions/studybolt-process-document/index.ts` receives multipart form fields `file`, `courseName`, `documentType`, and `extension`, sends the source to the server-side Responses API as a file/text input, and returns a normalized StudyPack. Deploy it with:
+
+```bash
+supabase functions deploy studybolt-process-document
+supabase secrets set OPENAI_API_KEY=your_server_key
+```
+
+The function does not persist the source in StudyBolt, deletes the temporary provider file after generation, and uses `store: false` for the model response. Add production rate limiting or require a user JWT before exposing a public guest-upload endpoint. A custom endpoint must keep uploads private, extract source content, generate a grounded Study Pack once, validate the response, and return the `StudyPack` JSON shape from `src/models.ts`. Both `notes` and `detailedNotes` must cover every source-outline section and retain a source reference for every chunk. Simplified notes are the fast layer: a condensed, one-sentence organizing summary, a short set of core ideas, one key relationship, and retrieval prompts. Detailed notes are intentionally not a second copy of that summary: they preserve most meaningful source claims and wording in hierarchical subsections, explicitly connect related ideas, include grounded examples when the source supports them, and end with self-explanation or retrieval prompts. A useful processor target is roughly 20–35% of source wording in `quickReview` versus 70–100% of meaningful claims in `detailedNotes`. Content must remain source-grounded rather than filling apparent gaps with invented facts. StudyBolt uses the generated notes and flashcards to build a cumulative test whose prompts are separate from the practice-quiz pool. Malformed or incompletely covered responses are rejected by the client, and legacy/shared packs are normalized into distinct layers on load.
 
 Recommended production implementation: private Supabase Storage, user-scoped RLS tables, and a Supabase Edge Function that calls a document-extraction worker and AI provider with server-only secrets. No Supabase or AI credentials are currently invented or required for the local demo.
 

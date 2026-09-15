@@ -20,7 +20,7 @@ const PAGES: OnboardingPage[] = [
   {
     eyebrow: 'ONE UPLOAD',
     title: 'Bring one lecture.\nLeave with a plan.',
-    body: 'Add a PDF or PowerPoint once. StudyBolt turns it into an organized study pack you can use offline.',
+    body: 'Add a PDF, PowerPoint, or your own notes once. StudyBolt turns it into an organized study pack you can use offline.',
     icon: 'cloud-upload-outline',
   },
   {
