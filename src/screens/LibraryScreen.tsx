@@ -1,6 +1,6 @@
 import * as DocumentPicker from 'expo-document-picker';
 import React, { useMemo, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Animated, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Card, Header, Icon, type IconName, Pill, PrimaryButton, Screen } from '../components/ui';
@@ -16,11 +16,29 @@ const CLASS_EMOJIS = ['📚', '🧠', '🧪', '🎨', '💻', '🌿'];
 type CourseGroup = { course: StudyClass; decks: StudyPack[] };
 
 const SORT_OPTIONS: Array<{ value: LibrarySort; label: string; description: string; icon: IconName }> = [
-  { value: 'default', label: 'Default order', description: 'Classes as saved, packs in chapter order', icon: 'format-list-numbered' },
+  { value: 'default', label: 'Default', description: 'Classes as saved, packs in chapter order', icon: 'format-list-numbered' },
   { value: 'recent', label: 'Recently added', description: 'Newest classes and study packs first', icon: 'clock-outline' },
   { value: 'oldest', label: 'Oldest added', description: 'Earliest classes and study packs first', icon: 'clock-time-four-outline' },
-  { value: 'alphabetical', label: 'A–Z', description: 'Alphabetize classes and study packs', icon: 'sort-alphabetical-ascending' },
+  { value: 'alphabetical', label: 'Name (A–Z)', description: 'Alphabetize classes and study packs', icon: 'sort-alphabetical-ascending' },
 ];
+
+function CollapseChevron({ collapsed, color }: { collapsed: boolean; color: string }) {
+  const progress = React.useRef(new Animated.Value(collapsed ? 0 : 1)).current;
+
+  React.useEffect(() => {
+    Animated.timing(progress, {
+      toValue: collapsed ? 0 : 1,
+      duration: 180,
+      useNativeDriver: Platform.OS !== 'web',
+    }).start();
+  }, [collapsed, progress]);
+
+  return (
+    <Animated.View style={{ transform: [{ rotate: progress.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '180deg'] }) }] }}>
+      <Icon name="chevron-down" size={20} color={color} />
+    </Animated.View>
+  );
+}
 
 function timestamp(value: string): number {
   const parsed = Date.parse(value);
@@ -52,6 +70,8 @@ export function LibraryScreen({
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [choosingSort, setChoosingSort] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [collapsedCourseIds, setCollapsedCourseIds] = useState<string[]>([]);
   const [creatingClass, setCreatingClass] = useState(false);
   const [newClassName, setNewClassName] = useState('');
   const [selectedColor, setSelectedColor] = useState(CLASS_COLORS[0] ?? '#39BFA3');
@@ -83,9 +103,24 @@ export function LibraryScreen({
     return sortedGroups.map((group) => ({ ...group, decks: sortDecks(group.decks, state.librarySort) }));
   }, [state.classes, state.decks, state.librarySort]);
 
+  const normalizedSearch = searchQuery.trim().toLocaleLowerCase();
+  const visibleCourses = useMemo(() => courses
+    .map((group) => {
+      if (!normalizedSearch) return { ...group, visibleDecks: group.decks };
+      const classMatches = group.course.name.toLocaleLowerCase().includes(normalizedSearch);
+      const matchingDecks = group.decks.filter((deck) => `${deck.title} ${deck.fileName} ${deck.courseName}`.toLocaleLowerCase().includes(normalizedSearch));
+      return { ...group, visibleDecks: classMatches ? group.decks : matchingDecks };
+    })
+    .filter((group) => !normalizedSearch
+      || group.course.name.toLocaleLowerCase().includes(normalizedSearch)
+      || group.visibleDecks.length > 0), [courses, normalizedSearch]);
+
   const activeSort = SORT_OPTIONS.find((option) => option.value === state.librarySort) ?? SORT_OPTIONS[0]!;
 
   const toggle = (id: string) => setSelected((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
+  const toggleCourse = (id: string) => setCollapsedCourseIds((current) => current.includes(id)
+    ? current.filter((courseId) => courseId !== id)
+    : [...current, id]);
 
   const closeClassModal = () => {
     setCreatingClass(false);
@@ -119,6 +154,9 @@ export function LibraryScreen({
         type: DOCUMENT_PICKER_TYPE,
         copyToCacheDirectory: true,
         multiple: false,
+        // Keep the browser's File object instead of eagerly reading a second
+        // base64 copy into memory before the multipart upload starts.
+        base64: false,
       });
       if (result.canceled) return;
       const asset = result.assets[0];
@@ -156,6 +194,26 @@ export function LibraryScreen({
         <Text style={[styles.title, { color: colors.text }]}>Library</Text>
         <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{courses.length} {courses.length === 1 ? 'class' : 'classes'} · {state.decks.length} study {state.decks.length === 1 ? 'pack' : 'packs'}</Text>
 
+        <View style={[styles.searchField, { backgroundColor: colors.cardStrong, borderColor: colors.border }]}>
+          <Icon name="magnify" size={19} color={colors.textMuted} />
+          <TextInput
+            accessibilityLabel="Search classes and study packs"
+            autoCapitalize="none"
+            autoCorrect={false}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search classes and study packs…"
+            placeholderTextColor={colors.textMuted}
+            returnKeyType="search"
+            style={[styles.searchInput, { color: colors.text }]}
+          />
+          {searchQuery ? (
+            <Pressable accessibilityLabel="Clear library search" hitSlop={10} onPress={() => setSearchQuery('')}>
+              <Icon name="close-circle" size={18} color={colors.textMuted} />
+            </Pressable>
+          ) : null}
+        </View>
+
         {selecting ? (
           <Card style={[styles.reviewBanner, styles.flatCard, { backgroundColor: colors.purpleSoft }]}>
             <View style={styles.reviewBannerRow}>
@@ -180,7 +238,7 @@ export function LibraryScreen({
               style={({ pressed }) => [styles.savedButton, { backgroundColor: colors.cardStrong }, pressed && styles.sortButtonPressed]}
             >
               <Icon name="flag-outline" size={17} color={colors.warning} />
-              <Text style={[styles.savedButtonText, { color: colors.textSecondary }]}>{state.flaggedItems.length}</Text>
+              <Text style={[styles.savedButtonText, { color: colors.textSecondary }]}>Saved {state.flaggedItems.length}</Text>
             </Pressable>
             <Pressable
               accessibilityRole="button"
@@ -189,91 +247,143 @@ export function LibraryScreen({
               style={({ pressed }) => [styles.sortButton, { backgroundColor: colors.cardStrong }, pressed && styles.sortButtonPressed]}
             >
               <Icon name="sort-variant" size={17} color={colors.primary} />
-              <Text style={[styles.sortButtonText, { color: colors.textSecondary }]}>{activeSort.label}</Text>
+              <Text style={[styles.sortButtonText, { color: colors.textSecondary }]}>Sort: {activeSort.label}</Text>
               <Icon name="chevron-down" size={16} color={colors.textMuted} />
             </Pressable>
           </View>
         </View>
-        <View style={styles.courseList}>
-          {courses.map(({ course, decks }) => {
-            const courseMastery = decks.length ? calculateCourseMastery(decks) : 0;
-            return (
-              <View key={course.id} style={[styles.classGroup, { backgroundColor: colors.cardStrong, borderColor: `${course.color}45` }]}>
-                <View style={[styles.classAccent, { backgroundColor: course.color }]} />
-                <View style={styles.courseHeader}>
-                  <View style={[styles.courseIcon, { backgroundColor: `${course.color}24` }]}>
-                    <Text style={styles.courseEmoji}>{course.emoji}</Text>
-                  </View>
-                  <View style={styles.courseHeaderCopy}>
-                    <View style={styles.classLabelRow}>
-                      <Icon name="folder-outline" size={12} color={course.color} />
-                      <Text style={[styles.classLabel, { color: colors.textMuted }]}>CLASS</Text>
+        {visibleCourses.length ? (
+          <View style={styles.courseList}>
+            {visibleCourses.map(({ course, decks, visibleDecks }) => {
+              const courseMastery = decks.length ? calculateCourseMastery(decks) : 0;
+              const collapsed = normalizedSearch ? false : collapsedCourseIds.includes(course.id);
+              return (
+                <View key={course.id} style={[styles.classGroup, { backgroundColor: colors.cardStrong, borderColor: `${course.color}38` }]}>
+                  <View style={[styles.classAccent, { backgroundColor: course.color }]} />
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`${collapsed ? 'Expand' : 'Collapse'} ${course.name}`}
+                    accessibilityState={{ expanded: !collapsed }}
+                    disabled={Boolean(normalizedSearch)}
+                    onPress={() => toggleCourse(course.id)}
+                    style={({ pressed }) => [styles.courseHeader, pressed && !normalizedSearch && styles.courseHeaderPressed]}
+                  >
+                    <View style={styles.courseHeaderMain}>
+                      <View style={[styles.courseIcon, { backgroundColor: `${course.color}20` }]}>
+                        <Text style={styles.courseEmoji}>{course.emoji}</Text>
+                      </View>
+                      <View style={styles.courseHeaderCopy}>
+                        <View style={styles.classLabelRow}>
+                          <Icon name="folder-outline" size={12} color={course.color} />
+                          <Text style={[styles.classLabel, { color: colors.textMuted }]}>CLASS</Text>
+                        </View>
+                        <Text numberOfLines={1} style={[styles.courseName, { color: colors.text }]}>{course.name}</Text>
+                        <Text style={[styles.courseMeta, { color: colors.textMuted }]}>
+                          {decks.length ? `${courseMastery}% estimated mastery` : 'Ready for your first study pack'}
+                        </Text>
+                      </View>
+                      <View style={styles.courseHeaderTail}>
+                        <View style={[styles.classCount, { backgroundColor: colors.card, borderColor: `${course.color}2E` }]}>
+                          <Text style={[styles.classCountText, { color: colors.textSecondary }]}>{decks.length} {decks.length === 1 ? 'PACK' : 'PACKS'}</Text>
+                        </View>
+                        <CollapseChevron collapsed={collapsed} color={colors.textMuted} />
+                      </View>
                     </View>
-                    <Text style={[styles.courseName, { color: colors.text }]}>{course.name}</Text>
-                    <Text style={[styles.courseMeta, { color: colors.textMuted }]}>
-                      {decks.length ? `${courseMastery}% estimated mastery` : 'Ready for your first study pack'}
-                    </Text>
-                  </View>
-                  <View style={[styles.classCount, { backgroundColor: colors.card, borderColor: `${course.color}38` }]}>
-                    <Text style={[styles.classCountText, { color: colors.textSecondary }]}>{decks.length} {decks.length === 1 ? 'PACK' : 'PACKS'}</Text>
-                  </View>
-                </View>
+                    {decks.length ? (
+                      <View style={[styles.masteryTrack, { backgroundColor: `${course.color}18` }]}>
+                        <View style={[styles.masteryFill, { backgroundColor: course.color, width: `${courseMastery}%` }]} />
+                      </View>
+                    ) : null}
+                  </Pressable>
 
-                <View style={styles.classBody}>
-                  {decks.length === 0 ? (
-                    <Card style={[styles.emptyClassCard, styles.flatCard, { borderColor: `${course.color}55` }]}>
-                      <View style={[styles.emptyClassIcon, { backgroundColor: `${course.color}18` }]}>
-                        <Icon name="file-plus-outline" size={22} color={course.color} />
-                      </View>
-                      <View style={styles.emptyClassCopy}>
-                        <Text style={[styles.emptyClassTitle, { color: colors.text }]}>Add your first study pack</Text>
-                        <Text style={[styles.emptyClassSubtitle, { color: colors.textSecondary }]}>Upload slides, a PDF, or notes for {course.name}.</Text>
-                      </View>
-                      <Pressable accessibilityRole="button" accessibilityLabel={`Add slides to ${course.name}`} onPress={() => void pickDocument(course)} style={[styles.addSlidesButton, { backgroundColor: course.color }]}>
-                        <Icon name="plus" size={18} color="#FFFFFF" />
-                      </Pressable>
-                    </Card>
-                  ) : (
-                    <View style={styles.deckList}>
-                      {decks.map((deck, index) => {
-                        const isSelected = selected.includes(deck.id);
-                        const fileVisual = deck.fileType === 'pdf'
-                          ? { icon: 'file-pdf-box' as IconName, label: 'PDF', color: '#E5535D', background: colors.mode === 'dark' ? '#3A2228' : '#FFF0F2' }
-                          : deck.fileType === 'pptx'
-                            ? { icon: 'microsoft-powerpoint' as IconName, label: 'POWERPOINT', color: '#D95738', background: colors.mode === 'dark' ? '#38241F' : '#FFF0EC' }
-                            : deck.fileType === 'notes'
-                              ? { icon: 'note-text-outline' as IconName, label: 'NOTES', color: '#7D5CFF', background: colors.mode === 'dark' ? '#2C2548' : '#F0ECFF' }
-                            : { icon: 'file-presentation-box' as IconName, label: 'SAMPLE PACK', color: colors.goldText, background: colors.goldSoft };
-                        return (
-                          <Card key={deck.id} onPress={() => selecting ? toggle(deck.id) : onOpenDeck(deck)} style={[styles.deckCard, styles.flatCard, { backgroundColor: colors.card }, isSelected && { borderColor: colors.primary, borderWidth: 1.5 }]}>
-                            {selecting ? (
-                              <View style={[styles.checkbox, { borderColor: isSelected ? colors.primary : colors.border, backgroundColor: isSelected ? colors.primary : colors.card }]}>
-                                {isSelected ? <Icon name="check" size={15} color={colors.primaryText} /> : null}
-                              </View>
-                            ) : (
-                              <View style={[styles.deckFileIcon, { backgroundColor: fileVisual.background }]}>
-                                <Icon name={fileVisual.icon} size={23} color={fileVisual.color} />
-                              </View>
-                            )}
-                            <View style={styles.deckCopy}>
-                              <Text style={[styles.deckTitle, { color: colors.text }]}>{deck.title}</Text>
-                              <View style={styles.deckMetaRow}>
-                                <Text style={[styles.deckKind, { color: fileVisual.color }]}>{fileVisual.label} {index + 1}</Text>
-                                <View style={[styles.deckMetaDot, { backgroundColor: colors.border }]} />
-                                <Text style={[styles.deckMeta, { color: colors.textMuted }]}>{deck.pageCount} {pageLabel(deck.fileType)} · {calculateMastery(deck).overall}% mastered</Text>
-                              </View>
-                            </View>
-                            <Icon name={selecting ? 'checkbox-multiple-marked-outline' : 'chevron-right'} color={isSelected ? colors.primary : colors.textMuted} />
-                          </Card>
-                        );
-                      })}
+                  {!collapsed ? (
+                    <View style={[styles.classBody, { borderTopColor: colors.border }]}>
+                      {decks.length === 0 ? (
+                        <View style={[styles.emptyClassCard, { backgroundColor: colors.card, borderColor: `${course.color}42` }]}>
+                          <View style={[styles.emptyClassIcon, { backgroundColor: `${course.color}18` }]}>
+                            <Icon name="file-plus-outline" size={21} color={course.color} />
+                          </View>
+                          <View style={styles.emptyClassCopy}>
+                            <Text style={[styles.emptyClassTitle, { color: colors.text }]}>Add your first study pack</Text>
+                            <Text style={[styles.emptyClassSubtitle, { color: colors.textSecondary }]}>Upload slides, a PDF, or notes for {course.name}.</Text>
+                          </View>
+                          <Pressable accessibilityRole="button" accessibilityLabel={`Add study pack to ${course.name}`} onPress={() => void pickDocument(course)} style={[styles.addSlidesButton, { backgroundColor: course.color }]}>
+                            <Icon name="plus" size={18} color="#FFFFFF" />
+                          </Pressable>
+                        </View>
+                      ) : (
+                        <View style={[styles.deckList, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                          {visibleDecks.map((deck, index) => {
+                            const isSelected = selected.includes(deck.id);
+                            const fileVisual = deck.fileType === 'pdf'
+                              ? { icon: 'file-pdf-box' as IconName, label: 'PDF' }
+                              : deck.fileType === 'pptx'
+                                ? { icon: 'microsoft-powerpoint' as IconName, label: 'PowerPoint' }
+                                : deck.fileType === 'notes'
+                                  ? { icon: 'note-text-outline' as IconName, label: 'Notes' }
+                                  : { icon: 'file-presentation-box' as IconName, label: `Sample Pack ${decks.findIndex((item) => item.id === deck.id) + 1}` };
+                            return (
+                              <React.Fragment key={deck.id}>
+                                <Pressable
+                                  accessibilityRole="button"
+                                  accessibilityLabel={selecting ? `${isSelected ? 'Deselect' : 'Select'} ${deck.title}` : `Open ${deck.title}`}
+                                  onPress={() => selecting ? toggle(deck.id) : onOpenDeck(deck)}
+                                  style={({ pressed }) => [styles.deckRow, isSelected && { backgroundColor: colors.primarySoft }, pressed && styles.deckRowPressed]}
+                                >
+                                  {selecting ? (
+                                    <View style={[styles.checkbox, { borderColor: isSelected ? colors.primary : colors.border, backgroundColor: isSelected ? colors.primary : colors.card }]}>
+                                      {isSelected ? <Icon name="check" size={15} color={colors.primaryText} /> : null}
+                                    </View>
+                                  ) : (
+                                    <View style={[styles.deckFileIcon, { backgroundColor: `${course.color}16` }]}>
+                                      <Icon name={fileVisual.icon} size={19} color={course.color} />
+                                    </View>
+                                  )}
+                                  <View style={styles.deckCopy}>
+                                    <Text numberOfLines={1} style={[styles.deckTitle, { color: colors.text }]}>{deck.title}</Text>
+                                    <Text numberOfLines={1} style={[styles.deckMeta, { color: colors.textMuted }]}>
+                                      <Text style={[styles.deckKind, { color: colors.textSecondary }]}>{fileVisual.label}</Text>
+                                      {` · ${deck.pageCount} ${pageLabel(deck.fileType)} · ${calculateMastery(deck).overall}% mastered`}
+                                    </Text>
+                                  </View>
+                                  <Icon name={selecting ? 'checkbox-multiple-marked-outline' : 'chevron-right'} size={19} color={isSelected ? colors.primary : colors.textMuted} />
+                                </Pressable>
+                                {index < visibleDecks.length - 1 ? <View style={[styles.deckDivider, { backgroundColor: colors.border }]} /> : null}
+                              </React.Fragment>
+                            );
+                          })}
+                        </View>
+                      )}
+
+                      {decks.length > 0 && !selecting && !normalizedSearch ? (
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel={`Add study pack to ${course.name}`}
+                          onPress={() => void pickDocument(course)}
+                          style={({ pressed }) => [styles.addPackRow, pressed && styles.deckRowPressed]}
+                        >
+                          <View style={[styles.addPackIcon, { backgroundColor: `${course.color}16` }]}><Icon name="plus" size={16} color={course.color} /></View>
+                          <Text style={[styles.addPackText, { color: colors.textSecondary }]}>Add study pack</Text>
+                        </Pressable>
+                      ) : null}
                     </View>
-                  )}
+                  ) : null}
                 </View>
-              </View>
-            );
-          })}
-        </View>
+              );
+            })}
+          </View>
+        ) : (
+          <View style={[styles.emptyLibrary, { backgroundColor: colors.cardStrong, borderColor: colors.border }]}>
+            <View style={[styles.emptyLibraryIcon, { backgroundColor: colors.primarySoft }]}><Icon name={normalizedSearch ? 'magnify-close' : 'bookshelf'} size={25} color={colors.primary} /></View>
+            <Text style={[styles.emptyLibraryTitle, { color: colors.text }]}>{normalizedSearch ? 'No library matches' : 'Your library is ready'}</Text>
+            <Text style={[styles.emptyLibraryText, { color: colors.textSecondary }]}>{normalizedSearch ? 'Try a class name, study-pack title, or source file name.' : 'Create a class, then add slides, PDFs, or notes.'}</Text>
+            {normalizedSearch ? (
+              <Pressable onPress={() => setSearchQuery('')} style={styles.emptyLibraryAction}><Text style={[styles.emptyLibraryActionText, { color: colors.primary }]}>Clear search</Text></Pressable>
+            ) : (
+              <PrimaryButton label="Create your first class" icon="plus" onPress={() => setCreatingClass(true)} style={styles.emptyLibraryButton} />
+            )}
+          </View>
+        )}
       </Screen>
 
       <Modal visible={choosingSort} transparent animationType="slide" onRequestClose={() => setChoosingSort(false)}>
@@ -395,51 +505,68 @@ const styles = StyleSheet.create({
   newClassButton: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   selectButton: { paddingHorizontal: 11, paddingVertical: 9, borderRadius: 12 },
   selectText: { fontSize: 11, fontWeight: '800' },
-  title: { fontSize: 28, lineHeight: 33, fontWeight: '900', letterSpacing: -0.9, marginTop: 13 },
+  title: { fontSize: 28, lineHeight: 33, fontWeight: '900', letterSpacing: -0.9, marginTop: 11 },
   subtitle: { fontSize: 12, lineHeight: 17, marginTop: 4 },
+  searchField: { minHeight: 44, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 15 },
+  searchInput: { flex: 1, minWidth: 0, height: 43, fontSize: 13 },
   reviewBanner: { marginTop: 18 },
   reviewBannerRow: { flexDirection: 'row', alignItems: 'center', gap: 11 },
   reviewTitle: { fontSize: 14, fontWeight: '800' },
   reviewSubtitle: { fontSize: 11, marginTop: 3 },
   reviewButton: { minHeight: 48, marginTop: 14 },
-  libraryToolbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 22, marginBottom: 12 },
+  libraryToolbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 9, marginTop: 20, marginBottom: 12 },
   sectionTitle: { fontSize: 18, lineHeight: 23, fontWeight: '800', letterSpacing: -0.3 },
-  toolbarActions: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  savedButton: { minHeight: 38, borderRadius: radius.pill, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 11 },
+  toolbarActions: { flexShrink: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 7 },
+  savedButton: { minHeight: 38, borderRadius: radius.pill, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10 },
   savedButtonText: { fontSize: 11, fontWeight: '800' },
-  sortButton: { minHeight: 38, maxWidth: 170, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 11, borderRadius: radius.pill },
+  sortButton: { minHeight: 38, maxWidth: 162, flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, borderRadius: radius.pill },
   sortButtonPressed: { opacity: 0.82, transform: [{ scale: 0.98 }] },
   sortButtonText: { flexShrink: 1, fontSize: 11, fontWeight: '800' },
   courseList: { gap: 14 },
   classGroup: { position: 'relative', borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
   classAccent: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 4 },
-  courseHeader: { flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 14, paddingTop: 13, paddingBottom: 12, paddingLeft: 17 },
+  courseHeader: { paddingHorizontal: 14, paddingTop: 13, paddingBottom: 12, paddingLeft: 17 },
+  courseHeaderPressed: { opacity: 0.86 },
+  courseHeaderMain: { flexDirection: 'row', alignItems: 'center', gap: 11 },
   courseHeaderCopy: { flex: 1 },
+  courseHeaderTail: { alignItems: 'flex-end', justifyContent: 'center', gap: 7 },
   classLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 3 },
   classLabel: { fontSize: 8, lineHeight: 10, fontWeight: '900', letterSpacing: 1.1 },
-  classCount: { minHeight: 27, borderRadius: radius.pill, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 9 },
+  classCount: { minHeight: 24, borderRadius: radius.pill, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 },
   classCountText: { fontSize: 8, fontWeight: '900', letterSpacing: 0.45 },
   courseName: { fontSize: 17, fontWeight: '800' },
   courseMeta: { fontSize: 11, marginTop: 3 },
-  courseIcon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  courseEmoji: { fontSize: 22 },
-  classBody: { paddingHorizontal: 10, paddingBottom: 10 },
-  emptyClassCard: { flexDirection: 'row', alignItems: 'center', gap: 11, padding: 13 },
+  courseIcon: { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  courseEmoji: { fontSize: 21 },
+  masteryTrack: { height: 3, borderRadius: 2, overflow: 'hidden', marginTop: 10, marginLeft: 53 },
+  masteryFill: { height: 3, borderRadius: 2 },
+  classBody: { borderTopWidth: StyleSheet.hairlineWidth, paddingHorizontal: 10, paddingTop: 10, paddingBottom: 9 },
+  emptyClassCard: { minHeight: 68, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 11, padding: 12 },
   emptyClassIcon: { width: 39, height: 39, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   emptyClassCopy: { flex: 1 },
   emptyClassTitle: { fontSize: 13, fontWeight: '800' },
   emptyClassSubtitle: { fontSize: 10, lineHeight: 15, marginTop: 3 },
   addSlidesButton: { width: 38, height: 38, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
-  deckList: { gap: 9 },
-  deckCard: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 13 },
-  deckFileIcon: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  deckList: { borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
+  deckRow: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 12, paddingVertical: 9 },
+  deckRowPressed: { opacity: 0.78 },
+  deckDivider: { height: StyleSheet.hairlineWidth, marginLeft: 57 },
+  deckFileIcon: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   checkbox: { width: 26, height: 26, borderRadius: 8, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   deckCopy: { flex: 1 },
-  deckTitle: { fontSize: 13, fontWeight: '800' },
-  deckMetaRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 5, marginTop: 4 },
-  deckKind: { fontSize: 8, lineHeight: 11, fontWeight: '900', letterSpacing: 0.55 },
-  deckMetaDot: { width: 3, height: 3, borderRadius: 2 },
-  deckMeta: { fontSize: 10 },
+  deckTitle: { fontSize: 13, lineHeight: 17, fontWeight: '800' },
+  deckKind: { fontWeight: '700' },
+  deckMeta: { fontSize: 10, lineHeight: 14, marginTop: 3 },
+  addPackRow: { minHeight: 38, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 8, marginTop: 5 },
+  addPackIcon: { width: 27, height: 27, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
+  addPackText: { fontSize: 11, fontWeight: '800' },
+  emptyLibrary: { minHeight: 210, borderRadius: 19, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center', padding: 22 },
+  emptyLibraryIcon: { width: 48, height: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  emptyLibraryTitle: { fontSize: 16, fontWeight: '900' },
+  emptyLibraryText: { maxWidth: 280, fontSize: 11, lineHeight: 16, textAlign: 'center', marginTop: 5 },
+  emptyLibraryAction: { paddingHorizontal: 16, paddingVertical: 11, marginTop: 6 },
+  emptyLibraryActionText: { fontSize: 12, fontWeight: '900' },
+  emptyLibraryButton: { width: '100%', minHeight: 48, marginTop: 16 },
   flatCard: { shadowOpacity: 0, elevation: 0 },
   modalRoot: { flex: 1, justifyContent: 'flex-end' },
   sortSheet: { width: '100%', maxWidth: 560, alignSelf: 'center', borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 20, paddingTop: 10, shadowOffset: { width: 0, height: -8 }, shadowOpacity: 0.16, shadowRadius: 24, elevation: 16 },

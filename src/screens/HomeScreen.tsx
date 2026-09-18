@@ -100,6 +100,9 @@ export function HomeScreen({
         type: DOCUMENT_PICKER_TYPE,
         copyToCacheDirectory: true,
         multiple: false,
+        // Keep the browser's File object instead of eagerly reading a second
+        // base64 copy into memory before the multipart upload starts.
+        base64: false,
       });
       if (result.canceled) return;
       const asset = result.assets[0];

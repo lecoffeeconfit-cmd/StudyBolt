@@ -7,6 +7,7 @@ import { BottomTabs } from '../components/BottomTabs';
 import type { MainTab } from '../components/BottomTabs';
 import { useStudyBolt } from '../StudyBoltContext';
 import { AccountScreen } from '../screens/AccountScreen';
+import { AccountOnboardingScreen } from '../screens/AccountOnboardingScreen';
 import { CommunityClassScreen } from '../screens/CommunityClassScreen';
 import { DiscoverScreen } from '../screens/DiscoverScreen';
 import { ExamModeScreen } from '../screens/ExamModeScreen';
@@ -23,16 +24,17 @@ import { ProfileScreen } from '../screens/ProfileScreen';
 import { ResetPasswordScreen } from '../screens/ResetPasswordScreen';
 import { StatsScreen } from '../screens/StatsScreen';
 import { StudyPackScreen } from '../screens/StudyPackScreen';
+import { VisualReviewScreen } from '../screens/VisualReviewScreen';
 import { SharedStudyPackScreen } from '../screens/SharedStudyPackScreen';
 import { SmartStudyScreen } from '../screens/SmartStudyScreen';
 import { combineStudyPacks } from '../services/studyPack';
 import { parseShareToken } from '../services/sharing';
-import type { StudyPack, StudyTool } from '../models';
+import type { StudyPack, StudyTool, StudyType } from '../models';
 import type { Route } from './routes';
 
 export function StudyBoltNavigator() {
   const { colors, state, addDeck, completeOnboarding, hydrated } = useStudyBolt();
-  const { loading: authLoading, recoveryMode, user } = useAuth();
+  const { loading: authLoading, recoveryMode, user, needsStudyOnboarding, updateProfile } = useAuth();
   const [tab, setTab] = useState<MainTab>('home');
   const [route, setRoute] = useState<Route>({ type: 'main' });
   const [plannerFocusDeckId, setPlannerFocusDeckId] = useState<string>();
@@ -60,6 +62,18 @@ export function StudyBoltNavigator() {
     completeOnboarding();
     setRoute({ type: replayingTour ? 'main' : 'auth' });
   }, [completeOnboarding, route.type]);
+
+  const postAuthRoute = useCallback((): Route => pendingRoute ?? (pendingSharedToken ? { type: 'shared', token: pendingSharedToken } : { type: 'main' }), [pendingRoute, pendingSharedToken]);
+
+  const finishAccountOnboarding = useCallback(async (studyType: StudyType) => {
+    const result = await updateProfile({ studyType, onboardingCompleted: true, onboardingRequired: false });
+    if (!result.error) {
+      setRoute(postAuthRoute());
+      setPendingSharedToken(null);
+      setPendingRoute(null);
+    }
+    return result;
+  }, [postAuthRoute, updateProfile]);
 
   const trySampleFromOnboarding = useCallback(() => {
     completeOnboarding();
@@ -98,12 +112,17 @@ export function StudyBoltNavigator() {
   }, []);
 
   useEffect(() => {
-    if (user && route.type === 'auth' && !recoveryMode) {
-      setRoute(pendingRoute ?? (pendingSharedToken ? { type: 'shared', token: pendingSharedToken } : { type: 'main' }));
+    if (!user || recoveryMode) return;
+    if (needsStudyOnboarding) {
+      if (route.type !== 'account-onboarding') setRoute({ type: 'account-onboarding' });
+      return;
+    }
+    if (route.type === 'auth') {
+      setRoute(postAuthRoute());
       setPendingSharedToken(null);
       setPendingRoute(null);
     }
-  }, [pendingRoute, pendingSharedToken, recoveryMode, route.type, user]);
+  }, [needsStudyOnboarding, postAuthRoute, recoveryMode, route.type, user]);
 
   const mainScreen = useMemo(() => {
     if (tab === 'library') {
@@ -158,37 +177,34 @@ export function StudyBoltNavigator() {
     );
   }
 
-  const showOnboarding = !recoveryMode && (route.type === 'onboarding' || (route.type !== 'shared' && !state.hasCompletedOnboarding));
+  const showAccountOnboarding = !recoveryMode && Boolean(user && needsStudyOnboarding);
+  const showOnboarding = !recoveryMode && !showAccountOnboarding && (route.type === 'onboarding' || (!user && route.type !== 'shared' && !state.hasCompletedOnboarding));
 
   return (
     <View style={[styles.app, { backgroundColor: colors.background }]}>
       <StatusBar style={colors.mode === 'dark' ? 'light' : 'dark'} />
-      {showOnboarding ? <OnboardingScreen onComplete={finishOnboarding} onTrySample={trySampleFromOnboarding} /> : null}
-      {!showOnboarding && route.type === 'auth' ? (
+      {showAccountOnboarding ? <AccountOnboardingScreen onComplete={finishAccountOnboarding} /> : null}
+      {!showOnboarding && !showAccountOnboarding && route.type === 'auth' ? (
         <LoginScreen
-          onAuthenticated={() => {
-            setRoute(pendingRoute ?? (pendingSharedToken ? { type: 'shared', token: pendingSharedToken } : { type: 'main' }));
-            setPendingSharedToken(null);
-            setPendingRoute(null);
-          }}
           onContinueAsGuest={() => {
-            setRoute(pendingRoute ?? (pendingSharedToken ? { type: 'shared', token: pendingSharedToken } : { type: 'main' }));
+            setRoute(postAuthRoute());
             setPendingSharedToken(null);
             setPendingRoute(null);
           }}
         />
       ) : null}
-      {!showOnboarding && route.type === 'account' ? (
+      {!showOnboarding && !showAccountOnboarding && route.type === 'account' ? (
         <AccountScreen
           onBack={() => setRoute({ type: 'main' })}
           onSignedOut={() => setRoute({ type: 'auth' })}
           onDeleted={() => setRoute({ type: 'auth' })}
         />
       ) : null}
-      {!showOnboarding && route.type === 'legal' ? <LegalScreen onBack={() => setRoute({ type: 'main' })} /> : null}
-      {!showOnboarding && route.type === 'reset-password' ? <ResetPasswordScreen onComplete={() => setRoute({ type: 'main' })} /> : null}
-      {!showOnboarding && route.type === 'smart-study' ? <SmartStudyScreen initialMode={route.mode} focusDeckId={route.deckId} onBack={() => setRoute(route.deckId ? { type: 'deck', deckId: route.deckId } : { type: 'main' })} /> : null}
-      {!showOnboarding && route.type === 'exam' ? <ExamModeScreen
+      {showOnboarding ? <OnboardingScreen onComplete={finishOnboarding} onTrySample={trySampleFromOnboarding} /> : null}
+      {!showOnboarding && !showAccountOnboarding && route.type === 'legal' ? <LegalScreen onBack={() => setRoute({ type: 'main' })} /> : null}
+      {!showOnboarding && !showAccountOnboarding && route.type === 'reset-password' ? <ResetPasswordScreen onComplete={() => setRoute({ type: 'main' })} /> : null}
+      {!showOnboarding && !showAccountOnboarding && route.type === 'smart-study' ? <SmartStudyScreen initialMode={route.mode} focusDeckId={route.deckId} onBack={() => setRoute(route.deckId ? { type: 'deck', deckId: route.deckId } : { type: 'main' })} /> : null}
+      {!showOnboarding && !showAccountOnboarding && route.type === 'exam' ? <ExamModeScreen
         deckId={route.deckId}
         onBack={(tool = 'quiz', targetDeckId) => setRoute(targetDeckId || route.deckId ? { type: 'deck', deckId: targetDeckId ?? route.deckId!, tool } : { type: 'main' })}
         onStudyWeakAreas={(focusDeckId) => setRoute({ type: 'smart-study', mode: 'smart', deckId: focusDeckId })}
@@ -202,25 +218,25 @@ export function StudyBoltNavigator() {
           setRoute({ type: 'auth' });
         }}
       /> : null}
-      {!showOnboarding && route.type === 'mistakes' ? (
+      {!showOnboarding && !showAccountOnboarding && route.type === 'mistakes' ? (
         <MistakeNotebookScreen
           onBack={() => setRoute({ type: 'main' })}
           onOpenDeck={(deckId, tool) => setRoute({ type: 'deck', deckId, tool })}
         />
       ) : null}
-      {!showOnboarding && route.type === 'flagged' ? (
+      {!showOnboarding && !showAccountOnboarding && route.type === 'flagged' ? (
         <FlaggedReviewScreen
           onBack={() => setRoute({ type: 'main' })}
           onOpenDeck={(deckId, tool) => setRoute({ type: 'deck', deckId, tool })}
         />
       ) : null}
-      {!showOnboarding && route.type === 'main' ? (
+      {!showOnboarding && !showAccountOnboarding && route.type === 'main' ? (
         <>
           {mainScreen}
           <BottomTabs active={tab} onChange={setTab} />
         </>
       ) : null}
-      {!showOnboarding && route.type === 'deck' ? (
+      {!showOnboarding && !showAccountOnboarding && route.type === 'deck' ? (
         <StudyPackScreen
           deckId={route.deckId}
           initialTool={route.tool}
@@ -232,13 +248,20 @@ export function StudyBoltNavigator() {
           }}
           onStartStudy={(mode, deckId) => setRoute({ type: 'smart-study', mode, deckId })}
           onOpenExam={(deckId) => setRoute({ type: 'exam', deckId })}
+          onOpenVisualReview={(deckId) => setRoute({ type: 'visual-review', deckId })}
           onRequireAuth={() => {
             setPendingRoute(route);
             setRoute({ type: 'auth' });
           }}
         />
       ) : null}
-      {!showOnboarding && route.type === 'shared' ? (
+      {!showOnboarding && !showAccountOnboarding && route.type === 'visual-review' ? (
+        <VisualReviewScreen
+          deckId={route.deckId}
+          onBack={() => setRoute({ type: 'deck', deckId: route.deckId })}
+        />
+      ) : null}
+      {!showOnboarding && !showAccountOnboarding && route.type === 'shared' ? (
         <SharedStudyPackScreen
           token={route.token}
           onBack={() => setRoute({ type: 'main' })}
@@ -249,7 +272,7 @@ export function StudyBoltNavigator() {
           onOpenSavedDeck={(deckId) => setRoute({ type: 'deck', deckId })}
         />
       ) : null}
-      {!showOnboarding && route.type === 'community-class' ? (
+      {!showOnboarding && !showAccountOnboarding && route.type === 'community-class' ? (
         <CommunityClassScreen
           classId={route.classId}
           onBack={() => {
@@ -263,7 +286,7 @@ export function StudyBoltNavigator() {
           }}
         />
       ) : null}
-      {!showOnboarding && route.type === 'processing' ? (
+      {!showOnboarding && !showAccountOnboarding && route.type === 'processing' ? (
         <ProcessingScreen
           asset={route.asset}
           courseId={route.courseId}

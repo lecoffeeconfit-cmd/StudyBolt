@@ -132,7 +132,7 @@ export function BoltLogo({ compact = false }: { compact?: boolean }) {
   );
 }
 
-export function Card({ children, style, onPress }: { children: ReactNode; style?: StyleProp<ViewStyle>; onPress?: () => void }) {
+export function Card({ children, style, onPress, accessibilityLabel }: { children: ReactNode; style?: StyleProp<ViewStyle>; onPress?: () => void; accessibilityLabel?: string }) {
   const { colors } = useStudyBolt();
   const cardStyle = [
     styles.card,
@@ -147,6 +147,7 @@ export function Card({ children, style, onPress }: { children: ReactNode; style?
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
       onPress={() => {
         if (Platform.OS !== 'web') void Haptics.selectionAsync();
         onPress();

@@ -1,10 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Linking, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 
 import { Card, Header, Icon, Pill, PrimaryButton, Screen, SectionHeader } from '../components/ui';
 import type { IconName } from '../components/ui';
 import { useStudyBolt } from '../StudyBoltContext';
-import type { RetentionMode, ThemePreference } from '../models';
+import type { RetentionMode, StudyType, ThemePreference } from '../models';
 import { learningEvidence } from '../data/learningScience';
 import { useAuth } from '../AuthContext';
 
@@ -20,20 +20,29 @@ const RETENTION_OPTIONS: Array<{ id: RetentionMode; label: string; detail: strin
   { id: 'sm2', label: 'SM-2', detail: 'Classic', icon: 'chart-timeline-variant' },
 ];
 
+const STUDY_TYPE_OPTIONS: Array<{ id: StudyType; label: string; icon: IconName }> = [
+  { id: 'college', label: 'College', icon: 'school-outline' },
+  { id: 'graduate_school', label: 'Graduate school', icon: 'book-education-outline' },
+  { id: 'professional', label: 'Professional', icon: 'briefcase-outline' },
+  { id: 'other', label: 'Other', icon: 'compass-outline' },
+];
+
 function retentionLabel(mode: RetentionMode): string {
   return mode === 'standard' ? 'Standard' : mode === 'fsrs' ? 'FSRS' : 'SM-2';
 }
 
 export function ProfileScreen({ onOpenOnboarding, onOpenAuth, onManageAccount, onOpenLegal }: { onOpenOnboarding: () => void; onOpenAuth: () => void; onManageAccount: () => void; onOpenLegal: () => void }) {
   const { colors, state, setRetentionMode, setTheme } = useStudyBolt();
-  const { user } = useAuth();
-  const initial = (user?.email?.[0] ?? 'H').toUpperCase();
+  const { user, profile, updateProfile } = useAuth();
+  const [studyTypeBusy, setStudyTypeBusy] = useState(false);
+  const [studyTypeNotice, setStudyTypeNotice] = useState<string | null>(null);
+  const initial = (profile?.displayName?.[0] ?? user?.email?.[0] ?? 'H').toUpperCase();
   return (
     <Screen>
       <Header title="Profile" right={<Pill label={user ? 'Signed in' : 'Guest'} tone={user ? 'mint' : 'neutral'} />} />
       <View style={styles.profileTop}>
         <View style={[styles.avatar, { backgroundColor: colors.primarySoft }]}><Text style={[styles.avatarText, { color: colors.primary }]}>{initial}</Text></View>
-        <Text style={[styles.title, { color: colors.text }]}>{user ? 'Account ready' : 'Your StudyBolt'}</Text>
+        <Text style={[styles.title, { color: colors.text }]}>{user ? profile?.displayName || 'Account ready' : 'Your StudyBolt'}</Text>
         <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{user?.email ?? 'Studying locally as a guest'}</Text>
       </View>
 
@@ -47,6 +56,49 @@ export function ProfileScreen({ onOpenOnboarding, onOpenAuth, onManageAccount, o
         </View>
         <PrimaryButton label={user ? 'Manage account' : 'Sign in or create account'} icon={user ? 'shield-account-outline' : 'login'} onPress={user ? onManageAccount : onOpenAuth} style={styles.syncButton} />
       </Card>
+
+      {user ? (
+        <>
+          <SectionHeader title="Study setup" />
+          <Card style={styles.studyTypeCard}>
+            <Text style={[styles.studyTypeQuestion, { color: colors.text }]}>What are you studying for?</Text>
+            <Text style={[styles.studyTypeHint, { color: colors.textSecondary }]}>Update this anytime; it will not restart onboarding.</Text>
+            <View style={styles.studyTypeGrid}>
+              {STUDY_TYPE_OPTIONS.map((option) => {
+                const selected = profile?.studyType === option.id;
+                return (
+                  <Pressable
+                    key={option.id}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected }}
+                    disabled={studyTypeBusy}
+                    onPress={() => {
+                      setStudyTypeBusy(true);
+                      setStudyTypeNotice(null);
+                      void updateProfile({ studyType: option.id }).then((result) => {
+                        setStudyTypeBusy(false);
+                        if (result.error) setStudyTypeNotice(result.error);
+                      });
+                    }}
+                    style={({ pressed }) => [
+                      styles.studyTypeOption,
+                      {
+                        backgroundColor: selected ? colors.primarySoft : colors.card,
+                        borderColor: selected ? colors.primary : colors.border,
+                        opacity: studyTypeBusy ? 0.65 : pressed ? 0.75 : 1,
+                      },
+                    ]}
+                  >
+                    <Icon name={option.icon} size={18} color={selected ? colors.primary : colors.textMuted} />
+                    <Text style={[styles.studyTypeLabel, { color: selected ? colors.primary : colors.textSecondary }]}>{option.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            {studyTypeNotice ? <Text style={[styles.studyTypeNotice, { color: colors.danger }]}>{studyTypeNotice}</Text> : null}
+          </Card>
+        </>
+      ) : null}
 
       <SectionHeader title="Appearance" />
       <Card style={styles.themeCard}>
@@ -65,7 +117,7 @@ export function ProfileScreen({ onOpenOnboarding, onOpenAuth, onManageAccount, o
             );
           })}
         </View>
-        <Text style={[styles.themeHint, { color: colors.textMuted }]}>Night mode lowers large bright areas and keeps text readable in dim rooms. Match your device brightness to the room; dark mode improves comfort but is not eye or sleep protection.</Text>
+        <Text style={[styles.themeHint, { color: colors.textMuted }]}>System · Matches your device’s Light or Dark setting. Night mode lowers large bright areas and keeps text readable in dim rooms. Match your device brightness to the room; dark mode improves comfort but is not eye or sleep protection.</Text>
       </Card>
 
       <SectionHeader title="Study preferences" />
@@ -194,6 +246,13 @@ const styles = StyleSheet.create({
   syncTitle: { fontSize: 14, fontWeight: '800' },
   syncText: { fontSize: 11, lineHeight: 16, marginTop: 3 },
   syncButton: { minHeight: 46, marginTop: 14 },
+  studyTypeCard: { padding: 14 },
+  studyTypeQuestion: { fontSize: 14, fontWeight: '900' },
+  studyTypeHint: { fontSize: 10, lineHeight: 15, marginTop: 3 },
+  studyTypeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 13 },
+  studyTypeOption: { width: '48%', minHeight: 48, borderRadius: 13, borderWidth: 1, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 7 },
+  studyTypeLabel: { flex: 1, fontSize: 10, lineHeight: 13, fontWeight: '800' },
+  studyTypeNotice: { fontSize: 10, lineHeight: 14, fontWeight: '700', marginTop: 10 },
   themeCard: { padding: 12 },
   themeOptions: { flexDirection: 'row', gap: 8 },
   themeOption: { flex: 1, borderRadius: 13, borderWidth: 1, alignItems: 'center', paddingVertical: 13, gap: 5 },

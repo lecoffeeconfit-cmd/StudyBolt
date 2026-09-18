@@ -5,14 +5,34 @@ import { Linking, Platform } from 'react-native';
 import { createClient } from '@supabase/supabase-js';
 import type { Session, User } from '@supabase/supabase-js';
 
+import type { StudyType } from '../models';
+
 const AUTH_REDIRECT_URL = 'studybolt://auth/callback';
+const OAUTH_STARTED_AT_KEY = '@studybolt/auth/oauth-started-at';
+const OAUTH_NEW_USER_GRACE_MS = 60_000;
 
 export type AuthProviderName = 'google' | 'apple';
 export type AuthUser = User;
 export type AuthSession = Session;
 
+export interface AuthProfile {
+  displayName: string;
+  studyType: StudyType | null;
+  onboardingCompleted: boolean;
+  onboardingRequired: boolean;
+}
+
+export interface AuthProfileUpdate {
+  displayName?: string;
+  studyType?: StudyType;
+  onboardingCompleted?: boolean;
+  onboardingRequired?: boolean;
+}
+
 export interface AuthResult {
   session?: AuthSession;
+  user?: AuthUser;
+  newUser?: boolean;
   message?: string;
   error?: string;
   recovery?: boolean;
@@ -48,6 +68,33 @@ function configurationError(): AuthResult {
 
 function errorMessage(error: { message?: string } | null | undefined): string {
   return error?.message ?? 'Something went wrong. Please try again.';
+}
+
+function metadataFor(user: AuthUser | null | undefined): Record<string, unknown> {
+  return user?.user_metadata && typeof user.user_metadata === 'object' ? user.user_metadata : {};
+}
+
+function metadataString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function isStudyType(value: unknown): value is StudyType {
+  return value === 'college' || value === 'graduate_school' || value === 'professional' || value === 'other';
+}
+
+export function readAuthProfile(user: AuthUser | null | undefined): AuthProfile | null {
+  if (!user) return null;
+  const metadata = metadataFor(user);
+  const displayName = metadataString(metadata.display_name)
+    || metadataString(metadata.full_name)
+    || metadataString(metadata.name);
+  const onboardingCompleted = metadata.onboarding_completed === true;
+  return {
+    displayName,
+    studyType: isStudyType(metadata.study_type) ? metadata.study_type : null,
+    onboardingCompleted,
+    onboardingRequired: metadata.studybolt_onboarding_required === true || metadata.onboarding_completed === false,
+  };
 }
 
 async function readResponseError(response: Response): Promise<string> {
@@ -103,19 +150,45 @@ export async function signInWithEmail(email: string, password: string): Promise<
   }
 }
 
-export async function createAccount(email: string, password: string): Promise<AuthResult> {
+export async function createAccount(email: string, password: string, displayName: string): Promise<AuthResult> {
   if (!supabase) return configurationError();
   try {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { emailRedirectTo: AUTH_REDIRECT_URL },
+      options: {
+        emailRedirectTo: AUTH_REDIRECT_URL,
+        data: {
+          display_name: displayName.trim().slice(0, 80),
+          onboarding_completed: false,
+          studybolt_onboarding_required: true,
+        },
+      },
     });
     if (error) return { error: errorMessage(error) };
-    if (data.session) return { session: data.session };
+    if (data.session) return { session: data.session, user: data.user ?? undefined, newUser: true };
     return { message: 'Check your inbox to confirm your email, then come back to sign in.' };
   } catch {
     return { error: 'Could not create your account. Check your connection and try again.' };
+  }
+}
+
+export async function updateAuthProfile(session: AuthSession, updates: AuthProfileUpdate): Promise<AuthResult> {
+  if (!supabase) return configurationError();
+  const data: Record<string, unknown> = {};
+  if (updates.displayName !== undefined) data.display_name = updates.displayName.trim().slice(0, 80);
+  if (updates.studyType !== undefined) data.study_type = updates.studyType;
+  if (updates.onboardingCompleted !== undefined) data.onboarding_completed = updates.onboardingCompleted;
+  if (updates.onboardingRequired !== undefined) data.studybolt_onboarding_required = updates.onboardingRequired;
+  if (!Object.keys(data).length) return { session, user: session.user };
+  try {
+    const { data: result, error } = await supabase.auth.updateUser({ data });
+    if (error) return { error: errorMessage(error) };
+    const current = await supabase.auth.getSession();
+    const nextSession = current.data.session ?? session;
+    return { session: { ...nextSession, user: result.user }, user: result.user };
+  } catch {
+    return { error: 'Could not save your profile. Check your connection and try again.' };
   }
 }
 
@@ -183,11 +256,45 @@ export async function openProviderSignIn(provider: AuthProviderName): Promise<Au
     });
     if (error) return { error: errorMessage(error) };
     if (!data.url) return { error: 'Could not open sign-in. Please try again.' };
+    await AsyncStorage.setItem(OAUTH_STARTED_AT_KEY, String(Date.now()));
     if (Platform.OS === 'web' && typeof window !== 'undefined') window.location.assign(data.url);
     else await Linking.openURL(data.url);
     return {};
   } catch {
     return { error: `Could not open ${provider === 'google' ? 'Google' : 'Apple'} sign-in.` };
+  }
+}
+
+async function markNewProviderUser(session: AuthSession): Promise<AuthSession> {
+  if (!supabase) return session;
+  let startedAt = 0;
+  try {
+    const value = await AsyncStorage.getItem(OAUTH_STARTED_AT_KEY);
+    await AsyncStorage.removeItem(OAUTH_STARTED_AT_KEY);
+    startedAt = Number(value);
+  } catch {
+    return session;
+  }
+  const createdAt = Date.parse(session.user.created_at);
+  if (!Number.isFinite(startedAt) || !Number.isFinite(createdAt)) return session;
+  if (createdAt < startedAt - OAUTH_NEW_USER_GRACE_MS || createdAt > Date.now() + OAUTH_NEW_USER_GRACE_MS) return session;
+  const profile = readAuthProfile(session.user);
+  if (profile?.onboardingRequired || profile?.onboardingCompleted) return session;
+
+  const providerName = profile?.displayName || metadataString(metadataFor(session.user).full_name) || metadataString(metadataFor(session.user).name);
+  const data: Record<string, unknown> = {
+    onboarding_completed: false,
+    studybolt_onboarding_required: true,
+  };
+  if (providerName) data.display_name = providerName.slice(0, 80);
+  try {
+    const { data: result, error } = await supabase.auth.updateUser({ data });
+    if (error) return session;
+    const current = await supabase.auth.getSession();
+    const nextSession = current.data.session ?? session;
+    return result.user ? { ...nextSession, user: result.user } : nextSession;
+  } catch {
+    return session;
   }
 }
 
@@ -220,7 +327,9 @@ export async function consumeAuthCallback(url: string): Promise<AuthResult | nul
     try {
       const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
       if (exchangeError) return { error: errorMessage(exchangeError) };
-      return { session: data.session ?? undefined, recovery: params.get('type') === 'recovery' };
+      const isRecovery = params.get('type') === 'recovery';
+      const session = data.session && !isRecovery ? await markNewProviderUser(data.session) : data.session ?? undefined;
+      return { session, user: session?.user, recovery: isRecovery };
     } catch {
       return { error: 'Could not finish authentication. Please try again.' };
     }
@@ -233,7 +342,9 @@ export async function consumeAuthCallback(url: string): Promise<AuthResult | nul
   try {
     const { data, error: sessionError } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
     if (sessionError) return { error: errorMessage(sessionError) };
-    return { session: data.session ?? undefined, recovery: params.get('type') === 'recovery' };
+    const isRecovery = params.get('type') === 'recovery';
+    const session = data.session && !isRecovery ? await markNewProviderUser(data.session) : data.session ?? undefined;
+    return { session, user: session?.user, recovery: isRecovery };
   } catch {
     return { error: 'Could not finish authentication. Please try again.' };
   }

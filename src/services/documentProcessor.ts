@@ -1,14 +1,20 @@
 import type { DeckOutlineItem, ImportAsset, NoteBlock, StudyPack } from '../models';
+import Constants from 'expo-constants';
 import { ensureDistinctNoteLayers } from './noteLayers';
 import {
   getFileExtension,
   getImportFileName,
+  getImportMimeType,
   getImportDocumentType,
   studyPackFileType,
   SUPPORTED_DOCUMENT_EXTENSIONS,
 } from './documentTypes';
 
-const MAX_IMPORT_BYTES = 50 * 1024 * 1024;
+export const MAX_IMPORT_BYTES = 100 * 1024 * 1024;
+const PROCESSOR_TIMEOUT_MS = 180_000;
+const manifestProcessorUrl = typeof Constants.expoConfig?.extra?.studyboltProcessorUrl === 'string'
+  ? Constants.expoConfig.extra.studyboltProcessorUrl.trim()
+  : '';
 
 export class StudyBoltProcessingError extends Error {
   constructor(
@@ -20,6 +26,9 @@ export class StudyBoltProcessingError extends Error {
 }
 
 export function validateImport(asset: ImportAsset): void {
+  if (!asset.uri?.trim()) {
+    throw new StudyBoltProcessingError('Document URI is missing', 'The selected file could not be read. Please choose it again.');
+  }
   const extension = getFileExtension(asset.name);
   const documentType = getImportDocumentType(asset.name, asset.mimeType);
   if (!documentType || (extension && !SUPPORTED_DOCUMENT_EXTENSIONS.includes(extension as typeof SUPPORTED_DOCUMENT_EXTENSIONS[number]))) {
@@ -29,7 +38,10 @@ export function validateImport(asset: ImportAsset): void {
     );
   }
   if (typeof asset.size === 'number' && asset.size > MAX_IMPORT_BYTES) {
-    throw new StudyBoltProcessingError('Document exceeds 50 MB', 'Choose a file smaller than 50 MB and try again.');
+    throw new StudyBoltProcessingError('Document exceeds 100 MB', 'Choose a file smaller than 100 MB and try again.');
+  }
+  if (asset.size === 0) {
+    throw new StudyBoltProcessingError('Document is empty', 'That file is empty. Choose a different file and try again.');
   }
 }
 
@@ -95,7 +107,8 @@ export async function processDocument(asset: ImportAsset, courseName: string, ac
   }
   const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL?.replace(/\/$/, '');
   const endpoint = process.env.EXPO_PUBLIC_STUDYBOLT_PROCESSOR_URL?.trim()
-    || (supabaseUrl ? `${supabaseUrl}/functions/v1/studybolt-process-document` : '');
+    || (supabaseUrl ? `${supabaseUrl}/functions/v1/studybolt-process-document` : '')
+    || manifestProcessorUrl;
   const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
   if (!endpoint) {
     throw new StudyBoltProcessingError(
@@ -106,53 +119,71 @@ export async function processDocument(asset: ImportAsset, courseName: string, ac
 
   const form = new FormData();
   const fileName = getImportFileName(asset.name, asset.mimeType);
+  const mimeType = getImportMimeType(fileName, asset.mimeType);
+  // DocumentPicker only supplies `file` on web. Native React Native fetch
+  // expects its proprietary { uri, name, type } descriptor instead. Keeping
+  // those paths explicit avoids the Blob/FormData mismatch on iOS builds.
   if (typeof Blob !== 'undefined' && asset.file instanceof Blob) {
     form.append('file', asset.file, fileName);
   } else {
-    const nativeFile = { uri: asset.uri, name: fileName, type: asset.mimeType ?? 'application/octet-stream' };
+    const nativeFile = { uri: asset.uri, name: fileName, type: mimeType };
     form.append('file', nativeFile as unknown as Blob);
   }
   form.append('courseName', courseName);
   form.append('documentType', documentType);
   form.append('extension', getFileExtension(fileName));
 
-  let response: Response;
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timeout = controller ? setTimeout(() => controller.abort(), PROCESSOR_TIMEOUT_MS) : null;
   try {
-    response = await fetch(endpoint, {
+    const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
+        Accept: 'application/json',
         ...(anonKey ? { apikey: anonKey } : {}),
         ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : anonKey ? { Authorization: `Bearer ${anonKey}` } : {}),
       },
       body: form,
+      ...(controller ? { signal: controller.signal } : {}),
     });
-  } catch {
-    throw new StudyBoltProcessingError('Processor request failed', 'StudyBolt could not reach the secure processor. Check your connection and try again.');
-  }
-  if (!response.ok) {
-    let serverMessage = '';
-    try {
-      const body = await response.json() as { error?: unknown; message?: unknown };
-      serverMessage = typeof body.error === 'string' ? body.error : typeof body.message === 'string' ? body.message : '';
-    } catch {
-      // Keep the stable client message when the processor did not return JSON.
+    if (!response.ok) {
+      let serverMessage = '';
+      try {
+        const body = await response.json() as { error?: unknown; message?: unknown };
+        serverMessage = typeof body.error === 'string' ? body.error : typeof body.message === 'string' ? body.message : '';
+      } catch {
+        // Keep the stable client message when the processor did not return JSON.
+      }
+      throw new StudyBoltProcessingError(
+        `Processor returned ${response.status}${serverMessage ? `: ${serverMessage}` : ''}`,
+        serverMessage || 'StudyBolt could not process this file. The original file was not added to your library.',
+      );
     }
-    throw new StudyBoltProcessingError(
-      `Processor returned ${response.status}${serverMessage ? `: ${serverMessage}` : ''}`,
-      serverMessage || 'StudyBolt could not process this file. The original file was not added to your library.',
-    );
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      throw new StudyBoltProcessingError('Processor returned invalid JSON', 'The document processor returned an unreadable response. Please try again.');
+    }
+    if (!isStudyPack(payload)) {
+      throw new StudyBoltProcessingError('Malformed StudyPack response', 'The generated study pack was incomplete. Please try processing the file again.');
+    }
+    return {
+      ...payload,
+      fileName: payload.fileName || fileName,
+      fileType: payload.fileType === 'pdf' || payload.fileType === 'notes' || payload.fileType === 'pptx'
+        ? payload.fileType
+        : studyPackFileType(documentType),
+      courseName: payload.courseName || courseName,
+      detailedNotes: ensureDistinctNoteLayers(payload.notes, payload.detailedNotes, payload.originalText, payload.outline),
+    };
+  } catch (error) {
+    if (error instanceof StudyBoltProcessingError) throw error;
+    if (controller?.signal.aborted) {
+      throw new StudyBoltProcessingError('Processor request timed out', 'Document processing took too long. Check your connection and try again.');
+    }
+    throw new StudyBoltProcessingError('Processor request failed', 'StudyBolt could not reach the secure processor. Check your connection and try again.');
+  } finally {
+    if (timeout) clearTimeout(timeout);
   }
-  const payload: unknown = await response.json();
-  if (!isStudyPack(payload)) {
-    throw new StudyBoltProcessingError('Malformed StudyPack response', 'The generated study pack was incomplete. Please try processing the file again.');
-  }
-  return {
-    ...payload,
-    fileName: payload.fileName || fileName,
-    fileType: payload.fileType === 'pdf' || payload.fileType === 'notes' || payload.fileType === 'pptx'
-      ? payload.fileType
-      : studyPackFileType(documentType),
-    courseName: payload.courseName || courseName,
-    detailedNotes: ensureDistinctNoteLayers(payload.notes, payload.detailedNotes, payload.originalText, payload.outline),
-  };
 }

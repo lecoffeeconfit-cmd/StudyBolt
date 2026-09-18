@@ -54,7 +54,8 @@ export function StudyPackShareSheet({ deck, visible, onClose, onRequireAuth }: {
     } else setClasses([]);
   }, [deck.id, user, visible]);
 
-  const creatorDisplayName = user?.user_metadata?.full_name
+  const creatorDisplayName = user?.user_metadata?.display_name
+    ?? user?.user_metadata?.full_name
     ?? user?.user_metadata?.name
     ?? 'StudyBolt student';
 

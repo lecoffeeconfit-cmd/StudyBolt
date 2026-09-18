@@ -1,12 +1,15 @@
+import { createClient } from 'npm:@supabase/supabase-js@2';
+import { extractPptxLocally, type LocalVisualKnowledge, type PptxLocalExtraction } from './pptxVisuals.ts';
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-const MAX_BYTES = 50 * 1024 * 1024;
+const MAX_BYTES = 100 * 1024 * 1024;
 const MAX_COURSE_NAME = 120;
-const TEXT_NOTE_EXTENSIONS = new Set(['txt', 'md', 'markdown', 'rtf']);
+const TEXT_NOTE_EXTENSIONS = new Set(['txt', 'md', 'markdown']);
 const POWERPOINT_MIME = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
 
 type ImportDocumentType = 'pdf' | 'powerpoint' | 'notes';
@@ -28,22 +31,33 @@ Deno.serve(async (request) => {
   const fileValue = form.get('file');
   if (!(fileValue instanceof File)) return json({ error: 'Choose a PDF, PowerPoint, or notes file.' }, 400);
   if (fileValue.size <= 0) return json({ error: 'That file is empty. Choose a different file.' }, 400);
-  if (fileValue.size > MAX_BYTES) return json({ error: 'Choose a file smaller than 50 MB and try again.' }, 413);
+  if (fileValue.size > MAX_BYTES) return json({ error: 'Choose a file smaller than 100 MB and try again.' }, 413);
 
   const fileName = safeFileName(fileValue.name || 'study-material');
   const documentType = getDocumentType(fileName);
   if (!documentType) return json({ error: 'Choose a PDF, PowerPoint, or notes file.' }, 415);
   const courseName = stringValue(form.get('courseName')).slice(0, MAX_COURSE_NAME) || 'My class';
   const extension = fileName.slice(fileName.lastIndexOf('.') + 1).toLowerCase();
-  const bytes = new Uint8Array(await fileValue.arrayBuffer());
   const mimeType = contentType(fileValue.type, documentType, extension);
+  const documentId = crypto.randomUUID();
+  let bytes: Uint8Array | null = null;
+  let localPptx: PptxLocalExtraction | null = null;
   let uploadedFileId: string | null = null;
   let response: Response;
   try {
+    if (documentType === 'powerpoint') {
+      bytes = new Uint8Array(await fileValue.arrayBuffer());
+      try {
+        localPptx = await extractPptxLocally(bytes);
+      } catch (error) {
+        console.error('studybolt-process-document: local PPTX extraction failed', error);
+      }
+    }
     const sourceParts = TEXT_NOTE_EXTENSIONS.has(extension)
-      ? sourceContent(bytes, fileName)
-      : [{ type: 'input_file', file_id: await uploadProviderFile(bytes, fileName, mimeType) }];
+      ? sourceContent(bytes ?? new Uint8Array(await fileValue.arrayBuffer()), fileName)
+      : [{ type: 'input_file', file_id: await uploadProviderFile(fileValue, fileName, mimeType) }];
     if (sourceParts[0]?.file_id) uploadedFileId = sourceParts[0].file_id;
+    if (localPptx?.sourceText) sourceParts.unshift({ type: 'input_text', text: `LOCAL POWERPOINT EXTRACTION (no external visual AI was used):\n${localPptx.sourceText}` });
     response = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: { Authorization: `Bearer ${openAiKey}`, 'Content-Type': 'application/json' },
@@ -93,7 +107,9 @@ Deno.serve(async (request) => {
 
   try {
     const content = JSON.parse(outputText(payload)) as Record<string, unknown>;
-    return json(buildStudyPack(content, { courseName, fileName, documentType }));
+    const owner = await resolveOwner(request);
+    if (owner && localPptx?.visuals.length) await persistVisualSession(owner, documentId, fileName, localPptx.visuals);
+    return json(buildStudyPack(content, { courseName, fileName, documentType }, localPptx, documentId));
   } catch (error) {
     console.error('studybolt-process-document: invalid generated pack', error);
     return json({ error: 'The generated study pack was incomplete. Please try processing the file again.' }, 502);
@@ -128,11 +144,11 @@ function getDocumentType(fileName: string): ImportDocumentType | null {
 function contentType(fileType: string, documentType: ImportDocumentType, extension: string): string {
   if (documentType === 'pdf') return 'application/pdf';
   if (documentType === 'powerpoint') return extension === 'ppt' ? 'application/vnd.ms-powerpoint' : POWERPOINT_MIME;
-  if (fileType && fileType.includes('/')) return fileType;
   if (extension === 'md' || extension === 'markdown') return 'text/markdown';
   if (extension === 'rtf') return 'application/rtf';
   if (extension === 'doc') return 'application/msword';
   if (extension === 'docx') return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  if (fileType && fileType.includes('/')) return fileType;
   return 'text/plain';
 }
 
@@ -142,12 +158,12 @@ function sourceContent(bytes: Uint8Array, fileName: string): Array<Record<string
   return [{ type: 'input_text', text: `VERBATIM NOTES FROM ${fileName}\n${text.slice(0, 180_000)}` }];
 }
 
-async function uploadProviderFile(bytes: Uint8Array, fileName: string, mimeType: string): Promise<string> {
+async function uploadProviderFile(source: Blob, fileName: string, mimeType: string): Promise<string> {
   const openAiKey = Deno.env.get('OPENAI_API_KEY');
   if (!openAiKey) throw new Error('Missing OpenAI key');
   const form = new FormData();
   form.append('purpose', 'user_data');
-  form.append('file', new File([bytes], fileName, { type: mimeType }));
+  form.append('file', source, fileName);
   const response = await fetch('https://api.openai.com/v1/files', {
     method: 'POST',
     headers: { Authorization: `Bearer ${openAiKey}` },
@@ -231,12 +247,13 @@ function rawOutline(value: unknown): Array<{ title: string; range: string }> {
   return result.slice(0, 80);
 }
 
-function buildStudyPack(content: Record<string, unknown>, meta: { courseName: string; fileName: string; documentType: ImportDocumentType }) {
+function buildStudyPack(content: Record<string, unknown>, meta: { courseName: string; fileName: string; documentType: ImportDocumentType }, localPptx?: PptxLocalExtraction | null, documentId?: string) {
   const rawSections = rawOutline(content.outline);
   const outline = rawSections.map((section, index) => ({ id: `section-${index + 1}`, title: section.title, range: section.range }));
   const notes = normalizeNotes(content.notes, false, outline);
   const detailedNotes = normalizeNotes(content.detailedNotes, true, outline);
   const createdAt = new Date().toISOString();
+  const visuals = localPptx?.visuals.map((visual) => ({ ...visual, ...(documentId ? { documentId } : {}) })) ?? [];
   return {
     id: `pack-${crypto.randomUUID()}`,
     courseId: `course-${slug(meta.courseName)}`,
@@ -262,7 +279,54 @@ function buildStudyPack(content: Record<string, unknown>, meta: { courseName: st
     reviewedNoteIds: [],
     audioPosition: 0,
     studyMinutes: 0,
+    ...(visuals.length ? { visuals } : {}),
+    ...(localPptx?.summary ? { visualSummary: localPptx.summary } : {}),
   };
+}
+
+async function resolveOwner(request: Request): Promise<{ userId: string; admin: ReturnType<typeof createClient> } | null> {
+  const token = request.headers.get('Authorization')?.replace(/^Bearer\s+/i, '');
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  if (!token || !supabaseUrl || !serviceRoleKey) return null;
+  try {
+    const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
+    const { data: { user } } = await admin.auth.getUser(token);
+    return user ? { userId: user.id, admin } : null;
+  } catch {
+    return null;
+  }
+}
+
+async function persistVisualSession(owner: { userId: string; admin: ReturnType<typeof createClient> }, documentId: string, fileName: string, visuals: LocalVisualKnowledge[]): Promise<void> {
+  try {
+    const { error: documentError } = await owner.admin.from('studybolt_visual_documents').insert({
+      document_id: documentId,
+      owner_user_id: owner.userId,
+      source_file_name: fileName,
+    });
+    if (documentError) throw documentError;
+    const rows = visuals.map((visual) => ({
+      document_id: documentId,
+      visual_id: visual.id,
+      owner_user_id: owner.userId,
+      slide_number: visual.slideNumber,
+      slide_title: visual.slideTitle,
+      image_hash: visual.imageHash,
+      visual_type: visual.visualType,
+      educational_importance: visual.educationalImportance,
+      local_confidence: visual.localConfidence,
+      needs_user_review: visual.needsUserReview,
+      status: visual.status,
+      reason: visual.reason ?? null,
+    }));
+    if (rows.length) {
+      const { error } = await owner.admin.from('studybolt_visuals').insert(rows);
+      if (error) throw error;
+    }
+  } catch (error) {
+    console.error('studybolt-process-document: visual session persistence failed', error);
+  }
 }
 
 function normalizeNotes(value: unknown, detailed: boolean, outline: Array<{ id: string; title: string; range: string }>) {

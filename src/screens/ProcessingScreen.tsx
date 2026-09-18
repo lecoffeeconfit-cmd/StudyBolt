@@ -31,6 +31,7 @@ export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSucc
   const [nameError, setNameError] = useState<string | null>(null);
   const [className, setClassName] = useState(courseName ?? '');
   const [started, setStarted] = useState(Boolean(courseName));
+  const [attempt, setAttempt] = useState(0);
   const pulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -53,6 +54,7 @@ export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSucc
     setStage(0);
     setError(null);
     setNameError(null);
+    setAttempt(0);
   }, [asset, courseName]);
 
   useEffect(() => {
@@ -87,7 +89,14 @@ export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSucc
       mounted = false;
       if (ticker) clearInterval(ticker);
     };
-  }, [asset, className, courseId, getAccessToken, onSuccess, started]);
+  }, [asset, attempt, className, courseId, getAccessToken, onSuccess, started]);
+
+  const retryProcessing = () => {
+    setError(null);
+    setStage(0);
+    setStarted(true);
+    setAttempt((value) => value + 1);
+  };
 
   const startProcessing = () => {
     const name = className.trim();
@@ -125,7 +134,10 @@ export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSucc
               <Text numberOfLines={1} style={[styles.fileName, { color: colors.text }]}>{asset.name}</Text>
               <Icon name="shield-check-outline" color={colors.mint} />
             </View>
-            <PrimaryButton label="Explore the sample Study Pack" icon="arrow-right" onPress={onTrySample} style={styles.action} />
+            <PrimaryButton label="Try again" icon="refresh" onPress={retryProcessing} style={styles.action} />
+            <Pressable onPress={onTrySample} style={styles.secondaryAction}>
+              <Text style={[styles.secondaryText, { color: colors.primary }]}>Explore the sample Study Pack</Text>
+            </Pressable>
             <Pressable onPress={onCancel} style={styles.secondaryAction}>
               <Text style={[styles.secondaryText, { color: colors.textSecondary }]}>Choose another file</Text>
             </Pressable>

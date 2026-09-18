@@ -5,6 +5,8 @@ import type {
   AiTutorDepth,
   AiTutorQuota,
   AiTutorResponse,
+  AiVisualAnalysis,
+  AiVisualAnalysisRequest,
   AiRequestChannel,
   NoteBlock,
   StudyPack,
@@ -23,6 +25,13 @@ export interface TutorCallResult {
   code?: 'monthly_limit' | 'cloud_budget' | 'rate_limit';
 }
 
+export interface VisualAnalysisCallResult {
+  analysis?: AiVisualAnalysis;
+  quota?: AiTutorQuota;
+  error?: string;
+  code?: 'monthly_limit' | 'cloud_budget' | 'rate_limit';
+}
+
 function noteText(note: NoteBlock): string {
   return [
     note.summary,
@@ -32,6 +41,21 @@ function noteText(note: NoteBlock): string {
     ...(note.examples ?? []),
     note.keyIdea,
   ].filter(Boolean).join(' ');
+}
+
+function resolvedVisualText(deck: StudyPack, preferredTitle?: string): string {
+  const visuals = (deck.visuals ?? []).filter((visual) => visual.description && visual.status.startsWith('resolved_'));
+  const preferred = preferredTitle?.trim().toLowerCase();
+  const ordered = preferred
+    ? [...visuals].sort((a, b) => Number(`${a.slideTitle} ${a.nearbyText}`.toLowerCase().includes(preferred)) - Number(`${b.slideTitle} ${b.nearbyText}`.toLowerCase().includes(preferred))).reverse()
+    : visuals;
+  return ordered.slice(0, 6).map((visual) => [
+    `VISUAL — slide ${visual.slideNumber} ${visual.slideTitle}`,
+    visual.description,
+    visual.studyRelevance,
+    visual.labels?.length ? `Labels: ${visual.labels.join(', ')}` : '',
+    visual.relationships?.length ? `Relationships: ${visual.relationships.join('; ')}` : '',
+  ].filter(Boolean).join(' ')).join('\n');
 }
 
 export function tutorContextAtPosition(deck: StudyPack, position: number, totalWords: number): AiTutorContext {
@@ -53,14 +77,14 @@ export function tutorContextAtPosition(deck: StudyPack, position: number, totalW
     currentChunk: {
       id: current.source.sectionId || current.id,
       title: current.title,
-      text: noteText(current).slice(0, 4_000),
+      text: [noteText(current), resolvedVisualText(deck, current.title)].filter(Boolean).join('\n\n').slice(0, 4_000),
     },
     nearbyChunks: nearbyIndexes.map((index) => {
       const note = fallback[index]!;
       return {
         id: note.source.sectionId || note.id,
         title: note.title,
-        text: noteText(note).slice(0, 3_000),
+        text: [noteText(note), resolvedVisualText(deck, note.title)].filter(Boolean).join('\n\n').slice(0, 3_000),
       };
     }),
   };
@@ -169,4 +193,40 @@ export async function askAiTutor({
   } catch {
     return { error: 'StudyBolt AI is unavailable offline. StudyCast listening still works.' };
   }
+}
+
+export async function analyzeVisualWithAi(request: AiVisualAnalysisRequest, accessToken: string): Promise<VisualAnalysisCallResult> {
+  if (!isAiTutorConfigured) return { error: 'Visual analysis needs the secure StudyBolt backend connection.' };
+  try {
+    const response = await studyBoltAiRequest('', accessToken, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'visual-analysis', depth: 'quick', channel: 'text', visual: request }),
+    });
+    const payload = await readPayload(response);
+    const quota = isQuota(payload.quota) ? payload.quota : undefined;
+    if (!response.ok) {
+      return {
+        error: friendlyTutorError(response.status, payload),
+        ...(quota ? { quota } : {}),
+        ...(payload.code === 'monthly_limit' || payload.code === 'cloud_budget' || payload.code === 'rate_limit' ? { code: payload.code } : {}),
+      };
+    }
+    if (payload.kind !== 'visual-analysis' || !isVisualAnalysis(payload.analysis) || !quota) return { error: 'StudyBolt returned an incomplete visual analysis.' };
+    return { analysis: payload.analysis, quota };
+  } catch {
+    return { error: 'StudyBolt visual analysis is unavailable right now.' };
+  }
+}
+
+function isVisualAnalysis(value: unknown): value is AiVisualAnalysis {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<AiVisualAnalysis>;
+  return typeof candidate.visualType === 'string'
+    && typeof candidate.description === 'string'
+    && Array.isArray(candidate.extractedText)
+    && Array.isArray(candidate.labels)
+    && Array.isArray(candidate.concepts)
+    && Array.isArray(candidate.relationships)
+    && typeof candidate.studyRelevance === 'string'
+    && typeof candidate.confidence === 'number';
 }

@@ -17,22 +17,27 @@ import {
   supabase,
   updateAccountEmail,
   updateAccountPassword,
+  updateAuthProfile,
+  readAuthProfile,
 } from './services/auth';
-import type { AuthProviderName, AuthResult, AuthSession, AuthUser } from './services/auth';
+import type { AuthProfile, AuthProfileUpdate, AuthProviderName, AuthResult, AuthSession, AuthUser } from './services/auth';
 
 interface AuthContextValue {
   configured: boolean;
   loading: boolean;
   recoveryMode: boolean;
   user: AuthUser | null;
+  profile: AuthProfile | null;
+  needsStudyOnboarding: boolean;
   getAccessToken: () => Promise<string | null>;
   signIn: (email: string, password: string) => Promise<AuthResult>;
-  signUp: (email: string, password: string) => Promise<AuthResult>;
+  signUp: (email: string, password: string, displayName: string) => Promise<AuthResult>;
   signInWithProvider: (provider: AuthProviderName) => Promise<AuthResult>;
   forgotPassword: (email: string) => Promise<AuthResult>;
   resendConfirmationEmail: (email: string) => Promise<AuthResult>;
   changeEmail: (email: string) => Promise<AuthResult>;
   changePassword: (password: string) => Promise<AuthResult>;
+  updateProfile: (updates: AuthProfileUpdate) => Promise<AuthResult>;
   signOut: () => Promise<void>;
   deleteAccount: () => Promise<AuthResult>;
   finishRecovery: () => void;
@@ -44,6 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [recoveryMode, setRecoveryMode] = useState(false);
+  const profile = useMemo(() => readAuthProfile(session?.user), [session?.user]);
 
   const activeSession = useCallback(async (): Promise<AuthSession | null> => {
     if (!session) return null;
@@ -113,14 +119,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loading,
     recoveryMode,
     user: session?.user ?? null,
+    profile,
+    needsStudyOnboarding: Boolean(profile?.onboardingRequired && !profile.onboardingCompleted),
     getAccessToken: async () => (await activeSession())?.access_token ?? null,
     signIn: async (email, password) => {
       const result = await signInWithEmail(email, password);
       if (result.session) setSession(result.session);
       return result;
     },
-    signUp: async (email, password) => {
-      const result = await createAccount(email, password);
+    signUp: async (email, password, displayName) => {
+      const result = await createAccount(email, password, displayName);
       if (result.session) setSession(result.session);
       return result;
     },
@@ -135,6 +143,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const current = await activeSession();
       return current ? updateAccountPassword(current, password) : { error: 'Your reset link has expired. Request a new one.' };
     },
+    updateProfile: async (updates) => {
+      const current = await activeSession();
+      if (!current) return { error: 'Please sign in again to update your profile.' };
+      const result = await updateAuthProfile(current, updates);
+      if (result.session) setSession(result.session);
+      else if (result.user) setSession((previous) => previous ? { ...previous, user: result.user! } : previous);
+      return result;
+    },
     signOut: async () => {
       await signOutAccount(session);
       setSession(null);
@@ -147,7 +163,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return result;
     },
     finishRecovery: () => setRecoveryMode(false),
-  }), [activeSession, loading, recoveryMode, session]);
+  }), [activeSession, loading, profile, recoveryMode, session]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

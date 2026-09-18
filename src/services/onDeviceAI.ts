@@ -137,6 +137,7 @@ function buildPrompt(action: AiTutorAction, question: string | undefined, contex
     'teach-back': question?.trim().slice(0, 600) || 'Check the student explanation for missing ideas and misconceptions.',
     important: 'Identify the most important ideas in the supplied study material.',
     confuse: 'Name the most likely confusion between the current idea and nearby ideas.',
+    'visual-analysis': 'Explain the educational significance of the current visual using only the supplied context.',
   };
   const nearby = context.nearbyChunks
     .slice(0, 2)

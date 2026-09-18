@@ -8,11 +8,12 @@ const corsHeaders = {
 
 type PlanTier = 'free' | 'premium';
 type TutorDepth = 'quick' | 'normal' | 'deep';
-type TutorAction = 'explain' | 'teach' | 'quick-answer' | 'deep-dive' | 'simplify' | 'example' | 'quiz' | 'socratic' | 'ask' | 'teach-back' | 'important' | 'confuse' | 'grade-exam';
+type TutorAction = 'explain' | 'teach' | 'quick-answer' | 'deep-dive' | 'simplify' | 'example' | 'quiz' | 'socratic' | 'ask' | 'teach-back' | 'important' | 'confuse' | 'visual-analysis' | 'grade-exam';
 
 interface TutorChunk { id: string; title: string; text: string; }
 interface ConversationTurn { role: 'user' | 'assistant'; content: string; }
 interface GradingItem { questionId: string; prompt: string; studentAnswer: string; expectedAnswer: string; explanation: string; concept: string; source: string; localPartialCredit: number; }
+interface VisualRequest { documentId: string; visualId: string; imageDataUrl: string; slideNumber: number; slideTitle: string; slideText?: string; previousSlideContext?: string; nextSlideContext?: string; accessibilityDescription?: string; ocrText?: string; subject?: string; }
 interface TutorRequest {
   action: TutorAction;
   question?: string;
@@ -21,6 +22,7 @@ interface TutorRequest {
   conversation?: { summary?: string; turns?: ConversationTurn[] };
   context?: { studySetTitle: string; subject: string; currentChunk: TutorChunk; nearbyChunks: TutorChunk[]; currentQuestion?: { prompt?: string; userAnswer?: string; correctAnswer?: string; concept?: string; source?: string }; mastery?: number };
   gradingItems?: GradingItem[];
+  visual?: VisualRequest;
 }
 interface AiConfig {
   model: string;
@@ -35,7 +37,7 @@ interface AiConfig {
   soft_warning_ratio: number;
 }
 
-const ACTIONS = new Set<TutorAction>(['explain', 'teach', 'quick-answer', 'deep-dive', 'simplify', 'example', 'quiz', 'socratic', 'ask', 'teach-back', 'important', 'confuse', 'grade-exam']);
+const ACTIONS = new Set<TutorAction>(['explain', 'teach', 'quick-answer', 'deep-dive', 'simplify', 'example', 'quiz', 'socratic', 'ask', 'teach-back', 'important', 'confuse', 'visual-analysis', 'grade-exam']);
 const DEPTHS = new Set<TutorDepth>(['quick', 'normal', 'deep']);
 const MAX_CONTEXT_CHARS = 9_500;
 const MAX_QUESTION_CHARS = 600;
@@ -72,10 +74,34 @@ Deno.serve(async (request) => {
   const validationError = validateTutorRequest(body);
   if (validationError) return json({ error: validationError }, 400);
   const depth: TutorDepth = DEPTHS.has(body.depth ?? 'normal') ? body.depth ?? 'normal' : 'normal';
-  const maxOutputTokens = body.action === 'grade-exam' ? 1_800 : DEPTH_CAPS[depth];
+  const maxOutputTokens = body.action === 'grade-exam' ? 1_800 : body.action === 'visual-analysis' ? 900 : DEPTH_CAPS[depth];
   const requestId = crypto.randomUUID();
-  const aiInput = buildTutorInput(body);
-  const estimatedInputTokens = Math.min(4_200, Math.max(160, Math.ceil(aiInput.length / 4)));
+  if (body.action === 'visual-analysis') {
+    const { data: ownedVisual, error: ownedVisualError } = await admin.from('studybolt_visuals')
+      .select('image_hash, analysis_json')
+      .eq('document_id', body.visual!.documentId)
+      .eq('visual_id', body.visual!.visualId)
+      .eq('owner_user_id', user.id)
+      .maybeSingle();
+    if (ownedVisualError || !ownedVisual) return json({ error: 'This visual is no longer available for analysis.' }, 403);
+    const submittedHash = await hashDataUrl(body.visual!.imageDataUrl);
+    if (!submittedHash || submittedHash !== ownedVisual.image_hash) return json({ error: 'The selected visual could not be verified.' }, 403);
+    const { data: cachedRows } = await admin.from('studybolt_visuals')
+      .select('analysis_json')
+      .eq('owner_user_id', user.id)
+      .eq('image_hash', submittedHash)
+      .eq('status', 'resolved_ai')
+      .not('analysis_json', 'is', null)
+      .limit(1);
+    const cachedAnalysis = Array.isArray(cachedRows) && cachedRows[0] && typeof cachedRows[0].analysis_json === 'object'
+      ? normalizeVisualResponse(cachedRows[0].analysis_json as Record<string, unknown>)
+      : null;
+    if (cachedAnalysis) {
+      return json({ kind: 'visual-analysis', analysis: cachedAnalysis, cached: true, quota: await currentQuota(admin, user.id, period, plan, monthlyLimit, config.soft_warning_ratio) });
+    }
+  }
+  const aiInput = body.action === 'visual-analysis' ? buildVisualInput(body.visual!) : buildTutorInput(body);
+  const estimatedInputTokens = Math.min(body.action === 'visual-analysis' ? 6_000 : 4_200, Math.max(160, Math.ceil(aiInput.length / 4)));
   const estimatedCost = estimateCost(config, estimatedInputTokens, maxOutputTokens);
   // Reclaim reservations from interrupted/terminated requests before enforcing
   // concurrency and budget limits. The database function is service-role only.
@@ -96,7 +122,7 @@ Deno.serve(async (request) => {
         model: config.model || 'gpt-5.6-luna', store: false, safety_identifier: user.id,
         prompt_cache_key: user.id,
         reasoning: { effort: depth === 'quick' ? 'none' : (config.default_reasoning || 'low') },
-        max_output_tokens: maxOutputTokens, instructions: tutorInstructions(body.action, depth), input: aiInput,
+        max_output_tokens: maxOutputTokens, instructions: tutorInstructions(body.action, depth), input: body.action === 'visual-analysis' ? visualInput(body.visual!) : aiInput,
         text: { verbosity: depth === 'deep' ? 'medium' : 'low', format: responseFormat(body.action) },
       }),
       signal: AbortSignal.timeout(25_000),
@@ -111,7 +137,7 @@ Deno.serve(async (request) => {
       p_model: config.model || 'gpt-5.6-luna', p_depth: depth, p_input_tokens: usage.inputTokens,
       p_cached_input_tokens: usage.cachedInputTokens, p_output_tokens: usage.outputTokens,
       p_reasoning_tokens: usage.reasoningTokens, p_estimated_cost_usd: estimatedCost,
-      p_actual_cost_usd: actualCost, p_metadata: { source: 'studybolt-ai-tutor', channel: body.channel ?? 'text', contextChars: aiInput.length },
+      p_actual_cost_usd: actualCost, p_metadata: { source: 'studybolt-ai-tutor', channel: body.channel ?? 'text', contextChars: aiInput.length, ...(body.action === 'visual-analysis' ? { documentId: body.visual?.documentId, visualId: body.visual?.visualId, slideNumber: body.visual?.slideNumber } : {}) },
     });
     const outputText = extractOutputText(payload);
     const parsed = JSON.parse(outputText) as Record<string, unknown>;
@@ -119,6 +145,13 @@ Deno.serve(async (request) => {
       const gradingResponse = normalizeGradingResponse(parsed, body.gradingItems ?? []);
       if (!gradingResponse) throw new Error('Invalid grading response');
       return json({ ...gradingResponse, quota: await currentQuota(admin, user.id, period, plan, monthlyLimit, config.soft_warning_ratio) });
+    }
+    if (body.action === 'visual-analysis') {
+      const visualAnalysis = normalizeVisualResponse(parsed);
+      if (!visualAnalysis) throw new Error('Invalid visual analysis response');
+      await admin.from('studybolt_visuals').update({ status: 'resolved_ai', analysis_json: visualAnalysis, analyzed_at: new Date().toISOString() })
+        .eq('document_id', body.visual!.documentId).eq('visual_id', body.visual!.visualId).eq('owner_user_id', user.id);
+      return json({ kind: 'visual-analysis', analysis: visualAnalysis, quota: await currentQuota(admin, user.id, period, plan, monthlyLimit, config.soft_warning_ratio) });
     }
     const tutorResponse = normalizeTutorResponse(parsed as { kind?: string; answer?: string; quiz?: { question?: string; options?: string[]; correctIndex?: number; explanation?: string } }, body.action);
     if (!tutorResponse) throw new Error('Invalid tutor response');
@@ -139,6 +172,7 @@ function validateTutorRequest(body: TutorRequest): string | null {
     if (!body.gradingItems.every(validGradingItem)) return 'One or more open answers could not be graded.';
     return null;
   }
+  if (body.action === 'visual-analysis') return validateVisualRequest(body.visual);
   if (!body.context || typeof body.context !== 'object') return 'The current study context is missing.';
   if (!cleanString(body.context.studySetTitle, 180) || !cleanString(body.context.subject, 120)) return 'The Study Pack context is incomplete.';
   if (!validChunk(body.context.currentChunk)) return 'StudyBolt could not identify the current section.';
@@ -152,6 +186,14 @@ function validChunk(value: TutorChunk): boolean { return Boolean(value && cleanS
 function validGradingItem(value: GradingItem): boolean {
   return Boolean(value && cleanString(value.questionId, 220) && cleanString(value.prompt, 700) && cleanString(value.studentAnswer, 1_200) && cleanString(value.expectedAnswer, 1_200) && cleanString(value.concept, 200));
 }
+function validateVisualRequest(value: VisualRequest | undefined): string | null {
+  if (!value || typeof value !== 'object') return 'The visual context is missing.';
+  if (!cleanString(value.documentId, 80) || !cleanString(value.visualId, 120)) return 'The selected visual is missing its document reference.';
+  if (!/^data:image\/(jpeg|jpg|png|webp|gif);base64,[A-Za-z0-9+/=]+$/i.test(value.imageDataUrl) || value.imageDataUrl.length > 3_200_000) return 'The selected visual could not be read.';
+  if (!Number.isInteger(value.slideNumber) || value.slideNumber < 1) return 'The selected slide is invalid.';
+  if (!cleanString(value.slideTitle, 240)) return 'The selected slide title is missing.';
+  return null;
+}
 function cleanString(value: unknown, max: number): string { return typeof value === 'string' ? value.trim().slice(0, max) : ''; }
 
 function tutorInstructions(action: TutorAction, depth: TutorDepth): string {
@@ -160,6 +202,11 @@ function tutorInstructions(action: TutorAction, depth: TutorDepth): string {
     'Grade meaning, not exact wording. Award partial credit when the core idea is partly correct.',
     'Use only each supplied expected answer and explanation; do not add outside facts.',
     'Return one result for every supplied questionId in the same order. Keep feedback concise and say what is missing.',
+  ].join(' ');
+  if (action === 'visual-analysis') return [
+    'You are StudyBolt’s optional visual-study analyzer.',
+    'Use the supplied image and limited slide context only. Do not invent labels or facts that are not visible or supported by the context.',
+    'Describe only educationally useful information. If a label is unreadable, say so. Keep the structured result concise.',
   ].join(' ');
   return [
     'You are StudyBolt, a concise, encouraging tutor.',
@@ -190,7 +237,7 @@ function buildTutorInput(body: TutorRequest): string {
     example: 'Give one concrete example grounded in the supplied material.', quiz: 'Quiz the student on the current idea.',
     socratic: cleanString(body.question, MAX_QUESTION_CHARS) || 'Ask one guiding question that helps the student reason to the next step.',
     ask: cleanString(body.question, MAX_QUESTION_CHARS), 'teach-back': 'Evaluate the student explanation and name missing ideas or misconceptions.',
-    important: 'Identify the five most important ideas in this material.', confuse: 'Name the most likely confusion or contrast with nearby ideas.', 'grade-exam': '',
+    important: 'Identify the five most important ideas in this material.', confuse: 'Name the most likely confusion or contrast with nearby ideas.', 'visual-analysis': '', 'grade-exam': '',
   };
   const nearby = context.nearbyChunks.map((chunk) => `NEARBY — ${cleanString(chunk.title, 180)}\n${cleanString(chunk.text, 2_800)}`).join('\n\n');
   const examQuestion = context.currentQuestion
@@ -206,6 +253,28 @@ function buildTutorInput(body: TutorRequest): string {
     `CURRENT CHUNK — ${cleanString(context.currentChunk.title, 180)}\n${cleanString(context.currentChunk.text, 2_800)}`,
     nearby, examQuestion, mastery, conversation, `STUDENT REQUEST: ${prompts[body.action]}`,
   ].filter(Boolean).join('\n\n').slice(0, MAX_CONTEXT_CHARS);
+}
+
+function buildVisualInput(visual: VisualRequest): string {
+  return [
+    `SUBJECT: ${cleanString(visual.subject, 120)}`,
+    `SLIDE ${visual.slideNumber}: ${cleanString(visual.slideTitle, 240)}`,
+    `SLIDE TEXT: ${cleanString(visual.slideText, 3_000)}`,
+    `PREVIOUS SLIDE: ${cleanString(visual.previousSlideContext, 1_500)}`,
+    `NEXT SLIDE: ${cleanString(visual.nextSlideContext, 1_500)}`,
+    `ACCESSIBILITY DESCRIPTION: ${cleanString(visual.accessibilityDescription, 3_000)}`,
+    `OCR TEXT: ${cleanString(visual.ocrText, 2_000)}`,
+  ].filter((part) => !part.endsWith(': ')).join('\n').slice(0, 12_000);
+}
+
+function visualInput(visual: VisualRequest) {
+  return [{
+    role: 'user',
+    content: [
+      { type: 'input_text', text: buildVisualInput(visual) },
+      { type: 'input_image', image_url: visual.imageDataUrl, detail: 'low' },
+    ],
+  }];
 }
 
 function responseFormat(action: TutorAction) {
@@ -232,6 +301,16 @@ function responseFormat(action: TutorAction) {
       },
       required: ['kind', 'grades'],
     },
+  };
+  if (action === 'visual-analysis') return {
+    type: 'json_schema', name: 'studybolt_visual_analysis', strict: true,
+    schema: { type: 'object', additionalProperties: false,
+      properties: {
+        visualType: { type: 'string', enum: ['decorative', 'logo', 'background', 'icon', 'photo_educational', 'microscopy_image', 'diagram', 'labeled_diagram', 'flowchart', 'graph', 'chart_image', 'table_image', 'screenshot', 'equation', 'text_image', 'handwritten', 'unknown'] },
+        description: { type: 'string' }, extractedText: { type: 'array', items: { type: 'string' }, maxItems: 20 },
+        labels: { type: 'array', items: { type: 'string' }, maxItems: 30 }, concepts: { type: 'array', items: { type: 'string' }, maxItems: 20 },
+        relationships: { type: 'array', items: { type: 'string' }, maxItems: 20 }, studyRelevance: { type: 'string' }, confidence: { type: 'number', minimum: 0, maximum: 1 },
+      }, required: ['visualType', 'description', 'extractedText', 'labels', 'concepts', 'relationships', 'studyRelevance', 'confidence'] },
   };
   return {
     type: 'json_schema', name: 'studybolt_tutor_response', strict: true,
@@ -293,6 +372,36 @@ function normalizeTutorResponse(value: { kind?: string; answer?: string; quiz?: 
   if (!quiz || !cleanString(quiz.question, 500) || !Array.isArray(quiz.options) || quiz.options.length !== 4 || !quiz.options.every((option) => Boolean(cleanString(option, 300)))) return null;
   if (!Number.isInteger(quiz.correctIndex) || (quiz.correctIndex ?? -1) < 0 || (quiz.correctIndex ?? 4) > 3) return null;
   return { kind: 'quiz', answer: '', quiz: { question: cleanString(quiz.question, 500), options: quiz.options.map((option) => cleanString(option, 300)), correctIndex: quiz.correctIndex, explanation: cleanString(quiz.explanation, 1_000) } };
+}
+
+function normalizeVisualResponse(value: Record<string, unknown>) {
+  const visualTypes = new Set(['decorative', 'logo', 'background', 'icon', 'photo_educational', 'microscopy_image', 'diagram', 'labeled_diagram', 'flowchart', 'graph', 'chart_image', 'table_image', 'screenshot', 'equation', 'text_image', 'handwritten', 'unknown']);
+  if (!visualTypes.has(String(value.visualType)) || !cleanString(value.description, 2_000)) return null;
+  const arrayValue = (input: unknown, max: number) => Array.isArray(input) ? input.map((item) => cleanString(item, 300)).filter(Boolean).slice(0, max) : [];
+  return {
+    visualType: String(value.visualType),
+    description: cleanString(value.description, 2_000),
+    extractedText: arrayValue(value.extractedText, 20), labels: arrayValue(value.labels, 30), concepts: arrayValue(value.concepts, 20), relationships: arrayValue(value.relationships, 20),
+    studyRelevance: cleanString(value.studyRelevance, 1_200), confidence: Math.max(0, Math.min(1, decimalValue(value.confidence, 0))),
+  };
+}
+
+function decodeImageDataUrl(value: string): Uint8Array | null {
+  const match = value.match(/^data:image\/(?:jpeg|jpg|png|webp|gif);base64,([A-Za-z0-9+/=]+)$/i);
+  if (!match) return null;
+  try {
+    const binary = atob(match[1]!);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+    return bytes;
+  } catch { return null; }
+}
+
+async function hashDataUrl(value: string): Promise<string> {
+  const bytes = decodeImageDataUrl(value);
+  if (!bytes) return '';
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 function normalizeGradingResponse(value: Record<string, unknown>, items: GradingItem[]) {

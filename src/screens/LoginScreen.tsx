@@ -24,10 +24,8 @@ import { radius } from '../theme';
 export type AuthMode = 'signin' | 'signup' | 'forgot';
 
 export function LoginScreen({
-  onAuthenticated,
   onContinueAsGuest,
 }: {
-  onAuthenticated: () => void;
   onContinueAsGuest: () => void;
 }) {
   const { colors } = useStudyBolt();
@@ -35,13 +33,16 @@ export function LoginScreen({
   const { configured, signIn, signUp, signInWithProvider, forgotPassword, resendConfirmationEmail } = useAuth();
   const insets = useSafeAreaInsets();
   const [mode, setMode] = useState<AuthMode>('signin');
+  const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [resendBusy, setResendBusy] = useState(false);
   const [providerBusy, setProviderBusy] = useState<'google' | 'apple' | null>(null);
   const [notice, setNotice] = useState<{ tone: 'error' | 'success'; text: string } | null>(null);
   const [confirmationEmail, setConfirmationEmail] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<{ displayName?: string; email?: string; password?: string; confirmPassword?: string }>({});
   const entrance = useRef(new Animated.Value(0)).current;
   const bob = useRef(new Animated.Value(0)).current;
 
@@ -75,33 +76,56 @@ export function LoginScreen({
     setNotice(null);
     setConfirmationEmail(null);
     setPassword('');
+    setConfirmPassword('');
+    setFieldErrors({});
   };
 
   const handleEmailChange = (value: string) => {
     setEmail(value);
     if (confirmationEmail) setConfirmationEmail(null);
+    if (fieldErrors.email) setFieldErrors((current) => ({ ...current, email: undefined }));
+  };
+
+  const handleDisplayNameChange = (value: string) => {
+    setDisplayName(value);
+    if (fieldErrors.displayName) setFieldErrors((current) => ({ ...current, displayName: undefined }));
+  };
+
+  const handlePasswordChange = (value: string) => {
+    setPassword(value);
+    if (fieldErrors.password || fieldErrors.confirmPassword) {
+      setFieldErrors((current) => ({ ...current, password: undefined, confirmPassword: undefined }));
+    }
+  };
+
+  const handleConfirmPasswordChange = (value: string) => {
+    setConfirmPassword(value);
+    if (fieldErrors.confirmPassword) setFieldErrors((current) => ({ ...current, confirmPassword: undefined }));
   };
 
   const submit = async () => {
     const cleanEmail = email.trim().toLowerCase();
-    if (!/^\S+@\S+\.\S+$/.test(cleanEmail)) {
-      setNotice({ tone: 'error', text: 'Enter a valid email address.' });
+    const cleanDisplayName = displayName.trim();
+    const nextErrors: typeof fieldErrors = {};
+    if (mode === 'signup' && !cleanDisplayName) nextErrors.displayName = 'Tell us what to call you.';
+    if (!/^\S+@\S+\.\S+$/.test(cleanEmail)) nextErrors.email = 'Enter a valid email address.';
+    if (mode !== 'forgot' && password.length < 8) nextErrors.password = 'Use at least 8 characters.';
+    if (mode === 'signup' && confirmPassword !== password) nextErrors.confirmPassword = 'Passwords must match exactly.';
+    if (Object.keys(nextErrors).length) {
+      setFieldErrors(nextErrors);
+      setNotice(null);
       return;
     }
-    if (mode !== 'forgot' && password.length < 8) {
-      setNotice({ tone: 'error', text: 'Use at least 8 characters for your password.' });
-      return;
-    }
+    setFieldErrors({});
     setBusy(true);
     setNotice(null);
     const result = mode === 'forgot'
       ? await forgotPassword(cleanEmail)
       : mode === 'signup'
-        ? await signUp(cleanEmail, password)
+        ? await signUp(cleanEmail, password, cleanDisplayName)
         : await signIn(cleanEmail, password);
     setBusy(false);
     if (result.error) setNotice({ tone: 'error', text: result.error });
-    else if (result.session) onAuthenticated();
     else if (result.message) {
       setNotice({ tone: 'success', text: result.message });
       setConfirmationEmail(mode === 'signup' ? cleanEmail : null);
@@ -213,8 +237,8 @@ export function LoginScreen({
 
           {mode !== 'forgot' ? (
             <View style={styles.providers}>
-              <ProviderButton label="Continue with Google" icon="google" onPress={() => void useProvider('google')} loading={providerBusy === 'google'} />
-              <ProviderButton label="Continue with Apple" icon="apple" onPress={() => void useProvider('apple')} loading={providerBusy === 'apple'} />
+              <ProviderButton label={mode === 'signup' ? 'Sign up with Google' : 'Continue with Google'} icon="google" onPress={() => void useProvider('google')} loading={providerBusy === 'google'} />
+              <ProviderButton label={mode === 'signup' ? 'Sign up with Apple' : 'Continue with Apple'} icon="apple" onPress={() => void useProvider('apple')} loading={providerBusy === 'apple'} />
             </View>
           ) : null}
 
@@ -227,8 +251,10 @@ export function LoginScreen({
           ) : null}
 
           <View style={styles.fields}>
-            <AuthField label="Email address" icon="email-outline" value={email} onChangeText={handleEmailChange} placeholder="you@example.com" keyboardType="email-address" autoComplete="email" />
-            {mode !== 'forgot' ? <AuthField label="Password" icon="lock-outline" value={password} onChangeText={setPassword} placeholder="At least 8 characters" secure autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} /> : null}
+            {mode === 'signup' ? <AuthField label="Name" icon="account-outline" value={displayName} onChangeText={handleDisplayNameChange} placeholder="What should we call you?" autoCapitalize="words" autoComplete="name" error={fieldErrors.displayName} /> : null}
+            <AuthField label="Email address" icon="email-outline" value={email} onChangeText={handleEmailChange} placeholder="you@example.com" keyboardType="email-address" autoComplete="email" error={fieldErrors.email} />
+            {mode !== 'forgot' ? <AuthField label="Password" icon="lock-outline" value={password} onChangeText={handlePasswordChange} placeholder="At least 8 characters" secure autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} error={fieldErrors.password} /> : null}
+            {mode === 'signup' ? <AuthField label="Confirm password" icon="lock-check-outline" value={confirmPassword} onChangeText={handleConfirmPasswordChange} placeholder="Re-enter your password" secure autoComplete="new-password" error={fieldErrors.confirmPassword} /> : null}
           </View>
 
           {mode === 'signin' ? (
@@ -250,7 +276,7 @@ export function LoginScreen({
               {mode === 'signin' ? 'New to StudyBolt?' : mode === 'signup' ? 'Already have an account?' : 'Remembered your password?'}
             </Text>
             <Pressable accessibilityRole="button" onPress={() => changeMode(mode === 'signin' ? 'signup' : 'signin')} hitSlop={7}>
-              <Text style={[styles.switchAction, { color: colors.primary }]}>{mode === 'signin' ? 'Create account' : 'Sign in'}</Text>
+              <Text style={[styles.switchAction, { color: colors.primary }]}>{mode === 'signin' ? 'Create account' : 'Log in'}</Text>
             </Pressable>
           </View>
 

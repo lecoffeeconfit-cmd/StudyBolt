@@ -1,5 +1,6 @@
 export type ThemePreference = 'system' | 'light' | 'dark';
 export type RetentionMode = 'standard' | 'fsrs' | 'sm2';
+export type StudyType = 'college' | 'graduate_school' | 'professional' | 'other';
 export type FlashcardConfidence = 'new' | 'learning' | 'known';
 export type QuizQuestionType = 'multiple-choice' | 'multiple-select' | 'true-false' | 'short-answer' | 'fill-blank' | 'definition' | 'application';
 export type QuizDifficulty = 'easy' | 'medium' | 'hard';
@@ -9,7 +10,11 @@ export type QuizQuestionCount = 10 | 15 | 20;
 export type LibrarySort = 'default' | 'recent' | 'oldest' | 'alphabetical';
 export type SharedStudyPackVisibility = 'private' | 'link' | 'public';
 export type DiscoverSort = 'newest' | 'popular' | 'saved';
-export type AiTutorAction = 'explain' | 'teach' | 'quick-answer' | 'deep-dive' | 'simplify' | 'example' | 'quiz' | 'socratic' | 'ask' | 'teach-back' | 'important' | 'confuse';
+export type AiTutorAction = 'explain' | 'teach' | 'quick-answer' | 'deep-dive' | 'simplify' | 'example' | 'quiz' | 'socratic' | 'ask' | 'teach-back' | 'important' | 'confuse' | 'visual-analysis';
+export type VisualType = 'decorative' | 'logo' | 'background' | 'icon' | 'photo_educational' | 'microscopy_image' | 'diagram' | 'labeled_diagram' | 'flowchart' | 'graph' | 'chart_image' | 'table_image' | 'screenshot' | 'equation' | 'text_image' | 'handwritten' | 'unknown';
+export type VisualAnalysisSource = 'pptx_native' | 'accessibility' | 'ocr' | 'local' | 'ai_economy' | 'ai_deep' | 'user_confirmed';
+export type VisualStatus = 'resolved_native' | 'resolved_accessibility' | 'resolved_ocr' | 'resolved_local' | 'needs_review' | 'analyzing_ai' | 'resolved_ai' | 'skipped_by_user' | 'analysis_failed' | 'allowance_unavailable';
+export type VisualReviewReason = 'complex_diagram' | 'unreadable_labels' | 'low_confidence' | 'complex_graph' | 'scientific_image' | 'equation_unresolved' | 'handwriting' | 'microscopy_detail' | 'insufficient_context' | 'unknown_visual';
 export type AiTutorDepth = 'quick' | 'normal' | 'deep';
 export type AiRequestChannel = 'text' | 'voice' | 'exam';
 export type StudyModality = 'notes' | 'audio' | 'flashcards' | 'quiz' | 'test';
@@ -207,10 +212,63 @@ export interface StudyPack {
   reviewedNoteIds: string[];
   audioPosition: number;
   studyMinutes: number;
+  /** Local-only source file reference. Never included in shared content. */
+  originalUri?: string;
+  visuals?: VisualKnowledge[];
+  visualSummary?: VisualProcessingSummary;
   sharedFromToken?: string;
   originalSetId?: string;
   originalCreatorId?: string;
   communityClassId?: string;
+}
+
+export interface VisualKnowledge {
+  id: string;
+  documentId?: string;
+  slideNumber: number;
+  slideTitle: string;
+  imageHash: string;
+  imageReference?: string;
+  imageDataUrl?: string;
+  imageWidth?: number;
+  imageHeight?: number;
+  imageX?: number;
+  imageY?: number;
+  altText?: string;
+  accessibilityText?: string;
+  nearbyText?: string;
+  visualType: VisualType;
+  educationalImportance: number;
+  localConfidence: number;
+  needsUserReview: boolean;
+  reason?: VisualReviewReason;
+  description?: string;
+  extractedText?: string;
+  labels?: string[];
+  concepts?: string[];
+  relationships?: string[];
+  studyRelevance?: string;
+  analysisSource: VisualAnalysisSource;
+  status: VisualStatus;
+  analyzedAt?: string;
+  cacheHit?: boolean;
+  analysisAvoided?: boolean;
+  aiError?: string;
+}
+
+export interface VisualProcessingSummary {
+  totalSlides: number;
+  totalImages: number;
+  totalNativeTables?: number;
+  totalNativeCharts?: number;
+  decorativeImagesIgnored: number;
+  nativeVisualsResolved: number;
+  accessibilityVisualsResolved: number;
+  ocrVisualsResolved: number;
+  locallyResolved: number;
+  visualsNeedingReview: number;
+  userAIVisualsAnalyzed: number;
+  cachedAnalysesUsed: number;
 }
 
 /**
@@ -340,6 +398,31 @@ export interface AiTutorResponse {
   quiz?: AiTutorQuiz;
   quota?: AiTutorQuota;
   provider: 'on-device' | 'cloud';
+}
+
+export interface AiVisualAnalysisRequest {
+  documentId: string;
+  visualId: string;
+  imageDataUrl: string;
+  slideNumber: number;
+  slideTitle: string;
+  slideText?: string;
+  previousSlideContext?: string;
+  nextSlideContext?: string;
+  accessibilityDescription?: string;
+  ocrText?: string;
+  subject?: string;
+}
+
+export interface AiVisualAnalysis {
+  visualType: VisualType;
+  description: string;
+  extractedText: string[];
+  labels: string[];
+  concepts: string[];
+  relationships: string[];
+  studyRelevance: string;
+  confidence: number;
 }
 
 export type ExamMode = 'adaptive' | 'standard' | 'targeted';

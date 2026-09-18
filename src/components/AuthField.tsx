@@ -16,6 +16,8 @@ export function AuthField({
   secure = false,
   keyboardType = 'default',
   autoComplete,
+  autoCapitalize = 'none',
+  error,
 }: {
   label: string;
   icon: IconName;
@@ -25,6 +27,8 @@ export function AuthField({
   secure?: boolean;
   keyboardType?: TextInputProps['keyboardType'];
   autoComplete?: TextInputProps['autoComplete'];
+  autoCapitalize?: TextInputProps['autoCapitalize'];
+  error?: string;
 }) {
   const { colors } = useStudyBolt();
   const [focused, setFocused] = useState(false);
@@ -32,7 +36,7 @@ export function AuthField({
   return (
     <View style={styles.wrap}>
       <Text style={[styles.label, { color: colors.textSecondary }]}>{label}</Text>
-      <View style={[styles.field, { backgroundColor: colors.backgroundRaised, borderColor: focused ? colors.primary : colors.border }]}>
+      <View style={[styles.field, { backgroundColor: colors.backgroundRaised, borderColor: error ? colors.danger : focused ? colors.primary : colors.border }]}>
         <Icon name={icon} size={19} color={focused ? colors.primary : colors.textMuted} />
         <TextInput
           accessibilityLabel={label}
@@ -41,7 +45,7 @@ export function AuthField({
           placeholder={placeholder}
           placeholderTextColor={colors.textMuted}
           keyboardType={keyboardType}
-          autoCapitalize="none"
+          autoCapitalize={autoCapitalize}
           autoCorrect={false}
           autoComplete={autoComplete}
           secureTextEntry={secure && !revealed}
@@ -61,6 +65,7 @@ export function AuthField({
           </Pressable>
         ) : null}
       </View>
+      {error ? <Text style={[styles.error, { color: colors.danger }]}>{error}</Text> : null}
     </View>
   );
 }
@@ -71,4 +76,5 @@ const styles = StyleSheet.create({
   field: { minHeight: 54, borderRadius: radius.md, borderWidth: 1, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 10 },
   input: { flex: 1, minWidth: 0, height: 52, fontSize: 14 },
   eye: { width: 34, height: 40, alignItems: 'flex-end', justifyContent: 'center' },
+  error: { fontSize: 10, lineHeight: 14, fontWeight: '700', marginLeft: 2 },
 });

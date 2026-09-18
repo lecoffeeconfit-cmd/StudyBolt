@@ -24,6 +24,12 @@ export const SUPPORTED_DOCUMENT_EXTENSIONS = [
 // system picker show documents, then enforce the extension in validateImport.
 export const DOCUMENT_PICKER_TYPE = '*/*' as const;
 
+const MIME_TYPES: Record<ImportDocumentType, string> = {
+  pdf: 'application/pdf',
+  powerpoint: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  notes: 'text/plain',
+};
+
 export function getFileExtension(name: string): string {
   const cleanName = name.trim().split(/[?#]/, 1)[0] ?? '';
   const lastDot = cleanName.lastIndexOf('.');
@@ -48,6 +54,23 @@ export function getImportFileName(name: string, mimeType?: string | null): strin
   const documentType = getImportDocumentType(trimmed, mimeType);
   const extension = documentType === 'pdf' ? 'pdf' : documentType === 'powerpoint' ? 'pptx' : documentType === 'notes' ? 'txt' : 'bin';
   return `${trimmed}.${extension}`;
+}
+
+/**
+ * File providers sometimes report Office documents as application/octet-stream.
+ * The extension is more reliable for uploads, so use the canonical MIME type
+ * that matches the normalized document name.
+ */
+export function getImportMimeType(name: string, mimeType?: string | null): string {
+  const documentType = getImportDocumentType(name, mimeType);
+  if (documentType === 'pdf' || documentType === 'powerpoint') return MIME_TYPES[documentType];
+
+  const extension = getFileExtension(name);
+  if (extension === 'md' || extension === 'markdown') return 'text/markdown';
+  if (extension === 'rtf') return 'application/rtf';
+  if (extension === 'doc') return 'application/msword';
+  if (extension === 'docx') return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  return mimeType?.includes('/') ? mimeType : MIME_TYPES.notes;
 }
 
 export function studyPackFileType(documentType: ImportDocumentType): StudyPack['fileType'] {

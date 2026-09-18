@@ -4,6 +4,7 @@ import type { SmartStudyMode } from '../services/adaptiveStudy';
 export type Route =
   | { type: 'main' }
   | { type: 'onboarding' }
+  | { type: 'account-onboarding' }
   | { type: 'auth' }
   | { type: 'account' }
   | { type: 'legal' }
@@ -13,6 +14,7 @@ export type Route =
   | { type: 'mistakes' }
   | { type: 'flagged' }
   | { type: 'deck'; deckId: string; tool?: StudyTool }
+  | { type: 'visual-review'; deckId: string }
   | { type: 'shared'; token: string }
   | { type: 'community-class'; classId: string }
   | { type: 'processing'; asset: ImportAsset; courseId?: string; courseName?: string };

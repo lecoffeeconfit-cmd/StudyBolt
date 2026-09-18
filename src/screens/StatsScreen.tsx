@@ -1,9 +1,11 @@
 import React, { useMemo, useState } from 'react';
-import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { Card, Header, Icon, Pill, ProgressBar, Screen, SectionHeader } from '../components/ui';
 import type { IconName } from '../components/ui';
 import { learningEvidence } from '../data/learningScience';
+import { makeStatDetail } from '../data/statExplanations';
+import type { StatDetail } from '../data/statExplanations';
 import { useStudyBolt } from '../StudyBoltContext';
 import { buildAnalytics } from '../services/analytics';
 import type { AnalyticsSnapshot, BreakdownValue, ConceptInsight, DistributionValue } from '../services/analytics';
@@ -19,52 +21,148 @@ const TABS: Array<{ id: StatsTab; label: string; icon: IconName }> = [
   { id: 'methods', label: 'Methods', icon: 'shape-outline' },
 ];
 
+const StatDetailContext = React.createContext<(detail: StatDetail) => void>(() => undefined);
+
+function useStatDetail() {
+  return React.useContext(StatDetailContext);
+}
+
 export function StatsScreen() {
   const { colors, state } = useStudyBolt();
   const [tab, setTab] = useState<StatsTab>('overview');
+  const [selectedDetail, setSelectedDetail] = useState<StatDetail | null>(null);
   const analytics = useMemo(() => buildAnalytics(state), [state]);
 
   return (
-    <Screen>
-      <Header title="Stats" right={<Pill label={`${capitalize(analytics.evidenceLevel)} evidence`} tone={analytics.evidenceLevel === 'strong' ? 'mint' : 'purple'} />} />
-      <Text style={[styles.title, { color: colors.text }]}>Know what to study next.</Text>
-      <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Progress signals grounded in your coverage, retrieval, quizzes, and study spacing—not XP.</Text>
+    <StatDetailContext.Provider value={setSelectedDetail}>
+      <View style={[styles.screenShell, { backgroundColor: colors.background }]}>
+        <Screen>
+          <Header
+            title="Stats"
+            right={(
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`${capitalize(analytics.evidenceLevel)} evidence. Tap for details`}
+                hitSlop={8}
+                onPress={() => setSelectedDetail(makeStatDetail('Evidence level', capitalize(analytics.evidenceLevel), analytics.historyMessage, {
+                  description: 'How much varied, multi-day learning history supports your current estimates.',
+                  calculation: 'Evidence is early, building, or strong based on completed quiz events, active study days, and flashcard-review days. Strong requires at least five quizzes and five review days.',
+                  whyItMatters: 'A stronger evidence level makes trends more stable. It does not mean your mastery itself is high or low.',
+                }))}
+              >
+                <Pill label={`${capitalize(analytics.evidenceLevel)} evidence`} tone={analytics.evidenceLevel === 'strong' ? 'mint' : 'purple'} />
+              </Pressable>
+            )}
+          />
+          <Text style={[styles.title, { color: colors.text }]}>Know what to study next.</Text>
+          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Progress signals grounded in your coverage, retrieval, quizzes, and study spacing—not XP.</Text>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabs}>
-        {TABS.map((item) => {
-          const active = tab === item.id;
-          return (
-            <Pressable
-              key={item.id}
-              accessibilityRole="tab"
-              accessibilityState={{ selected: active }}
-              onPress={() => setTab(item.id)}
-              style={[styles.tab, { backgroundColor: active ? colors.primary : colors.card, borderColor: active ? colors.primary : colors.border }]}
-            >
-              <Icon name={item.icon} size={16} color={active ? colors.primaryText : colors.textSecondary} />
-              <Text style={[styles.tabText, { color: active ? colors.primaryText : colors.textSecondary }]}>{item.label}</Text>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabs}>
+            {TABS.map((item) => {
+              const active = tab === item.id;
+              return (
+                <Pressable
+                  key={item.id}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: active }}
+                  onPress={() => setTab(item.id)}
+                  style={[styles.tab, { backgroundColor: active ? colors.primary : colors.card, borderColor: active ? colors.primary : colors.border }]}
+                >
+                  <Icon name={item.icon} size={16} color={active ? colors.primaryText : colors.textSecondary} />
+                  <Text style={[styles.tabText, { color: active ? colors.primaryText : colors.textSecondary }]}>{item.label}</Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
 
-      {tab === 'overview' ? <Overview analytics={analytics} /> : null}
-      {tab === 'insights' ? <AdvancedInsights analytics={analytics} /> : null}
-      {tab === 'mastery' ? <MasteryAnalytics analytics={analytics} /> : null}
-      {tab === 'quizzes' ? <QuizAnalytics analytics={analytics} /> : null}
-      {tab === 'activity' ? <ActivityAnalytics analytics={analytics} goalMinutes={state.dailyStudyGoalMinutes} /> : null}
-      {tab === 'methods' ? <MethodAnalytics analytics={analytics} /> : null}
-    </Screen>
+          <View style={[styles.tapHint, { backgroundColor: colors.primarySoft }]}>
+            <Icon name="gesture-tap" size={16} color={colors.primary} />
+            <Text style={[styles.tapHintText, { color: colors.textSecondary }]}>Tap any stat to see what it means, how it’s calculated, and what your data suggests.</Text>
+          </View>
+
+          {tab === 'overview' ? <Overview analytics={analytics} /> : null}
+          {tab === 'insights' ? <AdvancedInsights analytics={analytics} /> : null}
+          {tab === 'mastery' ? <MasteryAnalytics analytics={analytics} /> : null}
+          {tab === 'quizzes' ? <QuizAnalytics analytics={analytics} /> : null}
+          {tab === 'activity' ? <ActivityAnalytics analytics={analytics} goalMinutes={state.dailyStudyGoalMinutes} /> : null}
+          {tab === 'methods' ? <MethodAnalytics analytics={analytics} /> : null}
+        </Screen>
+        <StatDetailSheet detail={selectedDetail} onClose={() => setSelectedDetail(null)} />
+      </View>
+    </StatDetailContext.Provider>
+  );
+}
+
+function StatDetailSheet({ detail, onClose }: { detail: StatDetail | null; onClose: () => void }) {
+  const { colors } = useStudyBolt();
+  return (
+    <Modal visible={Boolean(detail)} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
+      <View style={styles.modalRoot}>
+        <Pressable accessibilityLabel="Close stat details" style={styles.modalBackdrop} onPress={onClose} />
+        {detail ? (
+          <View style={[styles.detailSheet, { backgroundColor: colors.backgroundRaised, borderColor: colors.border }]}>
+            <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
+            <View style={styles.detailHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.detailEyebrow, { color: colors.primary }]}>STAT EXPLAINER</Text>
+                <Text style={[styles.detailTitle, { color: colors.text }]}>{detail.label}</Text>
+              </View>
+              <Pressable accessibilityRole="button" accessibilityLabel="Close" hitSlop={10} onPress={onClose} style={[styles.detailClose, { backgroundColor: colors.cardStrong }]}>
+                <Icon name="close" size={20} color={colors.textSecondary} />
+              </Pressable>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.detailScroll}>
+              <View style={[styles.detailValueCard, { backgroundColor: colors.primarySoft }]}>
+                <Text style={[styles.detailValueLabel, { color: colors.primary }]}>YOUR CURRENT VALUE</Text>
+                <Text adjustsFontSizeToFit numberOfLines={1} style={[styles.detailValue, { color: colors.text }]}>{detail.value}</Text>
+                <Text style={[styles.detailSupporting, { color: colors.textSecondary }]}>{detail.supporting}</Text>
+              </View>
+
+              <DetailSection icon="book-open-variant" title="What it means" body={detail.description} />
+              <DetailSection icon="calculator-variant-outline" title="How it’s calculated" body={detail.calculation} />
+              <DetailSection icon="chart-timeline-variant-shimmer" title="What your data suggests" body={detail.insight} emphasized />
+              <DetailSection icon="compass-outline" title="How to use it" body={detail.whyItMatters} />
+
+              <View style={[styles.estimateNote, { borderColor: colors.border }]}>
+                <Icon name="shield-check-outline" size={16} color={colors.textMuted} />
+                <Text style={[styles.estimateNoteText, { color: colors.textMuted }]}>Learning estimates guide priorities; they are not guarantees or predicted exam grades.</Text>
+              </View>
+            </ScrollView>
+          </View>
+        ) : null}
+      </View>
+    </Modal>
+  );
+}
+
+function DetailSection({ icon, title, body, emphasized = false }: { icon: IconName; title: string; body: string; emphasized?: boolean }) {
+  const { colors } = useStudyBolt();
+  return (
+    <View style={[styles.detailSection, emphasized && { backgroundColor: colors.mintSoft }]}>
+      <View style={[styles.detailSectionIcon, { backgroundColor: emphasized ? colors.card : colors.cardStrong }]}>
+        <Icon name={icon} size={18} color={emphasized ? colors.mint : colors.primary} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.detailSectionTitle, { color: colors.text }]}>{title}</Text>
+        <Text style={[styles.detailSectionBody, { color: colors.textSecondary }]}>{body}</Text>
+      </View>
+    </View>
   );
 }
 
 function Overview({ analytics }: { analytics: AnalyticsSnapshot }) {
   const { colors } = useStudyBolt();
+  const showStatDetail = useStatDetail();
   const readiness = analytics.readiness.score;
   const readinessColor = readiness === null ? colors.textMuted : readiness >= 75 ? colors.mint : readiness >= 55 ? colors.warning : colors.danger;
   return (
     <>
-      <Card style={[styles.readinessCard, { backgroundColor: colors.mode === 'dark' ? '#121A24' : '#111936' }]}>
+      <Card
+        accessibilityLabel="Estimated exam readiness. Tap for details"
+        onPress={() => showStatDetail(makeStatDetail('Estimated exam readiness', readiness === null ? 'Building' : `${readiness}%`, analytics.historyMessage))}
+        style={[styles.readinessCard, { backgroundColor: colors.mode === 'dark' ? '#121A24' : '#111936' }]}
+      >
         <View style={styles.readinessTop}>
           <View style={{ flex: 1 }}>
             <Text style={styles.heroEyebrow}>ESTIMATED EXAM READINESS</Text>
@@ -79,6 +177,7 @@ function Overview({ analytics }: { analytics: AnalyticsSnapshot }) {
         <View style={styles.confidenceRow}>
           <Icon name="shield-check-outline" size={16} color="#AEB8DE" />
           <Text style={styles.confidenceText}>{analytics.historyMessage}</Text>
+          <Icon name="information-outline" size={16} color="#AEB8DE" />
         </View>
       </Card>
 
@@ -105,7 +204,16 @@ function Overview({ analytics }: { analytics: AnalyticsSnapshot }) {
       <SectionHeader title="Class mastery" action={`${analytics.classes.length} classes`} />
       <View style={styles.stack}>
         {analytics.classes.map((course) => (
-          <Card key={course.id} style={styles.progressCard}>
+          <Card
+            key={course.id}
+            accessibilityLabel={`${course.name} mastery ${course.mastery}%. Tap for details`}
+            onPress={() => showStatDetail(makeStatDetail(`${course.name} mastery`, `${course.mastery}%`, course.studyMinutes ? `${formatMinutes(course.studyMinutes)} tracked study` : 'No tracked study time yet', {
+              description: `Your current demonstrated mastery across concepts in ${course.name}.`,
+              calculation: 'Concept mastery estimates from every Study Pack in this class are aggregated into one class-level percentage.',
+              whyItMatters: 'Compare classes to spot broad gaps, then open topic and concept views to decide exactly what to study.',
+            }))}
+            style={styles.progressCard}
+          >
             <View style={[styles.courseIcon, { backgroundColor: `${course.color}20` }]}><Text style={styles.emoji}>{course.emoji}</Text></View>
             <View style={{ flex: 1 }}>
               <View style={styles.progressHeading}>
@@ -129,6 +237,7 @@ function Overview({ analytics }: { analytics: AnalyticsSnapshot }) {
 
 function AdvancedInsights({ analytics }: { analytics: AnalyticsSnapshot }) {
   const { colors, state } = useStudyBolt();
+  const showStatDetail = useStatDetail();
   const insight = analytics.advanced;
   const advancedRetention = state.retentionMode !== 'standard';
   const retentionLabel = state.retentionMode === 'standard' ? 'Standard' : state.retentionMode === 'fsrs' ? 'FSRS' : 'SM-2';
@@ -252,7 +361,15 @@ function AdvancedInsights({ analytics }: { analytics: AnalyticsSnapshot }) {
       </Card>
 
       <SectionHeader title="Readiness forecast" action="At your current measured pace" />
-      <Card style={[styles.forecastCard, { backgroundColor: forecast ? colors.mintSoft : colors.card }]}>
+      <Card
+        accessibilityLabel="Readiness forecast. Tap for details"
+        onPress={() => showStatDetail(makeStatDetail('Readiness forecast', forecast ? `${forecast.value}% projected` : 'Building', forecast ? `By ${formatDate(forecast.targetDate)} · ${forecast.daysRemaining} days remaining` : 'Needs a plan deadline and more mastery history', {
+          description: 'A projection of estimated readiness at your current measured learning pace.',
+          calculation: 'Current readiness plus recent normalized mastery points per week multiplied by the weeks until your plan target date.',
+          whyItMatters: 'Use the forecast to adjust your plan early. It assumes your recent pace continues and is not a predicted exam grade.',
+        }))}
+        style={[styles.forecastCard, { backgroundColor: forecast ? colors.mintSoft : colors.card }]}
+      >
         {forecast ? (
           <>
             <View style={styles.forecastTop}>
@@ -280,6 +397,7 @@ function AdvancedInsights({ analytics }: { analytics: AnalyticsSnapshot }) {
 
 function MasteryAnalytics({ analytics }: { analytics: AnalyticsSnapshot }) {
   const { colors } = useStudyBolt();
+  const showStatDetail = useStatDetail();
   return (
     <>
       <SectionHeader title="Mastery & retention" action="Recall over time" />
@@ -315,14 +433,25 @@ function MasteryAnalytics({ analytics }: { analytics: AnalyticsSnapshot }) {
       <SectionHeader title="How the estimate works" action="Transparent by design" />
       <Card>
         {analytics.readiness.components.map((component, index) => (
-          <View key={component.label} style={[styles.formulaRow, index > 0 && { borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth }]}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`${component.label} ${component.value}%, ${component.weight}% readiness weight. Tap for details`}
+            key={component.label}
+            onPress={() => showStatDetail(makeStatDetail(component.label, `${component.value}%`, `${component.weight}% of the readiness estimate`, {
+              description: `${component.label} is one input to estimated exam readiness.`,
+              calculation: `Its current ${component.value}% value is multiplied by a ${component.weight}% weight before being added to the other readiness components.`,
+              whyItMatters: 'Lower components with larger weights are usually the most efficient readiness gaps to address.',
+            }))}
+            style={({ pressed }) => [styles.formulaRow, index > 0 && { borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth }, pressed && styles.statPressed]}
+          >
             <View style={{ flex: 1 }}>
               <Text style={[styles.formulaLabel, { color: colors.text }]}>{component.label}</Text>
               <ProgressBar progress={component.value} color={colors.primary} />
             </View>
             <Text style={[styles.formulaValue, { color: colors.text }]}>{component.value}%</Text>
             <Pill label={`${component.weight}% weight`} tone="neutral" />
-          </View>
+            <Icon name="chevron-right" size={17} color={colors.textMuted} />
+          </Pressable>
         ))}
         <Text style={[styles.disclaimer, { color: colors.textMuted }]}>Readiness is an evidence-informed StudyBolt estimate, not a validated prediction of an exam grade. It stays hidden until there is enough varied activity to calculate it responsibly.</Text>
       </Card>
@@ -414,11 +543,20 @@ function QuizAnalytics({ analytics }: { analytics: AnalyticsSnapshot }) {
 
 function ActivityAnalytics({ analytics, goalMinutes }: { analytics: AnalyticsSnapshot; goalMinutes: number }) {
   const { colors } = useStudyBolt();
+  const showStatDetail = useStatDetail();
   const activity = analytics.activity;
   return (
     <>
       <SectionHeader title="Study activity" action={`${activity.activeDays} active days this month`} />
-      <Card style={[styles.goalCard, { backgroundColor: colors.primarySoft }]}>
+      <Card
+        accessibilityLabel={`Today's study goal, ${activity.today} of ${goalMinutes} minutes. Tap for details`}
+        onPress={() => showStatDetail(makeStatDetail('Today’s study goal', `${activity.today} / ${goalMinutes} min`, `${Math.round((activity.today / Math.max(1, goalMinutes)) * 100)}% complete today`, {
+          description: 'Your progress toward the daily study-time goal set in StudyBolt.',
+          calculation: 'Today’s positive-duration study events are added and compared with your saved daily goal.',
+          whyItMatters: 'Use the goal to create a realistic study cue. The quality and spacing of those minutes still matter more than simply filling the bar.',
+        }))}
+        style={[styles.goalCard, { backgroundColor: colors.primarySoft }]}
+      >
         <View style={[styles.goalIcon, { backgroundColor: colors.primary }]}><Icon name="flag-checkered" color={colors.primaryText} /></View>
         <View style={{ flex: 1 }}>
           <View style={styles.progressHeading}>
@@ -427,6 +565,7 @@ function ActivityAnalytics({ analytics, goalMinutes }: { analytics: AnalyticsSna
           </View>
           <ProgressBar progress={(activity.today / Math.max(1, goalMinutes)) * 100} color={colors.primary} />
         </View>
+        <Icon name="information-outline" size={18} color={colors.primary} />
       </Card>
       <View style={styles.metricGrid}>
         <MetricCard icon="calendar-today" label="Study time today" value={formatMinutes(activity.today)} detail="Tracked activity" tone="blue" />
@@ -484,6 +623,7 @@ function ActivityAnalytics({ analytics, goalMinutes }: { analytics: AnalyticsSna
 
 function MethodAnalytics({ analytics }: { analytics: AnalyticsSnapshot }) {
   const { colors } = useStudyBolt();
+  const showStatDetail = useStatDetail();
   const methods = analytics.methods;
   return (
     <>
@@ -497,17 +637,35 @@ function MethodAnalytics({ analytics }: { analytics: AnalyticsSnapshot }) {
 
       <SectionHeader title="Study Pack status" />
       <Card style={styles.splitCard}>
-        <View style={styles.splitMetric}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${methods.packsCompleted} completed Study Packs. Tap for details`}
+          onPress={() => showStatDetail(makeStatDetail('Completed Study Packs', `${methods.packsCompleted}`, 'Packs at or above 90% completion', {
+            description: 'Study Packs whose weighted activity coverage has reached the completion threshold.',
+            calculation: 'A pack is complete at 90% or higher across notes, flashcards, quizzes, and listening progress.',
+            whyItMatters: 'Completion shows broad coverage. Check mastery and recall to confirm that the covered material is secure.',
+          }))}
+          style={({ pressed }) => [styles.splitMetric, pressed && styles.statPressed]}
+        >
           <View style={[styles.bigStatusIcon, { backgroundColor: colors.mintSoft }]}><Icon name="check-bold" color={colors.mint} size={25} /></View>
           <Text style={[styles.splitValue, { color: colors.text }]}>{methods.packsCompleted}</Text>
           <Text style={[styles.splitLabel, { color: colors.textMuted }]}>Completed</Text>
-        </View>
+        </Pressable>
         <View style={[styles.splitDivider, { backgroundColor: colors.border }]} />
-        <View style={styles.splitMetric}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${methods.packsIncomplete} Study Packs in progress. Tap for details`}
+          onPress={() => showStatDetail(makeStatDetail('Study Packs in progress', `${methods.packsIncomplete}`, 'Packs below 90% completion', {
+            description: 'Study Packs that still have meaningful coverage left across one or more learning modes.',
+            calculation: 'Every pack below 90% weighted completion is counted as in progress.',
+            whyItMatters: 'Open pack coverage to see where notes, cards, a quiz, or listening can close the remaining gap.',
+          }))}
+          style={({ pressed }) => [styles.splitMetric, pressed && styles.statPressed]}
+        >
           <View style={[styles.bigStatusIcon, { backgroundColor: colors.primarySoft }]}><Icon name="progress-clock" color={colors.primary} size={25} /></View>
           <Text style={[styles.splitValue, { color: colors.text }]}>{methods.packsIncomplete}</Text>
           <Text style={[styles.splitLabel, { color: colors.textMuted }]}>In progress</Text>
-        </View>
+        </Pressable>
       </Card>
       <View style={[styles.stack, { marginTop: 10 }]}>
         {analytics.packs.map((pack) => <PackRow key={pack.id} pack={pack} />)}
@@ -538,12 +696,21 @@ function MethodAnalytics({ analytics }: { analytics: AnalyticsSnapshot }) {
 
 function MetricCard({ icon, label, value, detail, tone, muted = false }: { icon: IconName; label: string; value: string; detail: string; tone: 'blue' | 'mint' | 'purple' | 'orange' | 'red'; muted?: boolean }) {
   const { colors } = useStudyBolt();
+  const showStatDetail = useStatDetail();
   const color = tone === 'mint' ? colors.mint : tone === 'purple' ? colors.purple : tone === 'orange' ? colors.warning : tone === 'red' ? colors.danger : colors.primary;
   const background = tone === 'mint' ? colors.mintSoft : tone === 'purple' ? colors.purpleSoft : tone === 'orange' ? `${colors.warning}18` : tone === 'red' ? `${colors.danger}14` : colors.primarySoft;
+  const displayedValue = muted ? '—' : value;
   return (
-    <Card style={[styles.metricCard, muted && { opacity: 0.72 }]}>
-      <View style={[styles.metricIcon, { backgroundColor: background }]}><Icon name={icon} size={19} color={color} /></View>
-      <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.metricValue, { color: muted ? colors.textMuted : colors.text }]}>{muted ? '—' : value}</Text>
+    <Card
+      accessibilityLabel={`${label}, ${displayedValue}. Tap for details`}
+      onPress={() => showStatDetail(makeStatDetail(label, displayedValue, detail))}
+      style={[styles.metricCard, muted && { opacity: 0.78 }]}
+    >
+      <View style={styles.metricTopRow}>
+        <View style={[styles.metricIcon, { backgroundColor: background }]}><Icon name={icon} size={19} color={color} /></View>
+        <View style={[styles.metricInfo, { backgroundColor: colors.cardStrong }]}><Icon name="information-outline" size={14} color={colors.textMuted} /></View>
+      </View>
+      <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.metricValue, { color: muted ? colors.textMuted : colors.text }]}>{displayedValue}</Text>
       <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>{label}</Text>
       <Text style={[styles.metricDetail, { color: colors.textMuted }]}>{detail}</Text>
     </Card>
@@ -552,38 +719,71 @@ function MetricCard({ icon, label, value, detail, tone, muted = false }: { icon:
 
 function RiskConceptRow({ concept, last }: { concept: ConceptInsight; last: boolean }) {
   const { colors } = useStudyBolt();
+  const showStatDetail = useStatDetail();
   const probability = concept.recallProbability ?? 0;
   const color = probability >= 70 ? colors.mint : probability >= 50 ? colors.warning : colors.danger;
   return (
-    <View style={[styles.conceptRow, !last && { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }]}>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${concept.title}, ${probability}% recall probability. Tap for details`}
+      onPress={() => showStatDetail(makeStatDetail(`${concept.title} recall probability`, `${probability}%`, `${concept.courseName} · ${concept.lastEvidenceAt ? `last evidence ${formatDate(concept.lastEvidenceAt)}` : 'no dated evidence'}`, {
+        description: 'The estimated chance that you could retrieve this concept right now without seeing the answer.',
+        calculation: 'The active retention model combines this concept’s dated review history, current mastery, and elapsed time.',
+        whyItMatters: 'A low value or overdue status means a retrieval attempt now is likely to be useful.',
+      }))}
+      style={({ pressed }) => [styles.conceptRow, !last && { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }, pressed && styles.statPressed]}
+    >
       <View style={[styles.riskIcon, { backgroundColor: `${color}16` }]}><Icon name="memory" color={color} size={19} /></View>
       <View style={{ flex: 1 }}>
         <Text numberOfLines={2} style={[styles.rowTitle, { color: colors.text }]}>{concept.title}</Text>
         <Text style={[styles.rowMeta, { color: colors.textMuted }]}>{concept.courseName} · {concept.lastEvidenceAt ? `last evidence ${formatDate(concept.lastEvidenceAt)}` : 'no dated evidence'}</Text>
       </View>
       <View style={styles.conceptScore}><Text style={[styles.conceptPercent, { color }]}>{probability}%</Text><Text style={[styles.riskLabel, { color: colors.textMuted }]}>RECALL</Text></View>
-    </View>
+      <Icon name="chevron-right" size={17} color={colors.textMuted} />
+    </Pressable>
   );
 }
 
 function CalibrationCell({ label, value, color, background }: { label: string; value: number; color: string; background: string }) {
+  const showStatDetail = useStatDetail();
   return (
-    <View style={[styles.calibrationCell, { backgroundColor: background }]}>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${label}, ${value} answers. Tap for details`}
+      onPress={() => showStatDetail(makeStatDetail(label, `${value}`, 'Confidence-rated quiz answers', {
+        description: `${label} counts answers grouped by whether your confidence matched the outcome.`,
+        calculation: 'Your answer confidence at submission is paired with whether the answer was correct, then matching outcomes are counted.',
+        whyItMatters: label === 'Confidently wrong' ? 'These are high-value review targets because the misconception may feel reliable.' : 'Use this group to understand whether your self-judgment matches tested performance.',
+      }))}
+      style={({ pressed }) => [styles.calibrationCell, { backgroundColor: background }, pressed && styles.statPressed]}
+    >
       <Text style={[styles.calibrationValue, { color }]}>{value}</Text>
       <Text style={[styles.calibrationLabel, { color }]}>{label}</Text>
-    </View>
+    </Pressable>
   );
 }
 
 function BreakdownRows({ values }: { values: BreakdownValue[] }) {
   const { colors } = useStudyBolt();
+  const showStatDetail = useStatDetail();
   return (
     <>
       {values.map((item, index) => (
-        <View key={item.label} style={[styles.performanceRow, index > 0 && { borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth }]}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${friendlyLabel(item.label)} performance, ${item.value === null ? 'not enough data' : `${item.value}%`}. Tap for details`}
+          key={item.label}
+          onPress={() => showStatDetail(makeStatDetail(`${friendlyLabel(item.label)} performance`, item.value === null ? '—' : `${item.value}%`, item.count ? `${item.count} recorded attempts` : 'Not collected by the current study tools', {
+            description: `Your observed accuracy when practicing with ${friendlyLabel(item.label).toLowerCase()} prompts.`,
+            calculation: 'Correct answers and partial-credit points for this question type are divided by its recorded attempts.',
+            whyItMatters: 'Compare question types with enough attempts to find formats that may need a different practice strategy.',
+          }))}
+          style={({ pressed }) => [styles.performanceRow, index > 0 && { borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth }, pressed && styles.statPressed]}
+        >
           <View style={{ flex: 1 }}><Text style={[styles.rowTitle, { color: colors.text }]}>{friendlyLabel(item.label)}</Text><Text style={[styles.rowMeta, { color: colors.textMuted }]}>{item.count ? `${item.count} recorded attempts` : 'Not collected by the current study tools'}</Text></View>
           <Text style={[styles.performanceValue, { color: item.value === null ? colors.textMuted : colors.primary }]}>{item.value === null ? '—' : `${item.value}%`}</Text>
-        </View>
+          <Icon name="chevron-right" size={17} color={colors.textMuted} />
+        </Pressable>
       ))}
     </>
   );
@@ -591,15 +791,26 @@ function BreakdownRows({ values }: { values: BreakdownValue[] }) {
 
 function DistributionCard({ values }: { values: DistributionValue[] }) {
   const { colors } = useStudyBolt();
+  const showStatDetail = useStatDetail();
   return (
     <Card>
       {values.map((item, index) => {
         const color = index === values.length - 1 ? colors.mint : index === 0 ? colors.textMuted : colors.primary;
         return (
-          <View key={item.label} style={[styles.distributionRow, index > 0 && { borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth }]}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`${item.label}, ${item.count} concepts, ${item.percent}%. Tap for details`}
+            key={item.label}
+            onPress={() => showStatDetail(makeStatDetail(`${item.label} concepts`, `${item.percent}%`, `${item.count} concepts in this band`, {
+              description: `The share of your tracked concepts currently classified as ${item.label.toLowerCase()}.`,
+              calculation: 'Concepts are placed into this band from their current mastery estimate, then divided by all tracked concepts.',
+              whyItMatters: 'The full distribution shows whether progress is broad or concentrated in only a few concepts.',
+            }))}
+            style={({ pressed }) => [styles.distributionRow, index > 0 && { borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth }, pressed && styles.statPressed]}
+          >
             <View style={styles.distributionHeading}><Text style={[styles.rowTitle, { color: colors.text }]}>{item.label}</Text><Text style={[styles.distributionValue, { color }]}>{item.count} · {item.percent}%</Text></View>
             <ProgressBar progress={item.percent} color={color} />
-          </View>
+          </Pressable>
         );
       })}
     </Card>
@@ -618,9 +829,19 @@ function MethodologyRow({ icon, title, detail, bordered = false }: { icon: IconN
 
 function ConceptRow({ concept, rank, last }: { concept: ConceptInsight; rank?: number; last: boolean }) {
   const { colors } = useStudyBolt();
+  const showStatDetail = useStatDetail();
   const color = concept.mastery >= 80 ? colors.mint : concept.mastery >= 55 ? colors.warning : colors.danger;
   return (
-    <View style={[styles.conceptRow, !last && { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }]}>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${concept.title}, ${concept.mastery}% mastery. Tap for details`}
+      onPress={() => showStatDetail(makeStatDetail(`${concept.title} mastery`, `${concept.mastery}%`, `${concept.courseName} · ${concept.reviewCount} recorded reviews${concept.due ? ' · due now' : ''}`, {
+        description: 'Your current demonstrated knowledge estimate for this concept.',
+        calculation: 'The estimate blends the card’s current confidence rating with accuracy from quiz questions in the same source section.',
+        whyItMatters: concept.due ? 'This concept is due. A retrieval attempt now will both strengthen it and add better evidence.' : 'Use the estimate with due status and last evidence date to choose when to review.',
+      }))}
+      style={({ pressed }) => [styles.conceptRow, !last && { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }, pressed && styles.statPressed]}
+    >
       {rank ? <View style={[styles.rank, { backgroundColor: `${color}18` }]}><Text style={[styles.rankText, { color }]}>{rank}</Text></View> : null}
       <View style={{ flex: 1 }}>
         <Text numberOfLines={2} style={[styles.rowTitle, { color: colors.text }]}>{concept.title}</Text>
@@ -630,7 +851,8 @@ function ConceptRow({ concept, rank, last }: { concept: ConceptInsight; rank?: n
         <Text style={[styles.conceptPercent, { color }]}>{concept.mastery}%</Text>
         {concept.due ? <Text style={[styles.dueText, { color: colors.danger }]}>DUE</Text> : null}
       </View>
-    </View>
+      <Icon name="chevron-right" size={17} color={colors.textMuted} />
+    </Pressable>
   );
 }
 
@@ -649,43 +871,73 @@ function StatusSection({ title, action, concepts, icon }: { title: string; actio
 
 function ProgressRow({ label, detail, value, last }: { label: string; detail: string; value: number; last: boolean }) {
   const { colors } = useStudyBolt();
+  const showStatDetail = useStatDetail();
   const color = value >= 80 ? colors.mint : value >= 55 ? colors.primary : colors.danger;
   return (
-    <View style={[styles.topicRow, !last && { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }]}>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${label}, ${value}% mastery. Tap for details`}
+      onPress={() => showStatDetail(makeStatDetail(`${label} mastery`, `${value}%`, detail, {
+        description: 'Your current mastery estimate for this topic, based on its concepts and matching quiz evidence.',
+        calculation: 'StudyBolt averages concept mastery in this source section and includes question accuracy when matching answers are available.',
+        whyItMatters: 'Topic-level results narrow a broad class score into a specific area you can act on next.',
+      }))}
+      style={({ pressed }) => [styles.topicRow, !last && { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }, pressed && styles.statPressed]}
+    >
       <View style={styles.progressHeading}>
         <View style={{ flex: 1 }}><Text style={[styles.rowTitle, { color: colors.text }]}>{label}</Text><Text style={[styles.rowMeta, { color: colors.textMuted }]}>{detail}</Text></View>
         <Text style={[styles.progressValue, { color }]}>{value}%</Text>
       </View>
       <ProgressBar progress={value} color={color} />
-    </View>
+    </Pressable>
   );
 }
 
 function PackRow({ pack }: { pack: AnalyticsSnapshot['packs'][number] }) {
   const { colors } = useStudyBolt();
+  const showStatDetail = useStatDetail();
   return (
-    <Card style={styles.packCard}>
+    <Card
+      accessibilityLabel={`${pack.title}, ${pack.completion}% complete. Tap for details`}
+      onPress={() => showStatDetail(makeStatDetail(`${pack.title} completion`, `${pack.completion}%`, `${pack.remaining}% remaining · ${pack.courseName}`, {
+        description: 'Weighted activity coverage for this Study Pack across its learning modes.',
+        calculation: 'Reviewed notes contribute 30%, attempted flashcards 35%, quiz completion 25%, and listening progress 10%.',
+        whyItMatters: 'Use the remaining percentage to find untouched activities, then use mastery and recall to judge understanding.',
+      }))}
+      style={styles.packCard}
+    >
       <View style={styles.progressHeading}>
         <View style={{ flex: 1 }}><Text numberOfLines={1} style={[styles.progressTitle, { color: colors.text }]}>{pack.title}</Text><Text style={[styles.rowMeta, { color: colors.textMuted }]}>{pack.courseName}</Text></View>
         <Text style={[styles.progressValue, { color: pack.color }]}>{pack.completion}%</Text>
       </View>
       <ProgressBar progress={pack.completion} color={pack.color} />
-      <Text style={[styles.progressMeta, { color: colors.textMuted }]}>{pack.remaining}% of this pack remains</Text>
+      <View style={styles.packMetaRow}><Text style={[styles.progressMeta, { color: colors.textMuted }]}>{pack.remaining}% of this pack remains</Text><Icon name="information-outline" size={15} color={colors.textMuted} /></View>
     </Card>
   );
 }
 
 function BreakdownCard({ title, values }: { title: string; values: BreakdownValue[] }) {
   const { colors } = useStudyBolt();
+  const showStatDetail = useStatDetail();
   return (
     <Card style={styles.breakdownCard}>
       <Text style={[styles.breakdownTitle, { color: colors.text }]}>{title}</Text>
       {values.map((item) => (
-        <View key={item.label} style={styles.breakdownRow}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${friendlyLabel(item.label)}, ${item.value === null ? 'not enough data' : `${item.value}%`}. Tap for details`}
+          key={item.label}
+          onPress={() => showStatDetail(makeStatDetail(`${friendlyLabel(item.label)} accuracy`, item.value === null ? '—' : `${item.value}%`, `${item.count} recorded questions · ${title.toLowerCase()}`, {
+            description: `Your quiz accuracy for the ${friendlyLabel(item.label).toLowerCase()} group.`,
+            calculation: 'Correct answers and partial-credit points in this group are divided by its recorded answers.',
+            whyItMatters: 'Compare groups only when they have enough attempts; a small sample can move sharply after one answer.',
+          }))}
+          style={({ pressed }) => [styles.breakdownRow, pressed && styles.statPressed]}
+        >
           <Text style={[styles.breakdownLabel, { color: colors.textSecondary }]}>{friendlyLabel(item.label)}</Text>
           <Text style={[styles.breakdownValue, { color: item.value === null ? colors.textMuted : colors.text }]}>{item.value === null ? '—' : `${item.value}%`}</Text>
           <Text style={[styles.breakdownCount, { color: colors.textMuted }]}>{item.count} Q</Text>
-        </View>
+        </Pressable>
       ))}
     </Card>
   );
@@ -693,18 +945,29 @@ function BreakdownCard({ title, values }: { title: string; values: BreakdownValu
 
 function BarChart({ values, labels, minutes = false }: { values: number[]; labels: string[]; minutes?: boolean }) {
   const { colors } = useStudyBolt();
+  const showStatDetail = useStatDetail();
   const max = Math.max(1, ...values);
   if (!values.length) return <EmptyInsight icon="chart-bar" title="No trend yet" detail="Complete a quiz to start this chart." />;
   return (
     <View style={styles.chart}>
       {values.map((value, index) => (
-        <View key={`${labels[index]}-${index}`} style={styles.chartColumn}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${labels[index]}, ${value}${minutes ? ' minutes' : '%'}. Tap for details`}
+          key={`${labels[index]}-${index}`}
+          onPress={() => showStatDetail(makeStatDetail(minutes ? `${labels[index]} study activity` : `Quiz run ${labels[index]}`, minutes ? formatMinutes(value) : `${value}%`, minutes ? 'Tracked study time for this day' : 'Recorded score for this completed run', {
+            description: minutes ? 'The tracked study duration for this day in the seven-day view.' : 'The score recorded for this quiz or cumulative-test run.',
+            calculation: minutes ? 'Durations from tracked study events on this calendar day are added together.' : 'Earned answer credit is divided by available question credit for the completed run.',
+            whyItMatters: minutes ? 'Compare adjacent days to see whether study is distributed across the week.' : 'Compare runs to see direction, but remember that topic and difficulty can vary.',
+          }))}
+          style={({ pressed }) => [styles.chartColumn, pressed && styles.statPressed]}
+        >
           <Text style={[styles.chartValue, { color: colors.textSecondary }]}>{minutes ? value : `${value}%`}</Text>
           <View style={[styles.barTrack, { backgroundColor: colors.cardStrong }]}>
             <View style={[styles.bar, { height: `${Math.max(value ? 8 : 0, (value / max) * 100)}%`, backgroundColor: index === values.length - 1 ? colors.purple : colors.primary }]} />
           </View>
           <Text style={[styles.dayLabel, { color: colors.textMuted }]}>{labels[index]}</Text>
-        </View>
+        </Pressable>
       ))}
     </View>
   );
@@ -712,29 +975,43 @@ function BarChart({ values, labels, minutes = false }: { values: number[]; label
 
 function HorizontalValue({ label, value, max, formatted, color, last }: { label: string; value: number; max: number; formatted: string; color: string; last: boolean }) {
   const { colors } = useStudyBolt();
+  const showStatDetail = useStatDetail();
   return (
-    <View style={[styles.horizontalRow, !last && { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }]}>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${label}, ${formatted} study time. Tap for details`}
+      onPress={() => showStatDetail(makeStatDetail(`${label} study time`, formatted, `${Math.round((value / Math.max(1, max)) * 100)}% of the largest value in this list`, {
+        description: `Tracked study activity associated with ${label}.`,
+        calculation: 'Durations from study events assigned to this class or Study Pack are added together.',
+        whyItMatters: 'The bar is relative to the largest item in this list. Time shows allocation, while mastery shows the result.',
+      }))}
+      style={({ pressed }) => [styles.horizontalRow, !last && { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }, pressed && styles.statPressed]}
+    >
       <View style={styles.progressHeading}><Text numberOfLines={1} style={[styles.rowTitle, { color: colors.text, flex: 1 }]}>{label}</Text><Text style={[styles.horizontalValue, { color }]}>{formatted}</Text></View>
       <ProgressBar progress={(value / max) * 100} color={color} />
-    </View>
+    </Pressable>
   );
 }
 
 function MethodCard({ icon, color, background, title, value, detail }: { icon: IconName; color: string; background: string; title: string; value: string; detail: string }) {
   const { colors } = useStudyBolt();
+  const showStatDetail = useStatDetail();
   return (
-    <Card style={styles.methodCard}>
+    <Card accessibilityLabel={`${title}, ${value}. Tap for details`} onPress={() => showStatDetail(makeStatDetail(title, value, detail))} style={styles.methodCard}>
       <View style={[styles.methodIcon, { backgroundColor: background }]}><Icon name={icon} color={color} size={24} /></View>
       <View style={{ flex: 1 }}><Text style={[styles.methodTitle, { color: colors.text }]}>{title}</Text><Text style={[styles.methodDetail, { color: colors.textMuted }]}>{detail}</Text></View>
       <Text style={[styles.methodValue, { color }]}>{value}</Text>
+      <Icon name="chevron-right" size={18} color={colors.textMuted} />
     </Card>
   );
 }
 
 function CompactStat({ label, value }: { label: string; value: string }) {
   const { colors } = useStudyBolt();
+  const showStatDetail = useStatDetail();
   return (
-    <Card style={styles.compactStat}>
+    <Card accessibilityLabel={`${label}, ${value}. Tap for details`} onPress={() => showStatDetail(makeStatDetail(label, value, 'Based on your recorded StudyBolt activity'))} style={styles.compactStat}>
+      <View style={styles.compactTopRow}><Icon name="information-outline" size={14} color={colors.textMuted} /></View>
       <Text numberOfLines={2} adjustsFontSizeToFit style={[styles.compactValue, { color: colors.text }]}>{value}</Text>
       <Text style={[styles.compactLabel, { color: colors.textMuted }]}>{label}</Text>
     </Card>
@@ -771,11 +1048,34 @@ function readinessLabel(value: number): string {
 }
 
 const styles = StyleSheet.create({
+  screenShell: { flex: 1 },
   title: { fontSize: 29, lineHeight: 35, fontWeight: '900', letterSpacing: -1 },
   subtitle: { fontSize: 13, lineHeight: 19, marginTop: 5, marginBottom: 17, maxWidth: 510 },
   tabs: { gap: 7, paddingBottom: 4 },
   tab: { height: 39, borderRadius: 13, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 6 },
   tabText: { fontSize: 11, fontWeight: '800' },
+  tapHint: { minHeight: 42, borderRadius: 13, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 9, marginTop: 10 },
+  tapHintText: { flex: 1, fontSize: 10, lineHeight: 14, fontWeight: '700' },
+  modalRoot: { flex: 1, justifyContent: 'flex-end', alignItems: 'center' },
+  modalBackdrop: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: 'rgba(4, 9, 20, 0.56)' },
+  detailSheet: { width: '100%', maxWidth: 620, maxHeight: '88%', borderTopLeftRadius: 28, borderTopRightRadius: 28, borderWidth: StyleSheet.hairlineWidth, paddingTop: 9, shadowColor: '#000000', shadowOffset: { width: 0, height: -8 }, shadowOpacity: 0.18, shadowRadius: 24, elevation: 18 },
+  sheetHandle: { width: 38, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 8 },
+  detailHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 8 },
+  detailEyebrow: { fontSize: 9, lineHeight: 12, fontWeight: '900', letterSpacing: 1.1 },
+  detailTitle: { fontSize: 24, lineHeight: 30, fontWeight: '900', letterSpacing: -0.65, marginTop: 2 },
+  detailClose: { width: 38, height: 38, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  detailScroll: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 34, gap: 10 },
+  detailValueCard: { minHeight: 116, borderRadius: 20, padding: 17, justifyContent: 'center' },
+  detailValueLabel: { fontSize: 9, lineHeight: 12, fontWeight: '900', letterSpacing: 1 },
+  detailValue: { fontSize: 32, lineHeight: 39, fontWeight: '900', letterSpacing: -0.8, marginTop: 3 },
+  detailSupporting: { fontSize: 11, lineHeight: 16, marginTop: 3 },
+  detailSection: { flexDirection: 'row', alignItems: 'flex-start', gap: 11, borderRadius: 17, padding: 13 },
+  detailSectionIcon: { width: 36, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  detailSectionTitle: { fontSize: 12, lineHeight: 16, fontWeight: '900' },
+  detailSectionBody: { fontSize: 11, lineHeight: 17, marginTop: 3 },
+  estimateNote: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 13, marginTop: 2 },
+  estimateNoteText: { flex: 1, fontSize: 9, lineHeight: 14 },
+  statPressed: { opacity: 0.66 },
   advancedHero: { marginTop: 14, flexDirection: 'row', alignItems: 'center', gap: 12 },
   advancedHeroIcon: { width: 46, height: 46, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   advancedHeroTitle: { fontSize: 14, fontWeight: '900' },
@@ -791,7 +1091,9 @@ const styles = StyleSheet.create({
   confidenceText: { flex: 1, color: '#AAB6C2', fontSize: 10, lineHeight: 14 },
   metricGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 9 },
   metricCard: { width: '48%', minHeight: 140, padding: 14 },
+  metricTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   metricIcon: { width: 35, height: 35, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  metricInfo: { width: 25, height: 25, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
   metricValue: { fontSize: 21, lineHeight: 27, fontWeight: '900', letterSpacing: -0.5, marginTop: 9 },
   metricLabel: { fontSize: 11, lineHeight: 15, fontWeight: '800', marginTop: 1 },
   metricDetail: { fontSize: 9, lineHeight: 13, marginTop: 4 },
@@ -836,6 +1138,7 @@ const styles = StyleSheet.create({
   progressValue: { fontSize: 12, fontWeight: '900' },
   progressMeta: { fontSize: 9, marginTop: 7 },
   packCard: { padding: 14 },
+  packMetaRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 8 },
   sectionHero: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 },
   heroIcon: { width: 43, height: 43, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   sectionHeroTitle: { fontSize: 13, fontWeight: '900' },
@@ -872,6 +1175,7 @@ const styles = StyleSheet.create({
   missBadgeText: { fontSize: 12, fontWeight: '900' },
   compactStats: { flexDirection: 'row', flexWrap: 'wrap', gap: 9 },
   compactStat: { width: '48%', minHeight: 89, justifyContent: 'center', padding: 14 },
+  compactTopRow: { position: 'absolute', right: 10, top: 10 },
   compactValue: { fontSize: 16, lineHeight: 21, fontWeight: '900' },
   compactLabel: { fontSize: 9, lineHeight: 13, marginTop: 4 },
   goalCard: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 },

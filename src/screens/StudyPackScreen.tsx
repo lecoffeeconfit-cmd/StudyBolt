@@ -95,6 +95,7 @@ export function StudyPackScreen({
   onPlan,
   onStartStudy,
   onOpenExam,
+  onOpenVisualReview,
   onRequireAuth,
 }: {
   deckId: string;
@@ -107,6 +108,7 @@ export function StudyPackScreen({
   onPlan: (deckId: string) => void;
   onStartStudy?: (mode: SmartStudyMode, deckId: string) => void;
   onOpenExam?: (deckId?: string) => void;
+  onOpenVisualReview?: (deckId: string) => void;
   onRequireAuth?: () => void;
 }) {
   const { colors, state } = useStudyBolt();
@@ -167,7 +169,7 @@ export function StudyPackScreen({
         })}
       </ScrollView>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {tool === 'overview' ? <Overview deck={deck} onTool={setTool} onPlan={() => onPlan(deck.id)} onStartStudy={onStartStudy ? (mode) => onStartStudy(mode, deck.id) : undefined} shared={shared} /> : null}
+        {tool === 'overview' ? <Overview deck={deck} onTool={setTool} onPlan={() => onPlan(deck.id)} onStartStudy={onStartStudy ? (mode) => onStartStudy(mode, deck.id) : undefined} onOpenVisualReview={onOpenVisualReview ? () => onOpenVisualReview(deck.id) : undefined} shared={shared} /> : null}
         {tool === 'notes' ? <Notes deck={deck} readOnly={shared} /> : null}
         {tool === 'flashcards' ? <Flashcards deck={deck} readOnly={shared} /> : null}
         {tool === 'quiz' ? <Quiz deck={deck} readOnly={shared} onOpenExam={onOpenExam} /> : null}
@@ -179,9 +181,10 @@ export function StudyPackScreen({
   );
 }
 
-function Overview({ deck, onTool, onPlan, onStartStudy, shared }: { deck: StudyPack; onTool: (tool: StudyTool) => void; onPlan: () => void; onStartStudy?: (mode: SmartStudyMode) => void; shared?: boolean }) {
+function Overview({ deck, onTool, onPlan, onStartStudy, onOpenVisualReview, shared }: { deck: StudyPack; onTool: (tool: StudyTool) => void; onPlan: () => void; onStartStudy?: (mode: SmartStudyMode) => void; onOpenVisualReview?: () => void; shared?: boolean }) {
   const { colors, state } = useStudyBolt();
   const mastery = calculateMastery(deck);
+  const visualReviewCount = deck.visualSummary?.visualsNeedingReview ?? deck.visuals?.filter((visual) => visual.needsUserReview && visual.status !== 'resolved_ai' && visual.status !== 'skipped_by_user').length ?? 0;
   return (
     <>
       <View style={styles.deckHero}>
@@ -242,6 +245,17 @@ function Overview({ deck, onTool, onPlan, onStartStudy, shared }: { deck: StudyP
       <Card style={styles.flatCard}>
         <Text style={[styles.overviewText, { color: colors.textSecondary }]}>{deck.overview}</Text>
       </Card>
+
+      {!shared && visualReviewCount > 0 && onOpenVisualReview ? (
+        <Card onPress={onOpenVisualReview} style={[styles.visualReviewBanner, styles.flatCard, { backgroundColor: colors.purpleSoft, borderColor: `${colors.purple}44` }]}>
+          <View style={[styles.visualReviewIcon, { backgroundColor: colors.purple }]}><Icon name="image-search-outline" size={22} color="#FFFFFF" /></View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.visualReviewTitle, { color: colors.text }]}>Visuals to review</Text>
+            <Text style={[styles.visualReviewText, { color: colors.textSecondary }]}>{visualReviewCount} visual{visualReviewCount === 1 ? '' : 's'} may contain extra lecture detail. Review them when you’re ready.</Text>
+          </View>
+          <Icon name="chevron-right" color={colors.purple} />
+        </Card>
+      ) : null}
 
       <SectionHeader title="Slide outline" action="Source order" />
       <View style={styles.outlineList}>
@@ -1606,6 +1620,10 @@ const styles = StyleSheet.create({
   deckAdaptiveTitle: { fontSize: 11, fontWeight: '900' },
   deckAdaptiveText: { fontSize: 8, marginTop: 2, opacity: 0.78 },
   overviewText: { fontSize: 13, lineHeight: 20 },
+  visualReviewBanner: { marginTop: 12, padding: 13, flexDirection: 'row', alignItems: 'center', gap: 11, borderWidth: StyleSheet.hairlineWidth },
+  visualReviewIcon: { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  visualReviewTitle: { fontSize: 13, fontWeight: '900' },
+  visualReviewText: { fontSize: 10, lineHeight: 15, marginTop: 3 },
   outlineList: { gap: 8 },
   outlineCard: { flexDirection: 'row', alignItems: 'center', padding: 12, gap: 11 },
   outlineNumber: { width: 35, height: 35, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
