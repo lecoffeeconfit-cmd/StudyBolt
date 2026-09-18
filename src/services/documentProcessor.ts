@@ -12,9 +12,27 @@ import {
 
 export const MAX_IMPORT_BYTES = 100 * 1024 * 1024;
 const PROCESSOR_TIMEOUT_MS = 180_000;
+const BUILT_IN_PROCESSOR_URL = 'https://kbyeyobbhhnafscygiel.supabase.co/functions/v1/studybolt-process-document';
 const manifestProcessorUrl = typeof Constants.expoConfig?.extra?.studyboltProcessorUrl === 'string'
   ? Constants.expoConfig.extra.studyboltProcessorUrl.trim()
   : '';
+
+function isLegacyProcessorUrl(value: string): boolean {
+  return /studybolt-api\.duckdns\.org/i.test(value);
+}
+
+/**
+ * Resolve the production route from the app manifest, with a source-level
+ * fallback for builds that do not expose Expo extras. This keeps a stale
+ * build-time auth URL from routing uploads to an old host; a custom processor
+ * URL remains the escape hatch for local development and alternate deployments.
+ */
+export function resolveProcessorEndpoint(): string {
+  const customProcessorUrl = process.env.EXPO_PUBLIC_STUDYBOLT_PROCESSOR_URL?.trim();
+  if (customProcessorUrl && !isLegacyProcessorUrl(customProcessorUrl)) return customProcessorUrl;
+  if (manifestProcessorUrl && !isLegacyProcessorUrl(manifestProcessorUrl)) return manifestProcessorUrl;
+  return BUILT_IN_PROCESSOR_URL;
+}
 
 export class StudyBoltProcessingError extends Error {
   constructor(
@@ -105,10 +123,7 @@ export async function processDocument(asset: ImportAsset, courseName: string, ac
   if (!documentType) {
     throw new StudyBoltProcessingError('Unsupported document type', 'Choose a PDF, PowerPoint, or notes file and try again.');
   }
-  const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL?.replace(/\/$/, '');
-  const endpoint = process.env.EXPO_PUBLIC_STUDYBOLT_PROCESSOR_URL?.trim()
-    || (supabaseUrl ? `${supabaseUrl}/functions/v1/studybolt-process-document` : '')
-    || manifestProcessorUrl;
+  const endpoint = resolveProcessorEndpoint();
   const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
   if (!endpoint) {
     throw new StudyBoltProcessingError(

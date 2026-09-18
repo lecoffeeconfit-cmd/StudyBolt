@@ -65,6 +65,9 @@ export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSucc
       validateImport(asset);
       ticker = setInterval(() => setStage((value) => Math.min(STAGES.length - 1, value + 1)), 1100);
       void getAccessToken()
+        // Uploads are public guest-safe; a failed/expired auth refresh must not
+        // prevent the document request from reaching the processor.
+        .catch(() => null)
         .then((accessToken) => processDocument(asset, className.trim(), accessToken))
         .then((deck) => {
           if (!mounted) return;

@@ -61,15 +61,15 @@ export function VisualReviewScreen({ deckId, onBack }: { deckId: string; onBack:
 
   const skip = (visualId: string) => updateVisual(visualId, (visual) => ({ ...visual, status: 'skipped_by_user' }));
 
-  const analyze = async (visual: VisualKnowledge) => {
+  const analyze = async (visual: VisualKnowledge): Promise<boolean> => {
     if (!visual.imageDataUrl || !visual.documentId) {
       updateVisual(visual.id, (current) => ({ ...current, status: 'analysis_failed', aiError: 'This visual preview is unavailable. You can still use the surrounding study material.' }));
-      return;
+      return false;
     }
     const accessToken = await getAccessToken();
     if (!accessToken) {
       updateVisual(visual.id, (current) => ({ ...current, status: 'allowance_unavailable', aiError: 'Sign in to use optional visual AI analysis.' }));
-      return;
+      return false;
     }
     setBusyId(visual.id);
     updateVisual(visual.id, (current) => ({ ...current, status: 'analyzing_ai', aiError: undefined }));
@@ -91,6 +91,7 @@ export function VisualReviewScreen({ deckId, onBack }: { deckId: string; onBack:
       updateVisual(visual.id, (current) => ({ ...current, status: result.code === 'monthly_limit' || result.code === 'cloud_budget' ? 'allowance_unavailable' : 'analysis_failed', aiError: result.error }));
     }
     setBusyId(null);
+    return Boolean(!result.analysis && (result.code === 'monthly_limit' || result.code === 'cloud_budget'));
   };
 
   const analyzeAll = () => {
@@ -101,7 +102,10 @@ export function VisualReviewScreen({ deckId, onBack }: { deckId: string; onBack:
       { text: `Analyze ${selectable.length}`, onPress: () => {
         setBatchBusy(true);
         void (async () => {
-          for (const visual of selectable) await analyze(visual);
+          for (const visual of selectable) {
+            const allowanceStopped = await analyze(visual);
+            if (allowanceStopped) break;
+          }
           setBatchBusy(false);
         })();
       } },

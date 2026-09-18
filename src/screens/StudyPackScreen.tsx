@@ -184,7 +184,10 @@ export function StudyPackScreen({
 function Overview({ deck, onTool, onPlan, onStartStudy, onOpenVisualReview, shared }: { deck: StudyPack; onTool: (tool: StudyTool) => void; onPlan: () => void; onStartStudy?: (mode: SmartStudyMode) => void; onOpenVisualReview?: () => void; shared?: boolean }) {
   const { colors, state } = useStudyBolt();
   const mastery = calculateMastery(deck);
-  const visualReviewCount = deck.visualSummary?.visualsNeedingReview ?? deck.visuals?.filter((visual) => visual.needsUserReview && visual.status !== 'resolved_ai' && visual.status !== 'skipped_by_user').length ?? 0;
+  const reviewVisuals = deck.visuals?.filter((visual) => visual.needsUserReview && visual.status !== 'resolved_ai') ?? [];
+  const activeVisualReviewCount = reviewVisuals.filter((visual) => visual.status !== 'skipped_by_user').length;
+  const skippedVisualReviewCount = reviewVisuals.length - activeVisualReviewCount;
+  const visualReviewCount = deck.visuals ? reviewVisuals.length : deck.visualSummary?.visualsNeedingReview ?? 0;
   return (
     <>
       <View style={styles.deckHero}>
@@ -250,8 +253,8 @@ function Overview({ deck, onTool, onPlan, onStartStudy, onOpenVisualReview, shar
         <Card onPress={onOpenVisualReview} style={[styles.visualReviewBanner, styles.flatCard, { backgroundColor: colors.purpleSoft, borderColor: `${colors.purple}44` }]}>
           <View style={[styles.visualReviewIcon, { backgroundColor: colors.purple }]}><Icon name="image-search-outline" size={22} color="#FFFFFF" /></View>
           <View style={{ flex: 1 }}>
-            <Text style={[styles.visualReviewTitle, { color: colors.text }]}>Visuals to review</Text>
-            <Text style={[styles.visualReviewText, { color: colors.textSecondary }]}>{visualReviewCount} visual{visualReviewCount === 1 ? '' : 's'} may contain extra lecture detail. Review them when you’re ready.</Text>
+            <Text style={[styles.visualReviewTitle, { color: colors.text }]}>{activeVisualReviewCount ? 'Visuals to review' : 'Review skipped visuals'}</Text>
+            <Text style={[styles.visualReviewText, { color: colors.textSecondary }]}>{activeVisualReviewCount ? `${activeVisualReviewCount} visual${activeVisualReviewCount === 1 ? '' : 's'} may contain extra lecture detail. Review them when you’re ready.` : `${skippedVisualReviewCount} skipped visual${skippedVisualReviewCount === 1 ? '' : 's'} remain available if you change your mind.`}</Text>
           </View>
           <Icon name="chevron-right" color={colors.purple} />
         </Card>
