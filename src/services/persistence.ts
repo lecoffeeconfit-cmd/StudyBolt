@@ -85,7 +85,9 @@ export async function loadStudyBoltState(): Promise<StudyBoltState> {
     const storedRetentionMode = (parsed as unknown as { retentionMode?: RetentionMode | 'personalized' }).retentionMode;
     const decks = (parsed.decks as Array<StudyPack & { detailedNotes?: StudyPack['detailedNotes'] }>).map((deck) => ({
       ...deck,
-      detailedNotes: ensureDistinctNoteLayers(deck.notes, deck.detailedNotes, deck.originalText, deck.outline),
+      detailedNotes: !deck.generation || deck.generation.materials.detailedNotes?.status === 'ready'
+        ? ensureDistinctNoteLayers(deck.notes, deck.detailedNotes, deck.originalText, deck.outline)
+        : deck.detailedNotes ?? [],
     }));
     const classes = Array.isArray(parsed.classes) ? (parsed.classes as StudyClass[]) : classesFromDecks(decks);
     return {

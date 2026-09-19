@@ -13,6 +13,7 @@ const TEXT_NOTE_EXTENSIONS = new Set(['txt', 'md', 'markdown']);
 const POWERPOINT_MIME = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
 
 type ImportDocumentType = 'pdf' | 'powerpoint' | 'notes';
+type StudyPackMaterial = 'simpleNotes' | 'detailedNotes' | 'keyConcepts' | 'flashcards' | 'audio' | 'quiz';
 
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -20,6 +21,10 @@ Deno.serve(async (request) => {
 
   const openAiKey = Deno.env.get('OPENAI_API_KEY');
   if (!openAiKey) return json({ error: 'Secure document processing is not configured yet.' }, 503);
+
+  if (request.headers.get('content-type')?.toLowerCase().includes('application/json')) {
+    return handleMaterialGeneration(request, openAiKey);
+  }
 
   let form: FormData;
   try {
@@ -37,6 +42,7 @@ Deno.serve(async (request) => {
   const documentType = getDocumentType(fileName);
   if (!documentType) return json({ error: 'Choose a PDF, PowerPoint, or notes file.' }, 415);
   const courseName = stringValue(form.get('courseName')).slice(0, MAX_COURSE_NAME) || 'My class';
+  const extractionOnly = stringValue(form.get('action')) === 'extract';
   const extension = fileName.slice(fileName.lastIndexOf('.') + 1).toLowerCase();
   const mimeType = contentType(fileValue.type, documentType, extension);
   const documentId = crypto.randomUUID();
@@ -65,7 +71,7 @@ Deno.serve(async (request) => {
         model: Deno.env.get('STUDYBOLT_PROCESSOR_MODEL') || 'gpt-5.6-luna',
         store: false,
         reasoning: { effort: 'low' },
-        instructions: processorInstructions(documentType, fileName),
+        instructions: extractionOnly ? extractionInstructions(documentType, fileName) : processorInstructions(documentType, fileName),
         input: [{
           role: 'user',
           content: [
@@ -75,7 +81,7 @@ Deno.serve(async (request) => {
         }],
         text: {
           verbosity: 'low',
-          format: { type: 'json_schema', name: 'studybolt_study_pack_content', strict: true, schema: STUDY_PACK_SCHEMA },
+          format: { type: 'json_schema', name: extractionOnly ? 'studybolt_extracted_source' : 'studybolt_study_pack_content', strict: true, schema: extractionOnly ? EXTRACTED_SOURCE_SCHEMA : STUDY_PACK_SCHEMA },
         },
         max_output_tokens: 28_000,
       }),
@@ -109,7 +115,9 @@ Deno.serve(async (request) => {
     const content = JSON.parse(outputText(payload)) as Record<string, unknown>;
     const owner = await resolveOwner(request);
     if (owner && localPptx?.visuals.length) await persistVisualSession(owner, documentId, fileName, localPptx.visuals);
-    return json(buildStudyPack(content, { courseName, fileName, documentType }, localPptx, documentId));
+    return json(extractionOnly
+      ? buildExtractedStudyPack(content, { courseName, fileName, documentType }, localPptx, documentId)
+      : buildStudyPack(content, { courseName, fileName, documentType }, localPptx, documentId));
   } catch (error) {
     console.error('studybolt-process-document: invalid generated pack', error);
     return json({ error: 'The generated study pack was incomplete. Please try processing the file again.' }, 502);
@@ -118,6 +126,71 @@ Deno.serve(async (request) => {
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+}
+
+async function handleMaterialGeneration(request: Request, openAiKey: string): Promise<Response> {
+  let input: Record<string, unknown>;
+  try {
+    const value = await request.json();
+    if (!isRecord(value)) throw new Error('Invalid body');
+    input = value;
+  } catch {
+    return json({ error: 'The material request could not be read.' }, 400);
+  }
+  if (input.action !== 'generate' || !isStudyPackMaterial(input.material)) return json({ error: 'Choose a valid Study Pack material.' }, 400);
+  const material = input.material;
+  const source = stringValue(input.source);
+  const title = stringValue(input.title).slice(0, 180) || 'Study Pack';
+  const outline = normalizedOutline(input.outline);
+  if (!source || !outline.length) return json({ error: 'The processed document source is missing. Upload the document again.' }, 400);
+
+  let response: Response;
+  try {
+    response = await fetch('https://api.openai.com/v1/responses', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${openAiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: Deno.env.get('STUDYBOLT_PROCESSOR_MODEL') || 'gpt-5.6-luna',
+        store: false,
+        reasoning: { effort: 'low' },
+        instructions: materialInstructions(material),
+        input: [{
+          role: 'user',
+          content: [{ type: 'input_text', text: `Study Pack: ${title}\nOUTLINE:\n${JSON.stringify(outline)}\n\nNORMALIZED SOURCE (the only source of truth):\n${source.slice(0, 180_000)}` }],
+        }],
+        text: { verbosity: 'low', format: { type: 'json_schema', name: `studybolt_${material}`, strict: true, schema: MATERIAL_SCHEMAS[material] } },
+        max_output_tokens: material === 'detailedNotes' ? 24_000 : material === 'simpleNotes' ? 14_000 : 10_000,
+      }),
+      signal: AbortSignal.timeout(120_000),
+    });
+  } catch (error) {
+    console.error(`studybolt-process-document: ${material} request failed`, error);
+    return json({ error: `${materialLabel(material)} could not reach the secure processor. Retry just this item.` }, 502);
+  }
+  if (!response.ok) {
+    const providerError = await responseError(response);
+    return json({ error: providerError || `${materialLabel(material)} could not be created. Retry just this item.` }, 502);
+  }
+  try {
+    const payload = await response.json();
+    const content = JSON.parse(outputText(payload)) as Record<string, unknown>;
+    return json(normalizeMaterial(content, material, outline));
+  } catch (error) {
+    console.error(`studybolt-process-document: invalid ${material} output`, error);
+    return json({ error: `${materialLabel(material)} was incomplete. Retry just this item.` }, 502);
+  }
+}
+
+function isStudyPackMaterial(value: unknown): value is StudyPackMaterial {
+  return value === 'simpleNotes' || value === 'detailedNotes' || value === 'keyConcepts' || value === 'flashcards' || value === 'audio' || value === 'quiz';
+}
+
+function materialLabel(material: StudyPackMaterial): string {
+  return material === 'simpleNotes' ? 'Simplified Notes'
+    : material === 'detailedNotes' ? 'Detailed Notes'
+      : material === 'keyConcepts' ? 'Key Concepts'
+        : material === 'flashcards' ? 'Flashcards'
+          : material === 'audio' ? 'Audio Summary' : 'Practice Quiz';
 }
 
 function stringValue(value: unknown): string {
@@ -201,6 +274,27 @@ function processorInstructions(documentType: ImportDocumentType, fileName: strin
   ].join(' ');
 }
 
+function extractionInstructions(documentType: ImportDocumentType, fileName: string): string {
+  const sourceLabel = documentType === 'powerpoint' ? 'PowerPoint presentation' : documentType === 'pdf' ? 'PDF' : 'student notes';
+  return [
+    'You are the secure StudyBolt source extractor.',
+    `Read the attached ${sourceLabel} (${fileName}) once and normalize it for reuse by independent study-material jobs.`,
+    'Preserve all meaningful claims, definitions, examples, labels, and source order. Do not summarize away important content, invent facts, or use outside knowledge.',
+    'Return a clear title, subtitle, page or slide count, a source-order outline, and normalized originalText. Use section-1, section-2, and so on for outline IDs.',
+    'In originalText, keep section headings and source-location labels so later jobs can ground every item without receiving the original file again.',
+  ].join(' ');
+}
+
+function materialInstructions(material: StudyPackMaterial): string {
+  const common = 'Use only the supplied normalized source. Do not invent facts or fill gaps with general knowledge. Preserve the supplied section IDs in every source reference.';
+  if (material === 'simpleNotes') return `${common} Create exactly one concise simplified note for every outline section in source order: one organizing summary, a short set of core ideas, one key idea, and retrieval prompts. These are the fast first-pass notes.`;
+  if (material === 'detailedNotes') return `${common} Create exactly one detailed note for every outline section in source order. Preserve the meaningful source claims and wording in hierarchical subsections, connect related ideas, include examples only when grounded in the source, and add retrieval prompts. Do not merely repeat a short summary.`;
+  if (material === 'keyConcepts') return `${common} Create a source-grounded lecture overview and a concise quickReview containing the most important concepts in source order. Aim for a useful spoken/read review, not a list of unsupported claims.`;
+  if (material === 'flashcards') return `${common} Create active-recall flashcards from the most important source concepts. Every card must be answerable from the source and link to the matching outline section. Prefer fewer grounded cards over filler.`;
+  if (material === 'quiz') return `${common} Create a basic multiple-choice practice quiz across the important source concepts. Every question and explanation must be answerable from the source and link to the matching outline section.`;
+  return `${common} Write a concise audio summary script in natural spoken language, ordered by the source. This text will be read with device text-to-speech; do not add stage directions, music, or SSML.`;
+}
+
 function responseError(response: Response): Promise<string> {
   return response.json()
     .then((value: unknown) => {
@@ -247,6 +341,56 @@ function rawOutline(value: unknown): Array<{ title: string; range: string }> {
   return result.slice(0, 80);
 }
 
+function normalizedOutline(value: unknown): Array<{ id: string; title: string; range: string }> {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 80).flatMap((item, index) => {
+    if (!isRecord(item)) return [];
+    return [{
+      id: stringValue(item.id) || `section-${index + 1}`,
+      title: text(item.title, `Section ${index + 1}`),
+      range: text(item.range, `Section ${index + 1}`),
+    }];
+  });
+}
+
+function buildExtractedStudyPack(content: Record<string, unknown>, meta: { courseName: string; fileName: string; documentType: ImportDocumentType }, localPptx?: PptxLocalExtraction | null, documentId?: string) {
+  const rawSections = rawOutline(content.outline);
+  const outline = rawSections.map((section, index) => ({ id: `section-${index + 1}`, title: section.title, range: section.range }));
+  const originalText = text(content.originalText, localPptx?.sourceText || '');
+  if (!originalText) throw new Error('Missing normalized source');
+  const createdAt = new Date().toISOString();
+  const visuals = localPptx?.visuals.map((visual) => ({ ...visual, ...(documentId ? { documentId } : {}) })) ?? [];
+  return {
+    id: `pack-${crypto.randomUUID()}`,
+    courseId: `course-${slug(meta.courseName)}`,
+    courseName: meta.courseName,
+    title: text(content.title, meta.fileName.replace(/\.[^.]+$/, '')),
+    subtitle: text(content.subtitle, `Source-grounded review from ${meta.fileName}`),
+    fileName: meta.fileName,
+    fileType: meta.documentType === 'powerpoint' ? 'pptx' : meta.documentType,
+    pageCount: positiveInteger(content.pageCount, 1),
+    createdAt,
+    order: 0,
+    color: '#418DFF',
+    emoji: meta.documentType === 'notes' ? '📝' : meta.documentType === 'pdf' ? '📄' : '📊',
+    outline,
+    overview: '',
+    originalText,
+    processedSource: originalText,
+    quickReview: '',
+    notes: [],
+    detailedNotes: [],
+    flashcards: [],
+    quiz: [],
+    quizAttempts: [],
+    reviewedNoteIds: [],
+    audioPosition: 0,
+    studyMinutes: 0,
+    ...(visuals.length ? { visuals } : {}),
+    ...(localPptx?.summary ? { visualSummary: localPptx.summary } : {}),
+  };
+}
+
 function buildStudyPack(content: Record<string, unknown>, meta: { courseName: string; fileName: string; documentType: ImportDocumentType }, localPptx?: PptxLocalExtraction | null, documentId?: string) {
   const rawSections = rawOutline(content.outline);
   const outline = rawSections.map((section, index) => ({ id: `section-${index + 1}`, title: section.title, range: section.range }));
@@ -282,6 +426,20 @@ function buildStudyPack(content: Record<string, unknown>, meta: { courseName: st
     ...(visuals.length ? { visuals } : {}),
     ...(localPptx?.summary ? { visualSummary: localPptx.summary } : {}),
   };
+}
+
+function normalizeMaterial(content: Record<string, unknown>, material: StudyPackMaterial, outline: Array<{ id: string; title: string; range: string }>) {
+  if (material === 'simpleNotes') return { notes: normalizeNotes(content.notes, false, outline) };
+  if (material === 'detailedNotes') return { detailedNotes: normalizeNotes(content.detailedNotes, true, outline) };
+  if (material === 'keyConcepts') return {
+    overview: text(content.overview, ''),
+    quickReview: text(content.quickReview, ''),
+  };
+  if (material === 'flashcards') return { flashcards: normalizeFlashcards(content.flashcards, outline) };
+  if (material === 'quiz') return { quiz: normalizeQuiz(content.quiz, outline) };
+  const audioSummary = text(content.audioSummary, '');
+  if (!audioSummary) throw new Error('Missing audio summary');
+  return { audioSummary };
 }
 
 async function resolveOwner(request: Request): Promise<{ userId: string; admin: ReturnType<typeof createClient> } | null> {
@@ -447,6 +605,46 @@ const QUIZ_SCHEMA = {
     explanation: { type: 'string' }, source: SOURCE_REFERENCE_SCHEMA, difficulty: { type: 'string', enum: ['easy', 'medium', 'hard'] },
   },
   required: ['id', 'type', 'prompt', 'options', 'correctIndex', 'explanation', 'source', 'difficulty'],
+};
+const EXTRACTED_SOURCE_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  properties: {
+    title: { type: 'string' }, subtitle: { type: 'string' }, originalText: { type: 'string' }, pageCount: { type: 'integer', minimum: 1 },
+    outline: { type: 'array', minItems: 1, maxItems: 80, items: { type: 'object', additionalProperties: false, properties: { id: { type: 'string' }, title: { type: 'string' }, range: { type: 'string' } }, required: ['id', 'title', 'range'] } },
+  },
+  required: ['title', 'subtitle', 'originalText', 'pageCount', 'outline'],
+};
+const MATERIAL_SCHEMAS: Record<StudyPackMaterial, Record<string, unknown>> = {
+  simpleNotes: {
+    type: 'object', additionalProperties: false,
+    properties: { notes: { type: 'array', minItems: 1, maxItems: 80, items: NOTE_SCHEMA } },
+    required: ['notes'],
+  },
+  detailedNotes: {
+    type: 'object', additionalProperties: false,
+    properties: { detailedNotes: { type: 'array', minItems: 1, maxItems: 80, items: NOTE_SCHEMA } },
+    required: ['detailedNotes'],
+  },
+  keyConcepts: {
+    type: 'object', additionalProperties: false,
+    properties: { overview: { type: 'string' }, quickReview: { type: 'string' } },
+    required: ['overview', 'quickReview'],
+  },
+  flashcards: {
+    type: 'object', additionalProperties: false,
+    properties: { flashcards: { type: 'array', minItems: 1, maxItems: 80, items: FLASHCARD_SCHEMA } },
+    required: ['flashcards'],
+  },
+  audio: {
+    type: 'object', additionalProperties: false,
+    properties: { audioSummary: { type: 'string' } },
+    required: ['audioSummary'],
+  },
+  quiz: {
+    type: 'object', additionalProperties: false,
+    properties: { quiz: { type: 'array', minItems: 1, maxItems: 80, items: QUIZ_SCHEMA } },
+    required: ['quiz'],
+  },
 };
 const STUDY_PACK_SCHEMA = {
   type: 'object', additionalProperties: false,

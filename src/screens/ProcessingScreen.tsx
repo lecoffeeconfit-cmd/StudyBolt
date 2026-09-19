@@ -1,23 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Animated, Easing, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Icon, Pill, PrimaryButton, ProgressBar } from '../components/ui';
+import { Icon, Pill, PrimaryButton } from '../components/ui';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import { useStudyBolt } from '../StudyBoltContext';
 import type { ImportAsset, StudyPack } from '../models';
 import { documentIcon, documentTypeLabel, getImportDocumentType } from '../services/documentTypes';
 import { processDocument, StudyBoltProcessingError, validateImport } from '../services/documentProcessor';
 import { useAuth } from '../AuthContext';
-
-const STAGES = [
-  'Uploading your material',
-  'Reading your source',
-  'Finding important concepts',
-  'Building simplified and detailed notes',
-  'Creating flashcards, quiz, and full test',
-  'Preparing audio review',
-];
 
 export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSuccess, onTrySample }: { asset: ImportAsset; courseId?: string; courseName?: string; onCancel: () => void; onSuccess: (deck: StudyPack) => void; onTrySample: () => void }) {
   const { colors } = useStudyBolt();
@@ -26,7 +17,6 @@ export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSucc
   const insets = useSafeAreaInsets();
   const importDocumentType = getImportDocumentType(asset.name, asset.mimeType);
   const importLabel = importDocumentType ? documentTypeLabel(importDocumentType) : 'document';
-  const [stage, setStage] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
   const [className, setClassName] = useState(courseName ?? '');
@@ -51,7 +41,6 @@ export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSucc
   useEffect(() => {
     setClassName(courseName ?? '');
     setStarted(Boolean(courseName));
-    setStage(0);
     setError(null);
     setNameError(null);
     setAttempt(0);
@@ -60,10 +49,8 @@ export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSucc
   useEffect(() => {
     if (!started) return;
     let mounted = true;
-    let ticker: ReturnType<typeof setInterval> | null = null;
     try {
       validateImport(asset);
-      ticker = setInterval(() => setStage((value) => Math.min(STAGES.length - 1, value + 1)), 1100);
       void getAccessToken()
         // Uploads are public guest-safe; a failed/expired auth refresh must not
         // prevent the document request from reaching the processor.
@@ -90,13 +77,11 @@ export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSucc
     }
     return () => {
       mounted = false;
-      if (ticker) clearInterval(ticker);
     };
   }, [asset, attempt, className, courseId, getAccessToken, onSuccess, started]);
 
   const retryProcessing = () => {
     setError(null);
-    setStage(0);
     setStarted(true);
     setAttempt((value) => value + 1);
   };
@@ -112,7 +97,9 @@ export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSucc
     setStarted(true);
   };
 
-  const progress = ((stage + 1) / STAGES.length) * 92;
+  const processingMessage = importDocumentType === 'powerpoint'
+    ? 'Processing slides…'
+    : importDocumentType === 'pdf' ? 'Processing your PDF…' : 'Processing your notes…';
   return (
     <KeyboardAvoidingView style={[styles.page, { backgroundColor: colors.background, paddingTop: insets.top + 8, paddingBottom: insets.bottom + 20 }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.topBar}>
@@ -178,25 +165,14 @@ export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSucc
         ) : (
           <>
             <Text style={[styles.title, { color: colors.text }]}>Building your Study Pack</Text>
-            <Text style={[styles.description, { color: colors.textSecondary }]}>One upload creates layered notes, flashcards, practice quiz, full test, and audio review together.</Text>
-            <View style={styles.progressWrap}>
-              <ProgressBar progress={progress} />
-              <Text style={[styles.progressLabel, { color: colors.primary }]}>{Math.round(progress)}%</Text>
-            </View>
+            <Text style={[styles.description, { color: colors.textSecondary }]}>We’re securely extracting your source once. Your Study Pack will open as soon as that source is ready.</Text>
             <View style={[styles.stageCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              {STAGES.map((label, index) => {
-                const complete = index < stage;
-                const current = index === stage;
-                return (
-                  <View key={label} style={styles.stageRow}>
-                    <View style={[styles.stageIcon, { backgroundColor: complete ? colors.mintSoft : current ? colors.goldSoft : colors.cardStrong }]}>
-                      <Icon name={complete ? 'check' : current ? 'lightning-bolt' : 'circle-small'} size={17} color={complete ? colors.mint : current ? colors.goldText : colors.textMuted} />
-                    </View>
-                    <Text style={[styles.stageText, { color: current ? colors.text : colors.textMuted, fontWeight: current ? '800' : '500' }]}>{label}</Text>
-                    {current ? <Text style={[styles.working, { color: colors.goldText }]}>Working…</Text> : null}
-                  </View>
-                );
-              })}
+              <View style={styles.stageRow}>
+                <View style={[styles.stageIcon, { backgroundColor: colors.goldSoft }]}><ActivityIndicator size="small" color={colors.goldText} /></View>
+                <Text style={[styles.stageText, { color: colors.text, fontWeight: '800' }]}>{processingMessage}</Text>
+                <Text style={[styles.working, { color: colors.goldText }]}>Secure</Text>
+              </View>
+              <Text style={[styles.extractHint, { color: colors.textMuted }]}>Notes, flashcards, quiz, and audio will build independently next.</Text>
             </View>
           </>
         )}
@@ -217,13 +193,12 @@ const styles = StyleSheet.create({
   setupBoltInner: { width: 60, height: 60, borderRadius: 30 },
   title: { fontSize: 26, lineHeight: 32, fontWeight: '900', letterSpacing: -0.8, textAlign: 'center' },
   description: { fontSize: 13, lineHeight: 19, textAlign: 'center', marginTop: 8, maxWidth: 330 },
-  progressWrap: { width: '100%', marginTop: 27 },
-  progressLabel: { alignSelf: 'flex-end', marginTop: 7, fontSize: 11, fontWeight: '800' },
   stageCard: { width: '100%', borderWidth: StyleSheet.hairlineWidth, borderRadius: 19, padding: 16, gap: 12, marginTop: 15 },
   stageRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   stageIcon: { width: 27, height: 27, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
   stageText: { flex: 1, fontSize: 12 },
   working: { fontSize: 9, fontWeight: '800' },
+  extractHint: { fontSize: 10, lineHeight: 15, paddingLeft: 37 },
   fileCard: { width: '100%', borderWidth: StyleSheet.hairlineWidth, borderRadius: 15, flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14, marginTop: 22 },
   fileName: { flex: 1, fontSize: 12, fontWeight: '700' },
   inputLabel: { alignSelf: 'flex-start', fontSize: 11, lineHeight: 14, fontWeight: '800', marginTop: 19, marginBottom: 7, marginLeft: 2 },

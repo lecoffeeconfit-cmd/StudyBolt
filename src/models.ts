@@ -6,6 +6,8 @@ export type QuizQuestionType = 'multiple-choice' | 'multiple-select' | 'true-fal
 export type QuizDifficulty = 'easy' | 'medium' | 'hard';
 export type AnswerConfidence = 'unsure' | 'somewhat-sure' | 'very-sure';
 export type StudyTool = 'overview' | 'notes' | 'flashcards' | 'quiz' | 'audio' | 'coach';
+export type StudyPackMaterial = 'simpleNotes' | 'detailedNotes' | 'keyConcepts' | 'flashcards' | 'audio' | 'quiz';
+export type StudyPackMaterialStatus = 'queued' | 'generating' | 'ready' | 'failed';
 export type QuizQuestionCount = 10 | 15 | 20;
 export type LibrarySort = 'default' | 'recent' | 'oldest' | 'alphabetical';
 export type SharedStudyPackVisibility = 'private' | 'link' | 'public';
@@ -212,6 +214,18 @@ export interface StudyPack {
   reviewedNoteIds: string[];
   audioPosition: number;
   studyMinutes: number;
+  /** Normalized source extracted once from the upload and reused by material jobs. */
+  processedSource?: string;
+  /** Text spoken by the existing device-TTS StudyCast summary mode. */
+  audioSummary?: string;
+  generation?: {
+    materials: Record<StudyPackMaterial, {
+      status: StudyPackMaterialStatus;
+      stage?: string;
+      error?: string;
+      updatedAt: string;
+    }>;
+  };
   /** Local-only source file reference. Never included in shared content. */
   originalUri?: string;
   visuals?: VisualKnowledge[];

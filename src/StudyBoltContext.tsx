@@ -1,10 +1,12 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useColorScheme } from 'react-native';
 
 import { initialState } from './data/mockStudyPacks';
-import type { ExamAttempt, FlaggedItemInput, LibrarySort, QuizQuestionCount, RetentionMode, StudyBoltState, StudyClass, StudyEventInput, StudyPack, StudyPlan, ThemePreference } from './models';
+import type { ExamAttempt, FlaggedItemInput, LibrarySort, QuizQuestionCount, RetentionMode, StudyBoltState, StudyClass, StudyEventInput, StudyPack, StudyPackMaterial, StudyPlan, ThemePreference } from './models';
 import { getFlaggedItemId } from './models';
+import { useAuth } from './AuthContext';
+import { AUTOMATIC_STUDY_PACK_MATERIALS, generateStudyPackMaterial, STUDY_PACK_MATERIAL_LABELS, STUDY_PACK_MATERIAL_STAGES, StudyBoltProcessingError } from './services/documentProcessor';
 import { loadStudyBoltState, saveStudyBoltState } from './services/persistence';
 import { AppColors, resolveColors } from './theme';
 
@@ -28,14 +30,18 @@ interface StudyBoltContextValue {
   toggleFlag: (item: FlaggedItemInput) => void;
   removeFlag: (flagId: string) => void;
   isFlagged: (flagId: string) => boolean;
+  startStudyPackGeneration: (deck: StudyPack) => void;
+  retryStudyPackMaterial: (deckId: string, material: StudyPackMaterial) => void;
 }
 
 const StudyBoltContext = createContext<StudyBoltContextValue | null>(null);
 
 export function StudyBoltProvider({ children }: { children: ReactNode }) {
+  const { getAccessToken } = useAuth();
   const systemScheme = useColorScheme();
   const [state, setState] = useState<StudyBoltState>(initialState);
   const [hydrated, setHydrated] = useState(false);
+  const activeMaterialJobs = useRef(new Set<string>());
 
   useEffect(() => {
     let mounted = true;
@@ -53,6 +59,85 @@ export function StudyBoltProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (hydrated) void saveStudyBoltState(state);
   }, [hydrated, state]);
+
+  const runMaterialJob = useCallback((deck: StudyPack, material: StudyPackMaterial) => {
+    const jobKey = `${deck.id}:${material}`;
+    if (activeMaterialJobs.current.has(jobKey)) return;
+    activeMaterialJobs.current.add(jobKey);
+    const updatedAt = new Date().toISOString();
+    setState((current) => ({
+      ...current,
+      decks: current.decks.map((item) => item.id !== deck.id ? item : {
+        ...item,
+        generation: item.generation ? {
+          ...item.generation,
+          materials: {
+            ...item.generation.materials,
+            [material]: { status: 'generating', stage: STUDY_PACK_MATERIAL_STAGES[material], updatedAt },
+          },
+        } : item.generation,
+      }),
+    }));
+    void getAccessToken()
+      .catch(() => null)
+      .then((accessToken) => generateStudyPackMaterial(deck, material, accessToken))
+      .then((generated) => {
+        setState((current) => ({
+          ...current,
+          decks: current.decks.map((item) => item.id !== deck.id ? item : {
+            ...item,
+            ...generated,
+            generation: item.generation ? {
+              ...item.generation,
+              materials: {
+                ...item.generation.materials,
+                [material]: { status: 'ready', updatedAt: new Date().toISOString() },
+              },
+            } : item.generation,
+          }),
+        }));
+      })
+      .catch((reason: unknown) => {
+        const error = reason instanceof StudyBoltProcessingError
+          ? reason.userMessage
+          : `${STUDY_PACK_MATERIAL_LABELS[material]} could not be created. Retry just this item.`;
+        setState((current) => ({
+          ...current,
+          decks: current.decks.map((item) => item.id !== deck.id ? item : {
+            ...item,
+            generation: item.generation ? {
+              ...item.generation,
+              materials: {
+                ...item.generation.materials,
+                [material]: { status: 'failed', error, updatedAt: new Date().toISOString() },
+              },
+            } : item.generation,
+          }),
+        }));
+      })
+      .finally(() => activeMaterialJobs.current.delete(jobKey));
+  }, [getAccessToken]);
+
+  const startStudyPackGeneration = useCallback((deck: StudyPack) => {
+    if (!deck.generation || !deck.processedSource) return;
+    AUTOMATIC_STUDY_PACK_MATERIALS.forEach((material) => {
+      const status = deck.generation?.materials[material].status;
+      if (status === 'queued' || status === 'generating') runMaterialJob(deck, material);
+    });
+  }, [runMaterialJob]);
+
+  const retryStudyPackMaterial = useCallback((deckId: string, material: StudyPackMaterial) => {
+    const deck = state.decks.find((item) => item.id === deckId);
+    if (!deck?.processedSource || !deck.generation) return;
+    runMaterialJob(deck, material);
+  }, [runMaterialJob, state.decks]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    state.decks.forEach((deck) => {
+      if (deck.generation && deck.processedSource) startStudyPackGeneration(deck);
+    });
+  }, [hydrated, startStudyPackGeneration, state.decks]);
 
   const value = useMemo<StudyBoltContextValue>(
     () => ({
@@ -153,8 +238,10 @@ export function StudyBoltProvider({ children }: { children: ReactNode }) {
         flaggedItems: current.flaggedItems.filter((flag) => flag.id !== flagId),
       })),
       isFlagged: (flagId) => state.flaggedItems.some((flag) => flag.id === flagId),
+      startStudyPackGeneration,
+      retryStudyPackMaterial,
     }),
-    [hydrated, state, systemScheme],
+    [hydrated, retryStudyPackMaterial, startStudyPackGeneration, state, systemScheme],
   );
 
   return <StudyBoltContext.Provider value={value}>{children}</StudyBoltContext.Provider>;

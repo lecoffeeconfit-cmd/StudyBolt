@@ -213,7 +213,7 @@ function packCompletion(deck: StudyPack, events: StudyEvent[]): number {
     ? deck.flashcards.filter((card) => card.confidence !== 'new').length / deck.flashcards.length
     : 1;
   const quiz = deck.quiz.length ? (deck.quizAttempts.length ? 1 : 0) : 1;
-  const words = deck.quickReview.split(/\s+/).filter(Boolean).length;
+  const words = (deck.audioSummary || deck.quickReview).split(/\s+/).filter(Boolean).length;
   const storedAudio = words ? Math.min(1, deck.audioPosition / words) : 1;
   const eventAudio = Math.max(0, ...events
     .filter((event) => event.type === 'audio' && event.deckId === deck.id)

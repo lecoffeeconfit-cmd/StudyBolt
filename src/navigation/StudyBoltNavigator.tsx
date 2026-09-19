@@ -4,6 +4,7 @@ import { ActivityIndicator, Linking, Platform, StyleSheet, View } from 'react-na
 
 import { useAuth } from '../AuthContext';
 import { BottomTabs } from '../components/BottomTabs';
+import { StudyPackGenerationProgress } from '../components/StudyPackGenerationProgress';
 import type { MainTab } from '../components/BottomTabs';
 import { useStudyBolt } from '../StudyBoltContext';
 import { AccountScreen } from '../screens/AccountScreen';
@@ -33,7 +34,7 @@ import type { StudyPack, StudyTool, StudyType } from '../models';
 import type { Route } from './routes';
 
 export function StudyBoltNavigator() {
-  const { colors, state, addDeck, completeOnboarding, hydrated } = useStudyBolt();
+  const { colors, state, addDeck, completeOnboarding, hydrated, startStudyPackGeneration } = useStudyBolt();
   const { loading: authLoading, recoveryMode, user, needsStudyOnboarding, updateProfile } = useAuth();
   const [tab, setTab] = useState<MainTab>('home');
   const [route, setRoute] = useState<Route>({ type: 'main' });
@@ -54,8 +55,9 @@ export function StudyBoltNavigator() {
 
   const completeProcessing = useCallback((deck: StudyPack) => {
     addDeck(deck);
+    startStudyPackGeneration(deck);
     setRoute({ type: 'deck', deckId: deck.id });
-  }, [addDeck]);
+  }, [addDeck, startStudyPackGeneration]);
 
   const finishOnboarding = useCallback(() => {
     const replayingTour = route.type === 'onboarding';
@@ -296,6 +298,7 @@ export function StudyBoltNavigator() {
           onTrySample={openSample}
         />
       ) : null}
+      {!showOnboarding && !showAccountOnboarding && route.type !== 'processing' && route.type !== 'auth' ? <StudyPackGenerationProgress /> : null}
     </View>
   );
 }

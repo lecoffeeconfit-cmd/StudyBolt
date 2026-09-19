@@ -11,7 +11,7 @@ import type { IconName } from '../components/ui';
 import { StudyPackShareSheet } from '../components/StudyPackShareSheet';
 import { useStudyBolt } from '../StudyBoltContext';
 import { getFlaggedItemId } from '../models';
-import type { AiRequestChannel, AiTutorAction, AiTutorConversation, AiTutorQuota, AiTutorResponse, AnswerConfidence, FlaggedItemInput, Flashcard, FlashcardConfidence, NoteBlock, QuizAnswerRecord, QuizQuestion, QuizQuestionCount, SharedStudyPackMetadata, StudyPack, StudyTool } from '../models';
+import type { AiRequestChannel, AiTutorAction, AiTutorConversation, AiTutorQuota, AiTutorResponse, AnswerConfidence, FlaggedItemInput, Flashcard, FlashcardConfidence, NoteBlock, QuizAnswerRecord, QuizQuestion, QuizQuestionCount, SharedStudyPackMetadata, StudyPack, StudyPackMaterial, StudyTool } from '../models';
 import { fetchTutorQuota, isAiTutorConfigured, tutorContextAtPosition } from '../services/aiTutor';
 import { runStudyBoltAI } from '../services/aiRouter';
 import { canAttemptOnDeviceAI, getOnDeviceAIAvailability, initialOnDeviceAIAvailability } from '../services/onDeviceAI';
@@ -127,6 +127,8 @@ export function StudyPackScreen({
     );
   }
 
+  const shareReady = !deck.generation || Object.values(deck.generation.materials).every((material) => material.status === 'ready');
+
   return (
     <View style={[styles.page, { backgroundColor: colors.background, paddingTop: insets.top + 5 }]}>
       <View style={styles.horizontalPadding}>
@@ -136,7 +138,7 @@ export function StudyPackScreen({
           onBack={onBack}
           right={
             <View style={styles.headerRightRow}>
-              {!shared ? (
+              {!shared && shareReady ? (
                 <Pressable accessibilityRole="button" accessibilityLabel="Share Study Pack" onPress={() => setShareVisible(true)} style={[styles.shareButton, { backgroundColor: colors.primarySoft }]}>
                   <Icon name="share-variant" size={19} color={colors.primary} />
                 </Pressable>
@@ -171,9 +173,9 @@ export function StudyPackScreen({
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {tool === 'overview' ? <Overview deck={deck} onTool={setTool} onPlan={() => onPlan(deck.id)} onStartStudy={onStartStudy ? (mode) => onStartStudy(mode, deck.id) : undefined} onOpenVisualReview={onOpenVisualReview ? () => onOpenVisualReview(deck.id) : undefined} shared={shared} /> : null}
         {tool === 'notes' ? <Notes deck={deck} readOnly={shared} /> : null}
-        {tool === 'flashcards' ? <Flashcards deck={deck} readOnly={shared} /> : null}
-        {tool === 'quiz' ? <Quiz deck={deck} readOnly={shared} onOpenExam={onOpenExam} /> : null}
-        {tool === 'audio' ? <AudioPlayer deck={deck} readOnly={shared} onRequireAuth={onRequireAuth} /> : null}
+        {tool === 'flashcards' ? <MaterialGate deck={deck} material="flashcards" shared={shared}><Flashcards deck={deck} readOnly={shared} /></MaterialGate> : null}
+        {tool === 'quiz' ? <MaterialGate deck={deck} material="quiz" shared={shared}><Quiz deck={deck} readOnly={shared} onOpenExam={onOpenExam} /></MaterialGate> : null}
+        {tool === 'audio' ? <MaterialGate deck={deck} material="audio" shared={shared}><AudioPlayer deck={deck} readOnly={shared} onRequireAuth={onRequireAuth} /></MaterialGate> : null}
         {tool === 'coach' ? <StudyCoach deck={deck} onTool={setTool} onStartStudy={onStartStudy ? (mode) => onStartStudy(mode, deck.id) : undefined} /> : null}
       </ScrollView>
       {!shared ? <StudyPackShareSheet deck={deck} visible={shareVisible} onClose={() => setShareVisible(false)} onRequireAuth={onRequireAuth} /> : null}
@@ -183,6 +185,7 @@ export function StudyPackScreen({
 
 function Overview({ deck, onTool, onPlan, onStartStudy, onOpenVisualReview, shared }: { deck: StudyPack; onTool: (tool: StudyTool) => void; onPlan: () => void; onStartStudy?: (mode: SmartStudyMode) => void; onOpenVisualReview?: () => void; shared?: boolean }) {
   const { colors, state } = useStudyBolt();
+  const materialReady = (material: StudyPackMaterial) => !deck.generation || deck.generation.materials[material].status === 'ready';
   const mastery = calculateMastery(deck);
   const reviewVisuals = deck.visuals?.filter((visual) => visual.needsUserReview && visual.status !== 'resolved_ai') ?? [];
   const activeVisualReviewCount = reviewVisuals.filter((visual) => visual.status !== 'skipped_by_user').length;
@@ -222,10 +225,10 @@ function Overview({ deck, onTool, onPlan, onStartStudy, onOpenVisualReview, shar
       </Card>
 
       <View style={styles.toolGrid}>
-        <ToolCard icon="note-text-outline" title="Layered Notes" detail="Simplified + full-detail views" color={colors.primary} background={colors.primarySoft} onPress={() => onTool('notes')} />
-        <ToolCard icon="cards-outline" title="Flashcards" detail={`${deck.flashcards.length} active recall cards`} color={colors.purple} background={colors.purpleSoft} onPress={() => onTool('flashcards')} />
-        <ToolCard icon="clipboard-text-outline" title="Quiz & Full Test" detail={`${state.quizQuestionCount} practice questions + cumulative test`} color={colors.mint} background={colors.mintSoft} onPress={() => onTool('quiz')} />
-        <ToolCard icon="headphones" title="StudyCast" detail="Listen and ask about any section" color="#A45FEB" background={colors.purpleSoft} onPress={() => onTool('audio')} />
+        <ToolCard icon="note-text-outline" title="Layered Notes" detail={materialReady('simpleNotes') || materialReady('detailedNotes') ? 'Simplified + full-detail views' : 'Creating your note layers…'} color={colors.primary} background={colors.primarySoft} onPress={() => onTool('notes')} />
+        <ToolCard icon="cards-outline" title="Flashcards" detail={materialReady('flashcards') ? `${deck.flashcards.length} active recall cards` : 'Building flashcards…'} color={colors.purple} background={colors.purpleSoft} onPress={() => onTool('flashcards')} />
+        <ToolCard icon="clipboard-text-outline" title="Quiz & Full Test" detail={materialReady('quiz') ? `${state.quizQuestionCount} practice questions + cumulative test` : 'Preparing your quiz…'} color={colors.mint} background={colors.mintSoft} onPress={() => onTool('quiz')} />
+        <ToolCard icon="headphones" title="StudyCast" detail={materialReady('audio') ? 'Listen and ask about any section' : 'Creating audio summary…'} color="#A45FEB" background={colors.purpleSoft} onPress={() => onTool('audio')} />
       </View>
 
       <Card onPress={() => onTool('coach')} style={[styles.coachBanner, styles.flatCard, { backgroundColor: colors.mode === 'dark' ? colors.primarySoft : '#EEF5FF' }]}>
@@ -245,9 +248,11 @@ function Overview({ deck, onTool, onPlan, onStartStudy, onOpenVisualReview, shar
       ) : null}
 
       <SectionHeader title="Lecture overview" />
-      <Card style={styles.flatCard}>
-        <Text style={[styles.overviewText, { color: colors.textSecondary }]}>{deck.overview}</Text>
-      </Card>
+      <MaterialGate deck={deck} material="keyConcepts" shared={shared}>
+        <Card style={styles.flatCard}>
+          <Text style={[styles.overviewText, { color: colors.textSecondary }]}>{deck.overview}</Text>
+        </Card>
+      </MaterialGate>
 
       {!shared && visualReviewCount > 0 && onOpenVisualReview ? (
         <Card onPress={onOpenVisualReview} style={[styles.visualReviewBanner, styles.flatCard, { backgroundColor: colors.purpleSoft, borderColor: `${colors.purple}44` }]}>
@@ -324,7 +329,9 @@ function Notes({ deck, readOnly = false }: { deck: StudyPack; readOnly?: boolean
   const { colors, recordStudyEvent, updateDeck, toggleFlag, isFlagged } = useStudyBolt();
   const [mode, setMode] = useState<NoteMode>('simplified');
   const mastery = calculateMastery(deck);
-  const notes: NoteBlock[] = mode === 'detailed' && deck.detailedNotes.length ? deck.detailedNotes : deck.notes;
+  const material: StudyPackMaterial = mode === 'detailed' ? 'detailedNotes' : 'simpleNotes';
+  const materialReady = !deck.generation || deck.generation.materials[material].status === 'ready';
+  const notes: NoteBlock[] = mode === 'detailed' ? deck.detailedNotes : deck.notes;
   const coverageTotal = deck.outline.length || notes.length;
   const coveredSections = Math.min(new Set(notes.map((note) => note.source.sectionId)).size, coverageTotal);
   const completeCoverage = coverageTotal > 0 && coveredSections >= coverageTotal;
@@ -361,6 +368,8 @@ function Notes({ deck, readOnly = false }: { deck: StudyPack; readOnly?: boolean
           );
         })}
       </View>
+      {!materialReady ? <MaterialUnavailable deck={deck} material={material} /> : null}
+      {materialReady ? <>
       <View style={styles.toolHeadingRow}>
         <View style={{ flex: 1 }}>
           <Text style={[styles.toolHeading, { color: colors.text }]}>{mode === 'simplified' ? 'Simplified Notes' : 'Detailed Notes'}</Text>
@@ -459,6 +468,7 @@ function Notes({ deck, readOnly = false }: { deck: StudyPack; readOnly?: boolean
           );
         })}
       </View>
+      </> : null}
     </>
   );
 }
@@ -1035,7 +1045,7 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
   const sessionStartRef = useRef<number | null>(null);
   const askResumePositionRef = useRef(deck.audioPosition);
   const lastTutorRequestRef = useRef<{ action: AiTutorAction; question?: string }>({ action: 'explain' });
-  const text = mode === 'original' ? deck.originalText : deck.quickReview;
+  const text = mode === 'original' ? deck.originalText : (deck.audioSummary || deck.quickReview);
   const words = useMemo(() => text.split(/\s+/).filter(Boolean), [text]);
   const voice = voices.find((item) => item.identifier === voiceIdentifier);
   const tutorContext = useMemo(() => tutorContextAtPosition(deck, position, words.length), [deck, position, words.length]);
@@ -1572,6 +1582,32 @@ function EmptyTool({ icon, title, message }: { icon: IconName; title: string; me
   );
 }
 
+function MaterialGate({ deck, material, shared, children }: { deck: StudyPack; material: StudyPackMaterial; shared?: boolean; children: React.ReactNode }) {
+  if (shared || !deck.generation || deck.generation.materials[material].status === 'ready') return <>{children}</>;
+  return <MaterialUnavailable deck={deck} material={material} />;
+}
+
+function MaterialUnavailable({ deck, material }: { deck: StudyPack; material: StudyPackMaterial }) {
+  const { colors, retryStudyPackMaterial } = useStudyBolt();
+  const state = deck.generation?.materials[material];
+  const failed = state?.status === 'failed';
+  const label = material === 'simpleNotes' ? 'Simplified Notes'
+    : material === 'detailedNotes' ? 'Detailed Notes'
+      : material === 'keyConcepts' ? 'Key Concepts'
+        : material === 'flashcards' ? 'Flashcards'
+          : material === 'audio' ? 'Audio Summary' : 'Practice Quiz';
+  return (
+    <View style={styles.emptyTool}>
+      <View style={[styles.materialStateIcon, { backgroundColor: failed ? `${colors.danger}15` : colors.primarySoft }]}>
+        {failed ? <Icon name="alert-outline" size={30} color={colors.danger} /> : <ActivityIndicator color={colors.primary} />}
+      </View>
+      <Text style={[styles.emptyTitle, { color: colors.text }]}>{failed ? `${label} needs another try` : `${label} is being created`}</Text>
+      <Text style={[styles.emptyText, { color: colors.textSecondary }]}>{failed ? state?.error || 'This item failed without affecting the rest of your Study Pack.' : state?.stage || 'This item will become available as soon as it is ready.'}</Text>
+      {failed ? <PrimaryButton label={`Retry ${label}`} icon="refresh" onPress={() => retryStudyPackMaterial(deck.id, material)} style={styles.materialRetry} /> : null}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   page: { flex: 1 },
   horizontalPadding: { paddingHorizontal: 20 },
@@ -1857,4 +1893,6 @@ const styles = StyleSheet.create({
   emptyTool: { paddingVertical: 80, alignItems: 'center', gap: 11 },
   emptyTitle: { fontSize: 19, fontWeight: '800' },
   emptyText: { textAlign: 'center', fontSize: 12, lineHeight: 18, maxWidth: 300 },
+  materialStateIcon: { width: 58, height: 58, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  materialRetry: { minWidth: 200, marginTop: 8 },
 });

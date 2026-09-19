@@ -1,4 +1,4 @@
-import type { DeckOutlineItem, ImportAsset, NoteBlock, StudyPack } from '../models';
+import type { DeckOutlineItem, ImportAsset, NoteBlock, StudyPack, StudyPackMaterial } from '../models';
 import Constants from 'expo-constants';
 import { ensureDistinctNoteLayers } from './noteLayers';
 import {
@@ -42,6 +42,33 @@ export class StudyBoltProcessingError extends Error {
     super(message);
   }
 }
+
+export const AUTOMATIC_STUDY_PACK_MATERIALS: StudyPackMaterial[] = [
+  'simpleNotes',
+  'detailedNotes',
+  'keyConcepts',
+  'flashcards',
+  'audio',
+  'quiz',
+];
+
+export const STUDY_PACK_MATERIAL_LABELS: Record<StudyPackMaterial, string> = {
+  simpleNotes: 'Simplified Notes',
+  detailedNotes: 'Detailed Notes',
+  keyConcepts: 'Key Concepts',
+  flashcards: 'Flashcards',
+  audio: 'Audio Summary',
+  quiz: 'Practice Quiz',
+};
+
+export const STUDY_PACK_MATERIAL_STAGES: Record<StudyPackMaterial, string> = {
+  simpleNotes: 'Organizing notes…',
+  detailedNotes: 'Creating detailed notes…',
+  keyConcepts: 'Finding key concepts…',
+  flashcards: 'Building flashcards…',
+  audio: 'Preparing audio content…',
+  quiz: 'Preparing your quiz…',
+};
 
 export function validateImport(asset: ImportAsset): void {
   if (!asset.uri?.trim()) {
@@ -93,7 +120,7 @@ function coversOutline(notes: NoteBlock[], outline: StudyPack['outline']): boole
   return outline.every((section) => covered.has(section.id));
 }
 
-function isStudyPack(value: unknown): value is StudyPack {
+function isCompleteStudyPack(value: unknown): value is StudyPack {
   if (!isRecord(value)) return false;
   const candidate = value as Partial<StudyPack>;
   const outline = Array.isArray(candidate.outline) ? candidate.outline : [];
@@ -115,6 +142,29 @@ function isStudyPack(value: unknown): value is StudyPack {
     Array.isArray(candidate.flashcards) &&
     Array.isArray(candidate.quiz)
   );
+}
+
+function isExtractedStudyPack(value: unknown): value is StudyPack {
+  if (!isRecord(value)) return false;
+  const candidate = value as Partial<StudyPack>;
+  return typeof candidate.id === 'string'
+    && typeof candidate.title === 'string'
+    && typeof candidate.originalText === 'string'
+    && candidate.originalText.trim().length > 0
+    && Array.isArray(candidate.outline)
+    && candidate.outline.length > 0
+    && candidate.outline.every(isOutlineItem);
+}
+
+function queuedGeneration(): NonNullable<StudyPack['generation']> {
+  const now = new Date().toISOString();
+  return {
+    materials: Object.fromEntries(AUTOMATIC_STUDY_PACK_MATERIALS.map((material) => [material, {
+      status: 'queued' as const,
+      stage: STUDY_PACK_MATERIAL_STAGES[material],
+      updatedAt: now,
+    }])) as NonNullable<StudyPack['generation']>['materials'],
+  };
 }
 
 export async function processDocument(asset: ImportAsset, courseName: string, accessToken?: string | null): Promise<StudyPack> {
@@ -147,6 +197,7 @@ export async function processDocument(asset: ImportAsset, courseName: string, ac
   form.append('courseName', courseName);
   form.append('documentType', documentType);
   form.append('extension', getFileExtension(fileName));
+  form.append('action', 'extract');
 
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
   const timeout = controller ? setTimeout(() => controller.abort(), PROCESSOR_TIMEOUT_MS) : null;
@@ -180,9 +231,10 @@ export async function processDocument(asset: ImportAsset, courseName: string, ac
     } catch {
       throw new StudyBoltProcessingError('Processor returned invalid JSON', 'The document processor returned an unreadable response. Please try again.');
     }
-    if (!isStudyPack(payload)) {
+    if (!isExtractedStudyPack(payload)) {
       throw new StudyBoltProcessingError('Malformed StudyPack response', 'The generated study pack was incomplete. Please try processing the file again.');
     }
+    const legacyComplete = isCompleteStudyPack(payload);
     return {
       ...payload,
       fileName: payload.fileName || fileName,
@@ -190,7 +242,23 @@ export async function processDocument(asset: ImportAsset, courseName: string, ac
         ? payload.fileType
         : studyPackFileType(documentType),
       courseName: payload.courseName || courseName,
-      detailedNotes: ensureDistinctNoteLayers(payload.notes, payload.detailedNotes, payload.originalText, payload.outline),
+      processedSource: payload.processedSource || payload.originalText,
+      notes: legacyComplete ? payload.notes : [],
+      detailedNotes: legacyComplete ? ensureDistinctNoteLayers(payload.notes, payload.detailedNotes, payload.originalText, payload.outline) : [],
+      flashcards: legacyComplete ? payload.flashcards : [],
+      quiz: legacyComplete ? payload.quiz : [],
+      overview: payload.overview || '',
+      quickReview: payload.quickReview || '',
+      quizAttempts: Array.isArray(payload.quizAttempts) ? payload.quizAttempts : [],
+      reviewedNoteIds: Array.isArray(payload.reviewedNoteIds) ? payload.reviewedNoteIds : [],
+      audioPosition: typeof payload.audioPosition === 'number' ? payload.audioPosition : 0,
+      studyMinutes: typeof payload.studyMinutes === 'number' ? payload.studyMinutes : 0,
+      generation: legacyComplete ? {
+        materials: Object.fromEntries(AUTOMATIC_STUDY_PACK_MATERIALS.map((material) => [material, {
+          status: 'ready' as const,
+          updatedAt: new Date().toISOString(),
+        }])) as NonNullable<StudyPack['generation']>['materials'],
+      } : queuedGeneration(),
     };
   } catch (error) {
     if (error instanceof StudyBoltProcessingError) throw error;
@@ -198,6 +266,71 @@ export async function processDocument(asset: ImportAsset, courseName: string, ac
       throw new StudyBoltProcessingError('Processor request timed out', 'Document processing took too long. Check your connection and try again.');
     }
     throw new StudyBoltProcessingError('Processor request failed', 'StudyBolt could not reach the secure processor. Check your connection and try again.');
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
+export type GeneratedStudyPackMaterial = Partial<Pick<StudyPack, 'notes' | 'detailedNotes' | 'overview' | 'quickReview' | 'flashcards' | 'quiz' | 'audioSummary'>>;
+
+export async function generateStudyPackMaterial(
+  deck: StudyPack,
+  material: StudyPackMaterial,
+  accessToken?: string | null,
+): Promise<GeneratedStudyPackMaterial> {
+  const endpoint = resolveProcessorEndpoint();
+  const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timeout = controller ? setTimeout(() => controller.abort(), PROCESSOR_TIMEOUT_MS) : null;
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        ...(anonKey ? { apikey: anonKey } : {}),
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : anonKey ? { Authorization: `Bearer ${anonKey}` } : {}),
+      },
+      body: JSON.stringify({
+        action: 'generate',
+        material,
+        studyPackId: deck.id,
+        title: deck.title,
+        courseName: deck.courseName,
+        fileName: deck.fileName,
+        source: deck.processedSource || deck.originalText,
+        outline: deck.outline,
+      }),
+      ...(controller ? { signal: controller.signal } : {}),
+    });
+    if (!response.ok) {
+      let serverMessage = '';
+      try {
+        const body = await response.json() as { error?: unknown; message?: unknown };
+        serverMessage = typeof body.error === 'string' ? body.error : typeof body.message === 'string' ? body.message : '';
+      } catch {
+        // Keep a stable per-material error if the processor did not return JSON.
+      }
+      throw new StudyBoltProcessingError(
+        `Material processor returned ${response.status}${serverMessage ? `: ${serverMessage}` : ''}`,
+        serverMessage || `${STUDY_PACK_MATERIAL_LABELS[material]} could not be created.`,
+      );
+    }
+    const payload = await response.json() as GeneratedStudyPackMaterial;
+    if (!isRecord(payload)) throw new Error('Material response was not an object');
+    if (material === 'simpleNotes' && (!Array.isArray(payload.notes) || !payload.notes.every((note) => isSourceLinkedNote(note, false)))) throw new Error('Simplified notes were incomplete');
+    if (material === 'detailedNotes' && (!Array.isArray(payload.detailedNotes) || !payload.detailedNotes.every((note) => isSourceLinkedNote(note, true)))) throw new Error('Detailed notes were incomplete');
+    if (material === 'keyConcepts' && (typeof payload.overview !== 'string' || typeof payload.quickReview !== 'string')) throw new Error('Key concepts were incomplete');
+    if (material === 'flashcards' && !Array.isArray(payload.flashcards)) throw new Error('Flashcards were incomplete');
+    if (material === 'quiz' && !Array.isArray(payload.quiz)) throw new Error('Quiz was incomplete');
+    if (material === 'audio' && typeof payload.audioSummary !== 'string') throw new Error('Audio summary was incomplete');
+    return payload;
+  } catch (error) {
+    if (error instanceof StudyBoltProcessingError) throw error;
+    if (controller?.signal.aborted) {
+      throw new StudyBoltProcessingError('Material request timed out', `${STUDY_PACK_MATERIAL_LABELS[material]} took too long. Retry just this item.`);
+    }
+    throw new StudyBoltProcessingError('Material request failed', `${STUDY_PACK_MATERIAL_LABELS[material]} could not reach the secure processor. Retry just this item.`);
   } finally {
     if (timeout) clearTimeout(timeout);
   }

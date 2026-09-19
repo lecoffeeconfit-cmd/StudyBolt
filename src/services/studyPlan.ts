@@ -34,7 +34,7 @@ export function estimateStudyMinutesByModality(
 ): Record<StudyModality, number> {
   const pages = decks.reduce((sum, deck) => sum + deck.pageCount, 0);
   const notes = decks.reduce((sum, deck) => sum + deck.notes.flatMap((note) => note.bullets).length, 0);
-  const words = decks.reduce((sum, deck) => sum + deck.quickReview.split(/\s+/).filter(Boolean).length, 0);
+  const words = decks.reduce((sum, deck) => sum + (deck.audioSummary || deck.quickReview).split(/\s+/).filter(Boolean).length, 0);
   const cards = decks.reduce((sum, deck) => sum + deck.flashcards.length, 0);
   const comprehensiveQuestions = decks.reduce((sum, deck) => sum + buildAssessment(deck, 'comprehensive').length, 0);
   const averageMastery = decks.length
