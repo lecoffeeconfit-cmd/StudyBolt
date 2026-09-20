@@ -39,7 +39,7 @@
       "favicon": "./assets/favicon.png"
     },
     "extra": {
-      "studyboltProcessorUrl": "https://kbyeyobbhhnafscygiel.supabase.co/functions/v1/studybolt-process-document",
+      "studyboltProcessorUrl": "https://studybolt-api.duckdns.org/functions/v1/studybolt-process-document",
       "eas": {
         "projectId": "df2b547d-f9a0-47dc-8ea0-586fbfbfd4bb"
       }
