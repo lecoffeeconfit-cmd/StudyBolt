@@ -1,5 +1,7 @@
 import type { DeckOutlineItem, ImportAsset, NoteBlock, StudyPack, StudyPackMaterial } from '../models';
 import Constants from 'expo-constants';
+import * as FileSystem from 'expo-file-system/legacy';
+import { Platform } from 'react-native';
 import { ensureDistinctNoteLayers } from './noteLayers';
 import {
   getFileExtension,
@@ -87,6 +89,69 @@ export function validateImport(asset: ImportAsset): void {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+type ProcessorResponse = {
+  ok: boolean;
+  status: number;
+  json: () => Promise<unknown>;
+};
+
+function processorHeaders(anonKey: string | undefined, accessToken?: string | null): Record<string, string> {
+  return {
+    Accept: 'application/json',
+    ...(anonKey ? { apikey: anonKey } : {}),
+    ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : anonKey ? { Authorization: `Bearer ${anonKey}` } : {}),
+  };
+}
+
+async function uploadDocument(
+  endpoint: string,
+  asset: ImportAsset,
+  fileName: string,
+  mimeType: string,
+  documentType: string,
+  courseName: string,
+  anonKey?: string,
+  accessToken?: string | null,
+): Promise<ProcessorResponse> {
+  const headers = processorHeaders(anonKey, accessToken);
+  if (Platform.OS !== 'web') {
+    // React Native's fetch/FormData bridge is inconsistent with iOS document
+    // provider URIs. Expo's native uploader builds the multipart body in
+    // native code and preserves the picked file without a base64 copy.
+    const result = await FileSystem.uploadAsync(endpoint, asset.uri, {
+      fieldName: 'file',
+      httpMethod: 'POST',
+      mimeType,
+      parameters: {
+        courseName,
+        documentType,
+        extension: getFileExtension(fileName),
+        action: 'extract',
+      },
+      uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+      headers,
+    });
+    return {
+      ok: result.status >= 200 && result.status < 300,
+      status: result.status,
+      json: async () => JSON.parse(result.body) as unknown,
+    };
+  }
+
+  const form = new FormData();
+  if (typeof Blob !== 'undefined' && asset.file instanceof Blob) {
+    form.append('file', asset.file, fileName);
+  } else {
+    const browserFile = { uri: asset.uri, name: fileName, type: mimeType };
+    form.append('file', browserFile as unknown as Blob);
+  }
+  form.append('courseName', courseName);
+  form.append('documentType', documentType);
+  form.append('extension', getFileExtension(fileName));
+  form.append('action', 'extract');
+  return fetch(endpoint, { method: 'POST', headers, body: form });
 }
 
 function isStringArray(value: unknown): value is string[] {
@@ -177,36 +242,13 @@ export async function processDocument(asset: ImportAsset, courseName: string, ac
     );
   }
 
-  const form = new FormData();
   const fileName = getImportFileName(asset.name, asset.mimeType);
   const mimeType = getImportMimeType(fileName, asset.mimeType);
-  // DocumentPicker only supplies `file` on web. Native React Native fetch
-  // expects its proprietary { uri, name, type } descriptor instead. Keeping
-  // those paths explicit avoids the Blob/FormData mismatch on iOS builds.
-  if (typeof Blob !== 'undefined' && asset.file instanceof Blob) {
-    form.append('file', asset.file, fileName);
-  } else {
-    const nativeFile = { uri: asset.uri, name: fileName, type: mimeType };
-    form.append('file', nativeFile as unknown as Blob);
-  }
-  form.append('courseName', courseName);
-  form.append('documentType', documentType);
-  form.append('extension', getFileExtension(fileName));
-  form.append('action', 'extract');
 
-  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const controller = Platform.OS === 'web' && typeof AbortController !== 'undefined' ? new AbortController() : null;
   const timeout = controller ? setTimeout(() => controller.abort(), PROCESSOR_TIMEOUT_MS) : null;
   try {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        ...(anonKey ? { apikey: anonKey } : {}),
-        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : anonKey ? { Authorization: `Bearer ${anonKey}` } : {}),
-      },
-      body: form,
-      ...(controller ? { signal: controller.signal } : {}),
-    });
+    const response = await uploadDocument(endpoint, asset, fileName, mimeType, documentType, courseName, anonKey, accessToken);
     if (!response.ok) {
       let serverMessage = '';
       try {
