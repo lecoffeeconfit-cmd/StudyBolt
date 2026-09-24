@@ -40,6 +40,8 @@ export class StudyBoltProcessingError extends Error {
   }
 }
 
+export type DocumentProcessPhase = 'validating' | 'uploading' | 'finalizing';
+
 export const AUTOMATIC_STUDY_PACK_MATERIALS: StudyPackMaterial[] = [
   'simpleNotes',
   'detailedNotes',
@@ -227,7 +229,13 @@ function queuedGeneration(): NonNullable<StudyPack['generation']> {
   };
 }
 
-export async function processDocument(asset: ImportAsset, courseName: string, accessToken?: string | null): Promise<StudyPack> {
+export async function processDocument(
+  asset: ImportAsset,
+  courseName: string,
+  accessToken?: string | null,
+  onPhaseChange?: (phase: DocumentProcessPhase) => void,
+): Promise<StudyPack> {
+  onPhaseChange?.('validating');
   validateImport(asset);
   const documentType = getImportDocumentType(asset.name, asset.mimeType);
   if (!documentType) {
@@ -248,6 +256,7 @@ export async function processDocument(asset: ImportAsset, courseName: string, ac
   const controller = Platform.OS === 'web' && typeof AbortController !== 'undefined' ? new AbortController() : null;
   const timeout = controller ? setTimeout(() => controller.abort(), PROCESSOR_TIMEOUT_MS) : null;
   try {
+    onPhaseChange?.('uploading');
     const response = await uploadDocument(endpoint, asset, fileName, mimeType, documentType, courseName, anonKey, accessToken);
     if (!response.ok) {
       let serverMessage = '';
@@ -262,6 +271,7 @@ export async function processDocument(asset: ImportAsset, courseName: string, ac
         serverMessage || 'StudyBolt could not process this file. The original file was not added to your library.',
       );
     }
+    onPhaseChange?.('finalizing');
     let payload: unknown;
     try {
       payload = await response.json();

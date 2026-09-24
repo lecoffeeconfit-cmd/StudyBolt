@@ -7,6 +7,7 @@ export type Route =
   | { type: 'account-onboarding' }
   | { type: 'auth' }
   | { type: 'account' }
+  | { type: 'widgets' }
   | { type: 'legal' }
   | { type: 'reset-password' }
   | { type: 'smart-study'; mode?: SmartStudyMode; deckId?: string }

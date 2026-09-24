@@ -8,6 +8,7 @@ import { getFlaggedItemId } from './models';
 import { useAuth } from './AuthContext';
 import { AUTOMATIC_STUDY_PACK_MATERIALS, generateStudyPackMaterial, STUDY_PACK_MATERIAL_LABELS, STUDY_PACK_MATERIAL_STAGES, StudyBoltProcessingError } from './services/documentProcessor';
 import { loadStudyBoltState, saveStudyBoltState } from './services/persistence';
+import { updateStudyBoltWidgets } from './services/widgets';
 import { AppColors, resolveColors } from './theme';
 
 interface StudyBoltContextValue {
@@ -58,6 +59,10 @@ export function StudyBoltProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (hydrated) void saveStudyBoltState(state);
+  }, [hydrated, state]);
+
+  useEffect(() => {
+    if (hydrated) updateStudyBoltWidgets(state);
   }, [hydrated, state]);
 
   const runMaterialJob = useCallback((deck: StudyPack, material: StudyPackMaterial) => {

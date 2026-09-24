@@ -8,19 +8,28 @@ import { Icon } from './ui';
 
 export function StudyPackGenerationProgress() {
   const { colors, state, retryStudyPackMaterial } = useStudyBolt();
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   const [hiddenDeckIds, setHiddenDeckIds] = useState<string[]>([]);
   const deck = useMemo(() => [...state.decks]
     .filter((item) => item.generation && !hiddenDeckIds.includes(item.id))
     .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt))[0], [hiddenDeckIds, state.decks]);
   const materials = deck?.generation?.materials;
   const ready = materials ? AUTOMATIC_STUDY_PACK_MATERIALS.filter((item) => materials[item].status === 'ready').length : 0;
-  const failed = materials ? AUTOMATIC_STUDY_PACK_MATERIALS.filter((item) => materials[item].status === 'failed').length : 0;
-  const complete = Boolean(materials && ready === AUTOMATIC_STUDY_PACK_MATERIALS.length);
+  const totalMaterials = AUTOMATIC_STUDY_PACK_MATERIALS.length;
+  const remaining = totalMaterials - ready;
+  const complete = Boolean(materials && ready === totalMaterials);
+  const generationStartedAt = useMemo(() => {
+    if (!materials) return null;
+    const timestamps = AUTOMATIC_STUDY_PACK_MATERIALS
+      .map((material) => Date.parse(materials[material].updatedAt))
+      .filter((timestamp) => Number.isFinite(timestamp));
+    return timestamps.length ? Math.min(...timestamps) : null;
+  }, [materials]);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   useEffect(() => {
     if (!deck) return;
-    setExpanded(true);
+    setExpanded(false);
   }, [deck?.id]);
 
   useEffect(() => {
@@ -28,6 +37,14 @@ export function StudyPackGenerationProgress() {
     const timeout = setTimeout(() => setHiddenDeckIds((current) => [...current, deck.id]), 3200);
     return () => clearTimeout(timeout);
   }, [complete, deck]);
+
+  useEffect(() => {
+    if (!generationStartedAt || complete) return;
+    const updateElapsed = () => setElapsedSeconds(Math.max(0, Math.floor((Date.now() - generationStartedAt) / 1000)));
+    updateElapsed();
+    const timer = setInterval(updateElapsed, 1000);
+    return () => clearInterval(timer);
+  }, [complete, generationStartedAt]);
 
   if (!deck || !materials) return null;
 
@@ -42,10 +59,10 @@ export function StudyPackGenerationProgress() {
 
   if (!expanded) {
     return (
-      <Pressable accessibilityRole="button" accessibilityLabel="View Study Pack generation progress" onPress={() => setExpanded(true)} style={[styles.banner, { backgroundColor: colors.card, borderColor: failed ? colors.danger : colors.border }]}>
-        <View style={[styles.bannerIcon, { backgroundColor: failed ? `${colors.danger}18` : colors.goldSoft }]}><Icon name={failed ? 'alert-outline' : 'lightning-bolt'} size={18} color={failed ? colors.danger : colors.goldText} /></View>
-        <Text numberOfLines={1} style={[styles.bannerTitle, { color: colors.text }]}>{failed ? `${failed} item${failed === 1 ? '' : 's'} need retry` : `Study Pack still building · ${ready} of 6 ready`}</Text>
-        <Text style={[styles.viewLabel, { color: colors.primary }]}>View</Text>
+      <Pressable accessibilityRole="button" accessibilityLabel="View Study Pack tools" onPress={() => setExpanded(true)} style={[styles.banner, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={[styles.bannerIcon, { backgroundColor: colors.goldSoft }]}><Icon name="lightning-bolt" size={18} color={colors.goldText} /></View>
+        <Text numberOfLines={1} style={[styles.bannerTitle, { color: colors.text }]}>Study Pack ready · {ready}/{totalMaterials} tools ready</Text>
+        <Text style={[styles.viewLabel, { color: colors.primary }]}>View tools</Text>
       </Pressable>
     );
   }
@@ -55,8 +72,8 @@ export function StudyPackGenerationProgress() {
       <View style={styles.header}>
         <View style={[styles.panelIcon, { backgroundColor: colors.goldSoft }]}><Icon name="lightning-bolt" size={20} color={colors.goldText} /></View>
         <View style={styles.headerCopy}>
-          <Text style={[styles.title, { color: colors.text }]}>Building your Study Pack</Text>
-          <Text style={[styles.count, { color: colors.textSecondary }]}>{ready} of 6 ready{failed ? ` · ${failed} need retry` : ''}</Text>
+          <Text style={[styles.title, { color: colors.text }]}>Study Pack ready</Text>
+          <Text style={[styles.count, { color: colors.textSecondary }]}>{ready} of {totalMaterials} tools ready · {remaining} more to add · {formatElapsed(elapsedSeconds)}</Text>
         </View>
         <Pressable accessibilityRole="button" accessibilityLabel="Collapse progress" onPress={() => setExpanded(false)} hitSlop={10} style={styles.collapseButton}><Icon name="chevron-down" color={colors.textMuted} /></Pressable>
       </View>
@@ -65,7 +82,7 @@ export function StudyPackGenerationProgress() {
           <MaterialRow key={material} material={material} deckId={deck.id} status={materials[material]} onRetry={retryStudyPackMaterial} />
         ))}
       </View>
-      <Text style={[styles.hint, { color: colors.textMuted }]}>You can start studying anything that’s ready.</Text>
+      <Text style={[styles.hint, { color: colors.textMuted }]}>Start with what’s ready; add the other study tools whenever you need them.</Text>
     </View>
   );
 }
@@ -81,14 +98,14 @@ function MaterialRow({ material, deckId, status, onRetry }: {
   const failed = status.status === 'failed';
   return (
     <View style={styles.row}>
-      <View style={[styles.statusIcon, { backgroundColor: ready ? colors.mintSoft : failed ? `${colors.danger}16` : colors.cardStrong }]}>
-        <Icon name={ready ? 'check' : failed ? 'alert-outline' : 'circle-small'} size={16} color={ready ? colors.mint : failed ? colors.danger : colors.primary} />
+      <View style={[styles.statusIcon, { backgroundColor: ready ? colors.mintSoft : failed ? colors.goldSoft : colors.cardStrong }]}>
+        <Icon name={ready ? 'check' : failed ? 'clock-outline' : 'circle-small'} size={16} color={ready ? colors.mint : failed ? colors.goldText : colors.primary} />
       </View>
       <Text style={[styles.label, { color: colors.text }]}>{STUDY_PACK_MATERIAL_LABELS[material]}</Text>
       {failed ? (
-        <Pressable accessibilityRole="button" onPress={() => onRetry(deckId, material)} style={[styles.retry, { backgroundColor: `${colors.danger}12` }]}>
-          <Icon name="refresh" size={13} color={colors.danger} />
-          <Text style={[styles.retryText, { color: colors.danger }]}>Retry</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Create ${STUDY_PACK_MATERIAL_LABELS[material]}`} onPress={() => onRetry(deckId, material)} style={[styles.retry, { backgroundColor: colors.goldSoft }]}>
+          <Icon name="creation" size={13} color={colors.goldText} />
+          <Text style={[styles.retryText, { color: colors.goldText }]}>Create</Text>
         </Pressable>
       ) : (
         <Text style={[styles.state, { color: ready ? colors.mint : colors.textMuted }]}>{ready ? 'Ready' : status.stage || 'Creating…'}</Text>
@@ -99,10 +116,10 @@ function MaterialRow({ material, deckId, status, onRetry }: {
 
 const styles = StyleSheet.create({
   panel: { position: 'absolute', zIndex: 50, elevation: 12, left: 12, right: 12, bottom: 82, borderWidth: StyleSheet.hairlineWidth, borderRadius: 20, padding: 14, shadowOpacity: 0.18, shadowRadius: 18, shadowOffset: { width: 0, height: 8 } },
-  banner: { position: 'absolute', zIndex: 50, elevation: 12, left: 12, right: 12, bottom: 82, minHeight: 54, borderWidth: StyleSheet.hairlineWidth, borderRadius: 17, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  bannerIcon: { width: 32, height: 32, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
-  bannerTitle: { flex: 1, fontSize: 12, fontWeight: '900' },
-  viewLabel: { fontSize: 11, fontWeight: '900' },
+  banner: { position: 'absolute', zIndex: 50, elevation: 12, left: 16, right: 16, bottom: 88, minHeight: 48, borderWidth: StyleSheet.hairlineWidth, borderRadius: 17, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  bannerIcon: { width: 29, height: 29, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  bannerTitle: { flex: 1, fontSize: 11, fontWeight: '900' },
+  viewLabel: { fontSize: 10, fontWeight: '900' },
   header: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   panelIcon: { width: 37, height: 37, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   headerCopy: { flex: 1 },
@@ -118,3 +135,8 @@ const styles = StyleSheet.create({
   retryText: { fontSize: 9, fontWeight: '900' },
   hint: { marginTop: 11, fontSize: 10, textAlign: 'center' },
 });
+
+function formatElapsed(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+}

@@ -28,6 +28,7 @@ import { StudyPackScreen } from '../screens/StudyPackScreen';
 import { VisualReviewScreen } from '../screens/VisualReviewScreen';
 import { SharedStudyPackScreen } from '../screens/SharedStudyPackScreen';
 import { SmartStudyScreen } from '../screens/SmartStudyScreen';
+import { WidgetsScreen } from '../screens/WidgetsScreen';
 import { combineStudyPacks } from '../services/studyPack';
 import { parseShareToken } from '../services/sharing';
 import type { StudyPack, StudyTool, StudyType } from '../models';
@@ -154,6 +155,7 @@ export function StudyBoltNavigator() {
           onOpenOnboarding={() => setRoute({ type: 'onboarding' })}
           onOpenAuth={() => setRoute({ type: 'auth' })}
           onManageAccount={() => setRoute({ type: 'account' })}
+          onOpenWidgets={() => setRoute({ type: 'widgets' })}
           onOpenLegal={() => setRoute({ type: 'legal' })}
         />
       );
@@ -202,6 +204,7 @@ export function StudyBoltNavigator() {
           onDeleted={() => setRoute({ type: 'auth' })}
         />
       ) : null}
+      {!showOnboarding && !showAccountOnboarding && route.type === 'widgets' ? <WidgetsScreen onBack={() => setRoute({ type: 'main' })} /> : null}
       {showOnboarding ? <OnboardingScreen onComplete={finishOnboarding} onTrySample={trySampleFromOnboarding} /> : null}
       {!showOnboarding && !showAccountOnboarding && route.type === 'legal' ? <LegalScreen onBack={() => setRoute({ type: 'main' })} /> : null}
       {!showOnboarding && !showAccountOnboarding && route.type === 'reset-password' ? <ResetPasswordScreen onComplete={() => setRoute({ type: 'main' })} /> : null}
@@ -298,7 +301,7 @@ export function StudyBoltNavigator() {
           onTrySample={openSample}
         />
       ) : null}
-      {!showOnboarding && !showAccountOnboarding && route.type !== 'processing' && route.type !== 'auth' ? <StudyPackGenerationProgress /> : null}
+      {!showOnboarding && !showAccountOnboarding && route.type !== 'processing' && route.type !== 'auth' && route.type !== 'widgets' ? <StudyPackGenerationProgress /> : null}
     </View>
   );
 }

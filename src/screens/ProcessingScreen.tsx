@@ -7,7 +7,7 @@ import { useReducedMotion } from '../hooks/useReducedMotion';
 import { useStudyBolt } from '../StudyBoltContext';
 import type { ImportAsset, StudyPack } from '../models';
 import { documentIcon, documentTypeLabel, getImportDocumentType } from '../services/documentTypes';
-import { processDocument, StudyBoltProcessingError, validateImport } from '../services/documentProcessor';
+import { processDocument, type DocumentProcessPhase, StudyBoltProcessingError, validateImport } from '../services/documentProcessor';
 import { useAuth } from '../AuthContext';
 
 export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSuccess, onTrySample }: { asset: ImportAsset; courseId?: string; courseName?: string; onCancel: () => void; onSuccess: (deck: StudyPack) => void; onTrySample: () => void }) {
@@ -22,6 +22,9 @@ export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSucc
   const [className, setClassName] = useState(courseName ?? '');
   const [started, setStarted] = useState(Boolean(courseName));
   const [attempt, setAttempt] = useState(0);
+  const [phase, setPhase] = useState<DocumentProcessPhase>('validating');
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const startedAt = useRef<number | null>(null);
   const pulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -44,7 +47,20 @@ export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSucc
     setError(null);
     setNameError(null);
     setAttempt(0);
+    startedAt.current = courseName ? Date.now() : null;
+    setElapsedSeconds(0);
+    setPhase('validating');
   }, [asset, courseName]);
+
+  useEffect(() => {
+    if (!started || error || !startedAt.current) return;
+    const updateElapsed = () => {
+      if (startedAt.current) setElapsedSeconds(Math.max(0, Math.floor((Date.now() - startedAt.current) / 1000)));
+    };
+    updateElapsed();
+    const timer = setInterval(updateElapsed, 1000);
+    return () => clearInterval(timer);
+  }, [error, started]);
 
   useEffect(() => {
     if (!started) return;
@@ -55,7 +71,9 @@ export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSucc
         // Uploads are public guest-safe; a failed/expired auth refresh must not
         // prevent the document request from reaching the processor.
         .catch(() => null)
-        .then((accessToken) => processDocument(asset, className.trim(), accessToken))
+        .then((accessToken) => processDocument(asset, className.trim(), accessToken, (nextPhase) => {
+          if (mounted) setPhase(nextPhase);
+        }))
         .then((deck) => {
           if (!mounted) return;
           onSuccess({
@@ -82,6 +100,9 @@ export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSucc
 
   const retryProcessing = () => {
     setError(null);
+    startedAt.current = Date.now();
+    setElapsedSeconds(0);
+    setPhase('validating');
     setStarted(true);
     setAttempt((value) => value + 1);
   };
@@ -94,6 +115,9 @@ export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSucc
     }
     setNameError(null);
     setError(null);
+    startedAt.current = Date.now();
+    setElapsedSeconds(0);
+    setPhase('validating');
     setStarted(true);
   };
 
@@ -166,13 +190,20 @@ export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSucc
           <>
             <Text style={[styles.title, { color: colors.text }]}>Building your Study Pack</Text>
             <Text style={[styles.description, { color: colors.textSecondary }]}>We’re securely extracting your source once. Your Study Pack will open as soon as that source is ready.</Text>
-            <View style={[styles.stageCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <View style={styles.stageRow}>
+            <View accessibilityLiveRegion="polite" style={[styles.activityCard, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow }]}>
+              <View style={styles.activityHeader}>
                 <View style={[styles.stageIcon, { backgroundColor: colors.goldSoft }]}><ActivityIndicator size="small" color={colors.goldText} /></View>
-                <Text style={[styles.stageText, { color: colors.text, fontWeight: '800' }]}>{processingMessage}</Text>
-                <Text style={[styles.working, { color: colors.goldText }]}>Secure</Text>
+                <View style={styles.activityHeaderCopy}>
+                  <Text style={[styles.activityTitle, { color: colors.text }]}>Live activity</Text>
+                  <Text style={[styles.activitySubtitle, { color: colors.textMuted }]}>Secure processing · {formatElapsed(elapsedSeconds)}</Text>
+                </View>
+                <Text style={[styles.working, { color: colors.goldText }]}>Private</Text>
               </View>
-              <Text style={[styles.extractHint, { color: colors.textMuted }]}>Notes, flashcards, quiz, and audio will build independently next.</Text>
+              <View style={styles.activityRows}>
+                <ProcessingStepRow label="Check your source" detail="Format and size verified" state="done" colors={colors} />
+                <ProcessingStepRow label={processingMessage} detail={phase === 'finalizing' ? 'Response received · finishing up' : 'Secure request in progress'} state={phase === 'finalizing' ? 'done' : 'active'} colors={colors} />
+                <ProcessingStepRow label="Build study materials" detail="Notes, cards, quiz, and audio follow next" state="queued" colors={colors} />
+              </View>
             </View>
           </>
         )}
@@ -193,12 +224,19 @@ const styles = StyleSheet.create({
   setupBoltInner: { width: 60, height: 60, borderRadius: 30 },
   title: { fontSize: 26, lineHeight: 32, fontWeight: '900', letterSpacing: -0.8, textAlign: 'center' },
   description: { fontSize: 13, lineHeight: 19, textAlign: 'center', marginTop: 8, maxWidth: 330 },
-  stageCard: { width: '100%', borderWidth: StyleSheet.hairlineWidth, borderRadius: 19, padding: 16, gap: 12, marginTop: 15 },
-  stageRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  activityCard: { width: '100%', borderWidth: StyleSheet.hairlineWidth, borderRadius: 19, padding: 14, marginTop: 15, shadowOpacity: 0.08, shadowRadius: 14, shadowOffset: { width: 0, height: 6 } },
+  activityHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  activityHeaderCopy: { flex: 1 },
+  activityTitle: { fontSize: 12, fontWeight: '900' },
+  activitySubtitle: { fontSize: 9, lineHeight: 14, marginTop: 2, fontWeight: '700' },
+  activityRows: { marginTop: 11, gap: 8 },
   stageIcon: { width: 27, height: 27, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
-  stageText: { flex: 1, fontSize: 12 },
   working: { fontSize: 9, fontWeight: '800' },
-  extractHint: { fontSize: 10, lineHeight: 15, paddingLeft: 37 },
+  activityRow: { minHeight: 27, flexDirection: 'row', alignItems: 'center', gap: 9 },
+  activityStatus: { width: 23, height: 23, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  activityRowCopy: { flex: 1 },
+  activityRowLabel: { fontSize: 10, fontWeight: '800' },
+  activityRowDetail: { fontSize: 9, lineHeight: 12, marginTop: 1 },
   fileCard: { width: '100%', borderWidth: StyleSheet.hairlineWidth, borderRadius: 15, flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14, marginTop: 22 },
   fileName: { flex: 1, fontSize: 12, fontWeight: '700' },
   inputLabel: { alignSelf: 'flex-start', fontSize: 11, lineHeight: 14, fontWeight: '800', marginTop: 19, marginBottom: 7, marginLeft: 2 },
@@ -210,3 +248,30 @@ const styles = StyleSheet.create({
   secondaryText: { fontSize: 12, fontWeight: '700' },
   privacy: { textAlign: 'center', fontSize: 10 },
 });
+
+function formatElapsed(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+}
+
+function ProcessingStepRow({ label, detail, state, colors }: {
+  label: string;
+  detail: string;
+  state: 'done' | 'active' | 'queued';
+  colors: ReturnType<typeof useStudyBolt>['colors'];
+}) {
+  const icon = state === 'done' ? 'check' : state === 'active' ? 'circle-small' : 'clock-outline';
+  const iconColor = state === 'done' ? colors.mint : state === 'active' ? colors.goldText : colors.textMuted;
+  return (
+    <View style={styles.activityRow}>
+      <View style={[styles.activityStatus, { backgroundColor: state === 'done' ? colors.mintSoft : state === 'active' ? colors.goldSoft : colors.cardStrong }]}>
+        {state === 'active' ? <ActivityIndicator size="small" color={iconColor} /> : <Icon name={icon} size={14} color={iconColor} />}
+      </View>
+      <View style={styles.activityRowCopy}>
+        <Text style={[styles.activityRowLabel, { color: colors.text }]}>{label}</Text>
+        <Text style={[styles.activityRowDetail, { color: colors.textMuted }]}>{detail}</Text>
+      </View>
+      <Text style={[styles.working, { color: state === 'done' ? colors.mint : state === 'active' ? colors.goldText : colors.textMuted }]}>{state === 'done' ? 'Done' : state === 'active' ? 'Working' : 'Next'}</Text>
+    </View>
+  );
+}

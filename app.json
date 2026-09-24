@@ -17,7 +17,42 @@
           }
         }
       ],
-      "expo-font"
+      "expo-font",
+      [
+        "expo-widgets",
+        {
+          "groupIdentifier": "group.com.lecoffeeconfit.studybolt",
+          "widgets": [
+            {
+              "name": "StudyFocusWidget",
+              "displayName": "Study Focus",
+              "description": "See what to study next and how long it may take.",
+              "ios": {
+                "supportedFamilies": ["systemSmall", "systemMedium"],
+                "contentMarginsDisabled": true
+              }
+            },
+            {
+              "name": "StudyPlanWidget",
+              "displayName": "Today’s Study Plan",
+              "description": "Keep today’s next study block in view.",
+              "ios": {
+                "supportedFamilies": ["systemMedium"],
+                "contentMarginsDisabled": true
+              }
+            },
+            {
+              "name": "StudyPackWidget",
+              "displayName": "Study Pack Progress",
+              "description": "See your current Study Pack and available tools.",
+              "ios": {
+                "supportedFamilies": ["systemLarge"],
+                "contentMarginsDisabled": true
+              }
+            }
+          ]
+        }
+      ]
     ],
     "ios": {
       "supportsTablet": true,

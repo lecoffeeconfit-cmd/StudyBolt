@@ -31,7 +31,7 @@ function retentionLabel(mode: RetentionMode): string {
   return mode === 'standard' ? 'Standard' : mode === 'fsrs' ? 'FSRS' : 'SM-2';
 }
 
-export function ProfileScreen({ onOpenOnboarding, onOpenAuth, onManageAccount, onOpenLegal }: { onOpenOnboarding: () => void; onOpenAuth: () => void; onManageAccount: () => void; onOpenLegal: () => void }) {
+export function ProfileScreen({ onOpenOnboarding, onOpenAuth, onManageAccount, onOpenWidgets, onOpenLegal }: { onOpenOnboarding: () => void; onOpenAuth: () => void; onManageAccount: () => void; onOpenWidgets: () => void; onOpenLegal: () => void }) {
   const { colors, state, setRetentionMode, setTheme } = useStudyBolt();
   const { user, profile, updateProfile } = useAuth();
   const [studyTypeBusy, setStudyTypeBusy] = useState(false);
@@ -125,6 +125,7 @@ export function ProfileScreen({ onOpenOnboarding, onOpenAuth, onManageAccount, o
         <Setting icon="bell-outline" title="Reminders" detail={state.plan.remindersEnabled ? 'Enabled in current plan' : 'Off'} />
         <Setting icon="speedometer" title="Playback speed" detail="1.0× default" />
         <Setting icon="timer-outline" title="Focus timer" detail="25 min focus · 5 min break" />
+        <Setting icon="view-dashboard-outline" title="Study widgets" detail="Add glanceable study views to your Home Screen" onPress={onOpenWidgets} />
         <Setting icon="download-circle-outline" title="Offline study" detail={`${state.decks.length} packs stored locally`} last />
       </Card>
 
