@@ -44,6 +44,7 @@ const AUDIO_MODES: Array<{ id: StudyCastMode; label: string; icon: IconName }> =
 ];
 
 type StudyCastSpeechChunk = { text: string; startWord: number; endWord: number };
+type PlaybackOverrides = { rate?: number; voiceIdentifier?: string | null };
 
 function splitStudyCastSpeech(words: string[], startWord: number): StudyCastSpeechChunk[] {
   const chunks: StudyCastSpeechChunk[] = [];
@@ -725,12 +726,12 @@ function Flashcards({ deck, readOnly = false }: { deck: StudyPack; readOnly?: bo
       </Animated.View>
 
       <View style={styles.cardNav}>
-        <Pressable accessibilityLabel="Previous card" disabled={index === 0} onPress={() => { setIndex((value) => Math.max(0, value - 1)); setRevealed(false); }} style={[styles.navButton, { backgroundColor: colors.card, borderColor: colors.border, opacity: index === 0 ? 0.4 : 1 }]}>
-          <Icon name="chevron-left" size={27} color={colors.textSecondary} />
+        <Pressable accessibilityRole="button" accessibilityLabel="Previous card" disabled={index === 0} hitSlop={8} onPress={() => { setIndex((value) => Math.max(0, value - 1)); setRevealed(false); }} style={({ pressed }) => [styles.navButton, { backgroundColor: index === 0 ? colors.card : colors.purpleSoft, borderColor: index === 0 ? colors.border : `${colors.purple}38`, opacity: index === 0 ? 0.45 : pressed ? 0.82 : 1, transform: [{ scale: pressed && index > 0 ? 0.94 : 1 }] }]}>
+          <Icon name="arrow-left" size={21} color={index === 0 ? colors.textMuted : colors.purple} />
         </Pressable>
         <Text style={[styles.confidenceHint, { color: colors.textMuted }]}>{readOnly ? 'Preview the answer, then save a copy to study' : revealed ? 'How well did you know it?' : 'Retrieve, then reveal'}</Text>
-        <Pressable accessibilityLabel="Next card" disabled={index === deck.flashcards.length - 1} onPress={() => { setIndex((value) => Math.min(deck.flashcards.length - 1, value + 1)); setRevealed(false); }} style={[styles.navButton, { backgroundColor: colors.card, borderColor: colors.border, opacity: index === deck.flashcards.length - 1 ? 0.4 : 1 }]}>
-          <Icon name="chevron-right" size={27} color={colors.textSecondary} />
+        <Pressable accessibilityRole="button" accessibilityLabel="Next card" disabled={index === deck.flashcards.length - 1} hitSlop={8} onPress={() => { setIndex((value) => Math.min(deck.flashcards.length - 1, value + 1)); setRevealed(false); }} style={({ pressed }) => [styles.navButton, { backgroundColor: index === deck.flashcards.length - 1 ? colors.card : colors.purpleSoft, borderColor: index === deck.flashcards.length - 1 ? colors.border : `${colors.purple}38`, opacity: index === deck.flashcards.length - 1 ? 0.45 : pressed ? 0.82 : 1, transform: [{ scale: pressed && index < deck.flashcards.length - 1 ? 0.94 : 1 }] }]}>
+          <Icon name="arrow-right" size={21} color={index === deck.flashcards.length - 1 ? colors.textMuted : colors.purple} />
         </Pressable>
       </View>
 
@@ -1189,14 +1190,20 @@ function AskSuggestion({ icon, label, onPress }: { icon: IconName; label: string
 function SeekProgress({ progress, color, onSeek, currentPosition, total }: { progress: number; color: string; onSeek: (progress: number) => void; currentPosition: number; total: number }) {
   const { colors } = useStudyBolt();
   const [width, setWidth] = useState(1);
+  const [isSeeking, setIsSeeking] = useState(false);
   const seekRef = useRef(onSeek);
   seekRef.current = onSeek;
   const responder = useMemo(() => PanResponder.create({
     onStartShouldSetPanResponder: () => true,
     onMoveShouldSetPanResponder: () => true,
     onPanResponderTerminationRequest: () => false,
-    onPanResponderGrant: (event) => seekRef.current(Math.max(0, Math.min(1, event.nativeEvent.locationX / width))),
+    onPanResponderGrant: (event) => {
+      setIsSeeking(true);
+      seekRef.current(Math.max(0, Math.min(1, event.nativeEvent.locationX / width)));
+    },
     onPanResponderMove: (event) => seekRef.current(Math.max(0, Math.min(1, event.nativeEvent.locationX / width))),
+    onPanResponderRelease: () => setIsSeeking(false),
+    onPanResponderTerminate: () => setIsSeeking(false),
   }), [width]);
   const safeProgress = Math.max(0, Math.min(100, progress));
   return (
@@ -1205,6 +1212,7 @@ function SeekProgress({ progress, color, onSeek, currentPosition, total }: { pro
       onLayout={(event) => setWidth(Math.max(1, event.nativeEvent.layout.width))}
       accessibilityRole="adjustable"
       accessibilityLabel="Audio position"
+      accessibilityHint="Tap or drag the bar to move through the audio."
       accessibilityValue={{ min: 0, max: total, now: currentPosition }}
       accessibilityActions={[{ name: 'increment', label: 'Skip forward' }, { name: 'decrement', label: 'Skip back' }]}
       onAccessibilityAction={(event) => {
@@ -1215,7 +1223,7 @@ function SeekProgress({ progress, color, onSeek, currentPosition, total }: { pro
     >
       <View style={[styles.seekTrack, { backgroundColor: colors.border }]}>
         <View style={[styles.seekFill, { backgroundColor: color, width: `${safeProgress}%` }]} />
-        <View style={[styles.seekThumb, { backgroundColor: color, left: `${safeProgress}%` }]} />
+        <View style={[styles.seekThumb, isSeeking && styles.seekThumbActive, { backgroundColor: color, left: `${safeProgress}%` }]} />
       </View>
     </View>
   );
@@ -1380,9 +1388,13 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
     persistPosition(nextPosition);
     recordAudioProgress(nextPosition);
   };
-  const playFrom = (requestedPosition: number) => {
+  const playFrom = (requestedPosition: number, overrides?: PlaybackOverrides) => {
     if (!words.length) return;
     const start = requestedPosition >= words.length ? 0 : Math.max(0, requestedPosition);
+    const playbackRate = overrides?.rate ?? rate;
+    const playbackVoiceIdentifier = overrides?.voiceIdentifier === null
+      ? undefined
+      : overrides?.voiceIdentifier ?? voiceIdentifier;
     const speechWords = words.map((word) => word.length > MAX_SPEECH_CHUNK_CHARS ? 'reference' : word);
     const chunks = splitStudyCastSpeech(speechWords, start);
     if (!chunks.length) return;
@@ -1401,8 +1413,8 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
         if (generation !== playbackGenerationRef.current) return;
         chunks.forEach((chunk, index) => {
           Speech.speak(chunk.text, {
-            rate,
-            voice: voice?.identifier,
+            rate: playbackRate,
+            voice: playbackVoiceIdentifier,
             useApplicationAudioSession: true,
             onBoundary: ({ charIndex }: { charIndex: number }) => {
               if (generation !== playbackGenerationRef.current) return;
@@ -1444,6 +1456,18 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
       }
     });
   };
+  const restartPlaybackWithSettings = async (overrides: PlaybackOverrides) => {
+    if (!playing) return;
+    const resumePosition = position;
+    const generation = ++playbackGenerationRef.current;
+    await Speech.stop();
+    if (generation !== playbackGenerationRef.current) return;
+    setPlaying(false);
+    updatePlaybackPosition(resumePosition);
+    persistPosition(resumePosition);
+    recordAudioProgress(resumePosition);
+    playFrom(resumePosition, overrides);
+  };
   const togglePlay = async () => {
     if (playing) { await stopAt(position); setVoiceSessionState(interactiveMode ? 'paused' : 'idle'); }
     else playFrom(position);
@@ -1479,18 +1503,22 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
     const safeIndex = currentIndex < 0 ? PLAYBACK_RATES.indexOf(1) : currentIndex;
     const nextIndex = Math.max(0, Math.min(PLAYBACK_RATES.length - 1, safeIndex + direction));
     if (nextIndex === safeIndex) return;
-    setRate(PLAYBACK_RATES[nextIndex] ?? 1);
-    if (playing) void stopAt(position);
+    const nextRate = PLAYBACK_RATES[nextIndex] ?? 1;
+    setRate(nextRate);
+    if (playing) void restartPlaybackWithSettings({ rate: nextRate });
   };
   const selectRate = (nextRate: number) => {
     setRate(nextRate);
     setSpeedSheetVisible(false);
-    if (playing) void stopAt(position);
+    if (playing && nextRate !== rate) void restartPlaybackWithSettings({ rate: nextRate });
   };
   const selectVoice = (nextVoice?: Speech.Voice) => {
+    const nextVoiceIdentifier = nextVoice?.identifier;
     setVoiceIdentifier(nextVoice?.identifier);
     setVoiceSheetVisible(false);
-    if (playing) void stopAt(position);
+    if (playing && nextVoiceIdentifier !== voiceIdentifier) {
+      void restartPlaybackWithSettings({ voiceIdentifier: nextVoiceIdentifier ?? null });
+    }
   };
   const previewVoice = (nextVoice?: Speech.Voice) => {
     void Speech.stop().then(() => Speech.speak('Hi, I’m ready to study with you.', { rate: 1, voice: nextVoice?.identifier }));
@@ -2104,7 +2132,7 @@ const styles = StyleSheet.create({
   tapHint: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 13, flexDirection: 'row', gap: 7, justifyContent: 'center', alignItems: 'center' },
   tapHintText: { fontSize: 10 },
   cardNav: { marginTop: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  navButton: { width: 52, height: 52, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center' },
+  navButton: { width: 48, height: 48, borderRadius: 24, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   confidenceHint: { fontSize: 10, fontWeight: '700' },
   confidenceRow: { flexDirection: 'row', gap: 8, marginTop: 15 },
   confidenceButton: { flex: 1, minHeight: 58, borderRadius: 15, borderWidth: 1, alignItems: 'center', justifyContent: 'center', gap: 4 },
@@ -2209,10 +2237,11 @@ const styles = StyleSheet.create({
   currentSectionLabel: { color: '#857DA8', fontSize: 7, fontWeight: '900', letterSpacing: 1 },
   currentSectionTitle: { maxWidth: '90%', color: '#CFCAE5', fontSize: 10, fontWeight: '800', marginTop: 3 },
   audioProgress: { width: '100%', marginTop: 14 },
-  seekTouchArea: { width: '100%', height: 28, justifyContent: 'center' },
-  seekTrack: { width: '100%', height: 5, borderRadius: 4, justifyContent: 'center' },
-  seekFill: { position: 'absolute', left: 0, top: 0, height: 5, borderRadius: 4 },
-  seekThumb: { position: 'absolute', width: 14, height: 14, borderRadius: 7, marginLeft: -7, top: -4.5, borderWidth: 2, borderColor: '#F2EDFF' },
+  seekTouchArea: { width: '100%', height: 44, justifyContent: 'center' },
+  seekTrack: { width: '100%', height: 6, borderRadius: 4, justifyContent: 'center' },
+  seekFill: { position: 'absolute', left: 0, top: 0, height: 6, borderRadius: 4 },
+  seekThumb: { position: 'absolute', width: 20, height: 20, borderRadius: 10, marginLeft: -10, top: -7, borderWidth: 2, borderColor: '#F2EDFF' },
+  seekThumbActive: { width: 24, height: 24, borderRadius: 12, marginLeft: -12, top: -9, borderWidth: 2.5, elevation: 3, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 3, shadowOffset: { width: 0, height: 1 } },
   timeRow: { width: '100%', flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
   timeText: { color: '#929EAA', fontSize: 9 },
   controls: { flexDirection: 'row', alignItems: 'center', gap: 27, marginTop: 17 },
