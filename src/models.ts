@@ -180,7 +180,7 @@ export interface StudyEvent {
   sourceDeckIds?: string[];
   masteryBefore?: number;
   masteryAfter?: number;
-  audioMode?: 'original' | 'summary';
+  audioMode?: 'original' | 'summary' | 'flashcards';
   completionPercent?: number;
   tutorAction?: AiTutorAction;
   tutorQuizCorrect?: boolean;

@@ -58,11 +58,13 @@ export function LibraryScreen({
   onOpenDeck,
   onCreateReview,
   onOpenFlagged,
+  onOpenSpeedReview,
   onImport,
 }: {
   onOpenDeck: (deck: StudyPack) => void;
   onCreateReview: (deckIds: string[]) => void;
   onOpenFlagged: () => void;
+  onOpenSpeedReview: (courseId: string) => void;
   onImport: (asset: ImportAsset, course: StudyClass) => void;
 }) {
   const { colors, state, addClass, setLibrarySort } = useStudyBolt();
@@ -298,6 +300,21 @@ export function LibraryScreen({
 
                   {!collapsed ? (
                     <View style={[styles.classBody, { borderTopColor: colors.border }]}>
+                      {decks.length > 0 && !selecting ? (
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel={`Start speed review for ${course.name}`}
+                          onPress={() => onOpenSpeedReview(course.id)}
+                          style={({ pressed }) => [styles.speedReviewRow, { backgroundColor: colors.purpleSoft }, pressed && styles.deckRowPressed]}
+                        >
+                          <View style={[styles.speedReviewIcon, { backgroundColor: colors.purple }]}><Icon name="speedometer" size={17} color={colors.primaryText} /></View>
+                          <View style={styles.speedReviewCopy}>
+                            <Text style={[styles.speedReviewTitle, { color: colors.text }]}>Speed Review</Text>
+                            <Text style={[styles.speedReviewSubtitle, { color: colors.textSecondary }]}>Listen to a short pass across this class</Text>
+                          </View>
+                          <Icon name="arrow-right" size={18} color={colors.purple} />
+                        </Pressable>
+                      ) : null}
                       {decks.length === 0 ? (
                         <View style={[styles.emptyClassCard, { backgroundColor: colors.card, borderColor: `${course.color}42` }]}>
                           <View style={[styles.emptyClassIcon, { backgroundColor: `${course.color}18` }]}>
@@ -541,6 +558,11 @@ const styles = StyleSheet.create({
   masteryTrack: { height: 3, borderRadius: 2, overflow: 'hidden', marginTop: 10, marginLeft: 53 },
   masteryFill: { height: 3, borderRadius: 2 },
   classBody: { borderTopWidth: StyleSheet.hairlineWidth, paddingHorizontal: 10, paddingTop: 10, paddingBottom: 9 },
+  speedReviewRow: { minHeight: 62, borderRadius: 15, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 11, marginBottom: 10 },
+  speedReviewIcon: { width: 35, height: 35, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  speedReviewCopy: { flex: 1 },
+  speedReviewTitle: { fontSize: 12, fontWeight: '900' },
+  speedReviewSubtitle: { fontSize: 10, lineHeight: 14, marginTop: 2 },
   emptyClassCard: { minHeight: 68, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 11, padding: 12 },
   emptyClassIcon: { width: 39, height: 39, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   emptyClassCopy: { flex: 1 },

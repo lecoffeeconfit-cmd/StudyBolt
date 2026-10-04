@@ -52,7 +52,16 @@
             }
           ]
         }
-      ]
+      ],
+      [
+        "expo-audio",
+        {
+          "enableBackgroundPlayback": true,
+          "recordAudioAndroid": false,
+          "microphonePermission": false
+        }
+      ],
+      "./plugins/withStudyCastBackgroundPlayback"
     ],
     "ios": {
       "supportsTablet": true,

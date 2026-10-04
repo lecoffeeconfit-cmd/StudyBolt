@@ -96,19 +96,20 @@ function MaterialRow({ material, deckId, status, onRetry }: {
   const { colors } = useStudyBolt();
   const ready = status.status === 'ready';
   const failed = status.status === 'failed';
+  const queued = status.status === 'queued';
   return (
     <View style={styles.row}>
       <View style={[styles.statusIcon, { backgroundColor: ready ? colors.mintSoft : failed ? colors.goldSoft : colors.cardStrong }]}>
-        <Icon name={ready ? 'check' : failed ? 'clock-outline' : 'circle-small'} size={16} color={ready ? colors.mint : failed ? colors.goldText : colors.primary} />
+        <Icon name={ready ? 'check' : failed ? 'alert-outline' : queued ? 'clock-outline' : 'circle-small'} size={16} color={ready ? colors.mint : failed ? colors.goldText : colors.primary} />
       </View>
       <Text style={[styles.label, { color: colors.text }]}>{STUDY_PACK_MATERIAL_LABELS[material]}</Text>
       {failed ? (
-        <Pressable accessibilityRole="button" accessibilityLabel={`Create ${STUDY_PACK_MATERIAL_LABELS[material]}`} onPress={() => onRetry(deckId, material)} style={[styles.retry, { backgroundColor: colors.goldSoft }]}>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Retry ${STUDY_PACK_MATERIAL_LABELS[material]}`} onPress={() => onRetry(deckId, material)} style={[styles.retry, { backgroundColor: colors.goldSoft }]}>
           <Icon name="creation" size={13} color={colors.goldText} />
-          <Text style={[styles.retryText, { color: colors.goldText }]}>Create</Text>
+          <Text style={[styles.retryText, { color: colors.goldText }]}>Retry</Text>
         </Pressable>
       ) : (
-        <Text style={[styles.state, { color: ready ? colors.mint : colors.textMuted }]}>{ready ? 'Ready' : status.stage || 'Creating…'}</Text>
+        <Text style={[styles.state, { color: ready ? colors.mint : colors.textMuted }]}>{ready ? 'Ready' : queued ? 'Queued' : status.stage || 'Generating…'}</Text>
       )}
     </View>
   );

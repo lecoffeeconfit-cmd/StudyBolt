@@ -44,11 +44,11 @@ export type DocumentProcessPhase = 'validating' | 'uploading' | 'finalizing';
 
 export const AUTOMATIC_STUDY_PACK_MATERIALS: StudyPackMaterial[] = [
   'simpleNotes',
+  'flashcards',
+  'quiz',
   'detailedNotes',
   'keyConcepts',
-  'flashcards',
   'audio',
-  'quiz',
 ];
 
 export const STUDY_PACK_MATERIAL_LABELS: Record<StudyPackMaterial, string> = {

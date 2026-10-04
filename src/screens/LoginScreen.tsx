@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
+  Easing,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -44,7 +45,24 @@ export function LoginScreen({
   const [confirmationEmail, setConfirmationEmail] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<{ displayName?: string; email?: string; password?: string; confirmPassword?: string }>({});
   const entrance = useRef(new Animated.Value(0)).current;
+  const heroEntrance = useRef(new Animated.Value(0)).current;
   const bob = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    heroEntrance.setValue(0);
+    if (reducedMotion) {
+      heroEntrance.setValue(1);
+      return;
+    }
+    const animation = Animated.timing(heroEntrance, {
+      toValue: 1,
+      duration: 600,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: Platform.OS !== 'web',
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [heroEntrance, reducedMotion]);
 
   useEffect(() => {
     entrance.setValue(0);
@@ -64,8 +82,8 @@ export function LoginScreen({
     bob.setValue(0);
     if (reducedMotion) return;
     const animation = Animated.loop(Animated.sequence([
-      Animated.timing(bob, { toValue: 1, duration: 1700, useNativeDriver: Platform.OS !== 'web' }),
-      Animated.timing(bob, { toValue: 0, duration: 1700, useNativeDriver: Platform.OS !== 'web' }),
+      Animated.timing(bob, { toValue: 1, duration: 2400, easing: Easing.inOut(Easing.sin), useNativeDriver: Platform.OS !== 'web' }),
+      Animated.timing(bob, { toValue: 0, duration: 2400, easing: Easing.inOut(Easing.sin), useNativeDriver: Platform.OS !== 'web' }),
     ]));
     animation.start();
     return () => animation.stop();
@@ -153,7 +171,7 @@ export function LoginScreen({
   const subtitle = mode === 'forgot'
     ? 'We’ll send a secure reset link to your inbox.'
     : mode === 'signup'
-      ? 'Keep your study packs available across devices.'
+      ? 'Make your study space yours.'
       : 'Pick up exactly where you left off.';
 
   return (
@@ -174,23 +192,50 @@ export function LoginScreen({
         <LinearGradient
           colors={colors.mode === 'dark' ? ['#172536', '#10161D', '#302713'] : ['#E8F2FF', '#F6FAFF', '#FFF4D2']}
           locations={[0, 0.72, 1]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
           style={[styles.hero, { borderColor: colors.border }]}
         >
-          <View style={[styles.heroOrb, { backgroundColor: `${colors.goldBright}22` }]} />
-          <Animated.View
-            style={[
-              styles.heroMark,
-              {
-                backgroundColor: colors.goldBright,
-                shadowColor: colors.gold,
-                transform: [{ translateY: bob.interpolate({ inputRange: [0, 1], outputRange: [-3, 5] }) }, { rotate: '-6deg' }],
-              },
-            ]}
-          >
-            <Icon name="lightning-bolt" size={39} color={colors.onGold} />
+          <View style={[styles.heroGlow, styles.heroGlowBlue, { backgroundColor: `${colors.primary}10` }]} />
+          <View style={[styles.heroGlow, styles.heroGlowGold, { backgroundColor: `${colors.goldBright}19` }]} />
+          <Animated.View style={[styles.heroScene, {
+            opacity: heroEntrance,
+            transform: [{ scale: heroEntrance.interpolate({ inputRange: [0, 1], outputRange: [0.88, 1] }) }],
+          }]}>
+            <Animated.View style={[styles.bookStack, {
+              transform: [{ translateY: bob.interpolate({ inputRange: [0, 1], outputRange: [2, -3] }) }],
+            }]}>
+              <View style={[styles.bookBack, styles.bookBackLeft, { backgroundColor: colors.purpleSoft, borderColor: `${colors.purple}55` }]} />
+              <View style={[styles.bookBack, styles.bookBackRight, { backgroundColor: colors.mintSoft, borderColor: `${colors.mint}55` }]} />
+              <View style={[styles.bookCover, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow }]}>
+                <Icon name="book-open-page-variant" size={48} color={colors.primary} />
+              </View>
+            </Animated.View>
+            <Animated.View style={[styles.heroBolt, {
+              backgroundColor: colors.goldBright,
+              shadowColor: colors.gold,
+              transform: [
+                { translateY: bob.interpolate({ inputRange: [0, 1], outputRange: [-4, 3] }) },
+                { rotate: '-9deg' },
+              ],
+            }]}>
+              <Icon name="lightning-bolt" size={31} color={colors.onGold} />
+            </Animated.View>
           </Animated.View>
-          <View style={[styles.floatingMini, styles.miniCards, { backgroundColor: colors.card }]}><Icon name="cards-outline" size={20} color={colors.purple} /></View>
-          <View style={[styles.floatingMini, styles.miniBrain, { backgroundColor: colors.card }]}><Icon name="brain" size={20} color={colors.mint} /></View>
+          <Animated.View style={[styles.floatingMini, styles.miniBooks, {
+            backgroundColor: colors.card,
+            borderColor: colors.border,
+            transform: [{ translateY: bob.interpolate({ inputRange: [0, 1], outputRange: [-2, 3] }) }, { rotate: '-9deg' }],
+          }]}><Icon name="bookshelf" size={22} color={colors.purple} /></Animated.View>
+          <Animated.View style={[styles.floatingMini, styles.miniCards, {
+            backgroundColor: colors.card,
+            borderColor: colors.border,
+            transform: [{ translateY: bob.interpolate({ inputRange: [0, 1], outputRange: [3, -3] }) }, { rotate: '8deg' }],
+          }]}><Icon name="cards-outline" size={21} color={colors.mint} /></Animated.View>
+          <View style={[styles.spark, styles.sparkLeft, { backgroundColor: colors.goldBright }]} />
+          <View style={[styles.spark, styles.sparkRight, { backgroundColor: colors.primary }]} />
         </LinearGradient>
 
         <Animated.View
@@ -306,15 +351,26 @@ function ProviderButton({ label, icon, onPress, loading }: { label: string; icon
 }
 
 const styles = StyleSheet.create({
-  screen: { flexGrow: 1, paddingHorizontal: 20 },
+  screen: { flexGrow: 1, width: '100%', maxWidth: 480, alignSelf: 'center', paddingHorizontal: 20 },
   topBar: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   closeButton: { width: 42, height: 42, alignItems: 'flex-end', justifyContent: 'center' },
-  hero: { height: 142, borderRadius: radius.xl, borderWidth: StyleSheet.hairlineWidth, marginTop: 12, marginBottom: 24, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  heroOrb: { position: 'absolute', width: 190, height: 190, borderRadius: 95, right: -58, bottom: -120 },
-  heroMark: { width: 72, height: 72, borderRadius: 23, alignItems: 'center', justifyContent: 'center', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.25, shadowRadius: 18, elevation: 6 },
-  floatingMini: { position: 'absolute', width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  miniCards: { left: '20%', top: 22, transform: [{ rotate: '-9deg' }] },
-  miniBrain: { right: '20%', bottom: 19, transform: [{ rotate: '8deg' }] },
+  hero: { height: 156, borderRadius: radius.xl, borderWidth: StyleSheet.hairlineWidth, marginTop: 12, marginBottom: 24, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  heroGlow: { position: 'absolute', width: 174, height: 174, borderRadius: 87 },
+  heroGlowBlue: { top: -107, left: -55 },
+  heroGlowGold: { bottom: -119, right: -48 },
+  heroScene: { width: 132, height: 112, alignItems: 'center', justifyContent: 'center' },
+  bookStack: { width: 112, height: 87, alignItems: 'center', justifyContent: 'center' },
+  bookBack: { position: 'absolute', width: 86, height: 72, borderRadius: 16, borderWidth: 1 },
+  bookBackLeft: { left: 2, top: 5, transform: [{ rotate: '-13deg' }] },
+  bookBackRight: { right: 2, top: 5, transform: [{ rotate: '13deg' }] },
+  bookCover: { width: 92, height: 76, borderRadius: 18, borderWidth: 1, alignItems: 'center', justifyContent: 'center', shadowOffset: { width: 0, height: 7 }, shadowOpacity: 0.12, shadowRadius: 12, elevation: 4 },
+  heroBolt: { position: 'absolute', width: 52, height: 52, borderRadius: 18, right: 2, top: 0, alignItems: 'center', justifyContent: 'center', shadowOffset: { width: 0, height: 7 }, shadowOpacity: 0.24, shadowRadius: 12, elevation: 5 },
+  floatingMini: { position: 'absolute', width: 41, height: 41, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center' },
+  miniBooks: { left: '16%', top: 27 },
+  miniCards: { right: '16%', bottom: 25 },
+  spark: { position: 'absolute', width: 7, height: 7, borderRadius: 2, transform: [{ rotate: '45deg' }] },
+  sparkLeft: { left: '24%', bottom: 31 },
+  sparkRight: { right: '24%', top: 26 },
   title: { fontSize: 29, lineHeight: 34, fontWeight: '900', letterSpacing: -0.9 },
   subtitle: { fontSize: 14, lineHeight: 20, marginTop: 5 },
   notice: { minHeight: 48, borderRadius: 14, marginTop: 16, paddingHorizontal: 13, paddingVertical: 10, flexDirection: 'row', alignItems: 'flex-start', gap: 9 },

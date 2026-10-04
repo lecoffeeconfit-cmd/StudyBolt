@@ -43,6 +43,14 @@ export function StudyBoltProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<StudyBoltState>(initialState);
   const [hydrated, setHydrated] = useState(false);
   const activeMaterialJobs = useRef(new Set<string>());
+  const runningDecks = useRef(new Set<string>());
+  const materialQueues = useRef(new Map<string, StudyPackMaterial[]>());
+  const deckSnapshots = useRef(new Map<string, StudyPack>());
+  const stateRef = useRef(state);
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   useEffect(() => {
     let mounted = true;
@@ -65,40 +73,62 @@ export function StudyBoltProvider({ children }: { children: ReactNode }) {
     if (hydrated) updateStudyBoltWidgets(state);
   }, [hydrated, state]);
 
-  const runMaterialJob = useCallback((deck: StudyPack, material: StudyPackMaterial) => {
-    const jobKey = `${deck.id}:${material}`;
+  const processNextStudyPackMaterial = useCallback((deckId: string) => {
+    if (runningDecks.current.has(deckId)) return;
+    const queue = materialQueues.current.get(deckId);
+    if (!queue?.length) return;
+
+    const material = queue.shift();
+    if (!queue.length) materialQueues.current.delete(deckId);
+    if (!material) return;
+
+    const deck = stateRef.current.decks.find((item) => item.id === deckId) ?? deckSnapshots.current.get(deckId);
+    if (!deck?.generation || !deck.processedSource) {
+      processNextStudyPackMaterial(deckId);
+      return;
+    }
+
+    const currentMaterial = deck.generation.materials[material];
+    if (!currentMaterial || currentMaterial.status === 'ready') {
+      processNextStudyPackMaterial(deckId);
+      return;
+    }
+
+    const jobKey = `${deckId}:${material}`;
     if (activeMaterialJobs.current.has(jobKey)) return;
     activeMaterialJobs.current.add(jobKey);
+    runningDecks.current.add(deckId);
     const updatedAt = new Date().toISOString();
     setState((current) => ({
       ...current,
-      decks: current.decks.map((item) => item.id !== deck.id ? item : {
+      decks: current.decks.map((item) => item.id !== deckId || !item.generation || item.generation.materials[material]?.status === 'ready' ? item : {
         ...item,
-        generation: item.generation ? {
+        generation: {
           ...item.generation,
           materials: {
             ...item.generation.materials,
             [material]: { status: 'generating', stage: STUDY_PACK_MATERIAL_STAGES[material], updatedAt },
           },
-        } : item.generation,
+        },
       }),
     }));
+
     void getAccessToken()
       .catch(() => null)
       .then((accessToken) => generateStudyPackMaterial(deck, material, accessToken))
       .then((generated) => {
         setState((current) => ({
           ...current,
-          decks: current.decks.map((item) => item.id !== deck.id ? item : {
+          decks: current.decks.map((item) => item.id !== deckId || !item.generation || item.generation.materials[material]?.status === 'ready' ? item : {
             ...item,
             ...generated,
-            generation: item.generation ? {
+            generation: {
               ...item.generation,
               materials: {
                 ...item.generation.materials,
                 [material]: { status: 'ready', updatedAt: new Date().toISOString() },
               },
-            } : item.generation,
+            },
           }),
         }));
       })
@@ -108,34 +138,68 @@ export function StudyBoltProvider({ children }: { children: ReactNode }) {
           : `${STUDY_PACK_MATERIAL_LABELS[material]} could not be created. Retry just this item.`;
         setState((current) => ({
           ...current,
-          decks: current.decks.map((item) => item.id !== deck.id ? item : {
+          decks: current.decks.map((item) => item.id !== deckId || !item.generation || item.generation.materials[material]?.status === 'ready' ? item : {
             ...item,
-            generation: item.generation ? {
+            generation: {
               ...item.generation,
               materials: {
                 ...item.generation.materials,
                 [material]: { status: 'failed', error, updatedAt: new Date().toISOString() },
               },
-            } : item.generation,
+            },
           }),
         }));
       })
-      .finally(() => activeMaterialJobs.current.delete(jobKey));
+      .finally(() => {
+        activeMaterialJobs.current.delete(jobKey);
+        runningDecks.current.delete(deckId);
+        processNextStudyPackMaterial(deckId);
+      });
   }, [getAccessToken]);
+
+  const enqueueStudyPackMaterial = useCallback((deck: StudyPack, material: StudyPackMaterial, prioritize = false) => {
+    if (!deck.generation || !deck.processedSource) return;
+    deckSnapshots.current.set(deck.id, deck);
+    const jobKey = `${deck.id}:${material}`;
+    const queue = materialQueues.current.get(deck.id) ?? [];
+    if (activeMaterialJobs.current.has(jobKey) || queue.includes(material)) return;
+    const currentDeck = stateRef.current.decks.find((item) => item.id === deck.id);
+    if (currentDeck?.generation?.materials[material]?.status === 'ready') return;
+    materialQueues.current.set(deck.id, prioritize ? [material, ...queue] : [...queue, material]);
+    processNextStudyPackMaterial(deck.id);
+  }, [processNextStudyPackMaterial]);
 
   const startStudyPackGeneration = useCallback((deck: StudyPack) => {
     if (!deck.generation || !deck.processedSource) return;
     AUTOMATIC_STUDY_PACK_MATERIALS.forEach((material) => {
-      const status = deck.generation?.materials[material].status;
-      if (status === 'queued' || status === 'generating') runMaterialJob(deck, material);
+      const status = deck.generation?.materials[material]?.status;
+      if (status === 'queued' || status === 'generating') enqueueStudyPackMaterial(deck, material);
     });
-  }, [runMaterialJob]);
+    processNextStudyPackMaterial(deck.id);
+  }, [enqueueStudyPackMaterial, processNextStudyPackMaterial]);
 
   const retryStudyPackMaterial = useCallback((deckId: string, material: StudyPackMaterial) => {
-    const deck = state.decks.find((item) => item.id === deckId);
+    const deck = stateRef.current.decks.find((item) => item.id === deckId) ?? deckSnapshots.current.get(deckId);
     if (!deck?.processedSource || !deck.generation) return;
-    runMaterialJob(deck, material);
-  }, [runMaterialJob, state.decks]);
+    const status = deck.generation.materials[material]?.status;
+    if (status === 'ready') return;
+    if (status === 'failed') {
+      setState((current) => ({
+        ...current,
+        decks: current.decks.map((item) => item.id !== deckId || !item.generation ? item : {
+          ...item,
+          generation: {
+            ...item.generation,
+            materials: {
+              ...item.generation.materials,
+              [material]: { status: 'queued', stage: STUDY_PACK_MATERIAL_STAGES[material], updatedAt: new Date().toISOString() },
+            },
+          },
+        }),
+      }));
+    }
+    enqueueStudyPackMaterial(deck, material, true);
+  }, [enqueueStudyPackMaterial]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -152,7 +216,11 @@ export function StudyBoltProvider({ children }: { children: ReactNode }) {
       setTheme: (theme) => setState((current) => ({ ...current, theme })),
       setRetentionMode: (retentionMode) => setState((current) => ({ ...current, retentionMode })),
       completeOnboarding: () => setState((current) => ({ ...current, hasCompletedOnboarding: true })),
-      resetLocalData: () => setState({ ...initialState, hasCompletedOnboarding: true }),
+      resetLocalData: () => {
+        materialQueues.current.clear();
+        deckSnapshots.current.clear();
+        setState({ ...initialState, hasCompletedOnboarding: true });
+      },
       setQuizQuestionCount: (quizQuestionCount) => setState((current) => ({ ...current, quizQuestionCount })),
       setLibrarySort: (librarySort) => setState((current) => ({ ...current, librarySort })),
       addClass: (studyClass) =>

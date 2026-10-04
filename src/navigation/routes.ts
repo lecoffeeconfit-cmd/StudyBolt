@@ -11,6 +11,7 @@ export type Route =
   | { type: 'legal' }
   | { type: 'reset-password' }
   | { type: 'smart-study'; mode?: SmartStudyMode; deckId?: string }
+  | { type: 'speed-review'; deckId?: string; courseId?: string; returnDeckId?: string }
   | { type: 'exam'; deckId?: string }
   | { type: 'mistakes' }
   | { type: 'flagged' }

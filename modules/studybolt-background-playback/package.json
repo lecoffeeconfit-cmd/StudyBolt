@@ -1,0 +1,10 @@
+{
+  "name": "studybolt-background-playback",
+  "version": "1.0.0",
+  "description": "Keeps StudyCast text-to-speech alive while the app is backgrounded on Android.",
+  "main": "index.ts",
+  "private": true,
+  "peerDependencies": {
+    "expo": "*"
+  }
+}

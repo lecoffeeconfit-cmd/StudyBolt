@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Easing, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Animated, Easing, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon, Pill, PrimaryButton } from '../components/ui';
@@ -132,7 +132,12 @@ export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSucc
         <View style={styles.closeButton} />
       </View>
 
-      <View style={styles.center}>
+      <ScrollView
+        style={styles.center}
+        contentContainerStyle={styles.centerContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
         <Animated.View style={[styles.boltOrb, !started && !error && styles.setupBoltOrb, { backgroundColor: error ? `${colors.danger}18` : colors.goldSoft, transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] }) }] }]}>
           <View style={[styles.boltInner, !started && !error && styles.setupBoltInner, { backgroundColor: error ? colors.danger : colors.goldBright }]}>
             <Icon name={error ? 'alert-outline' : 'lightning-bolt'} size={!started && !error ? 32 : 50} color={error ? '#FFFFFF' : colors.onGold} />
@@ -207,7 +212,7 @@ export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSucc
             </View>
           </>
         )}
-      </View>
+      </ScrollView>
       <Text style={[styles.privacy, { color: colors.textMuted }]}><Icon name="lock-outline" size={12} color={colors.textMuted} /> Your class material is treated as private content.</Text>
     </KeyboardAvoidingView>
   );
@@ -217,7 +222,8 @@ const styles = StyleSheet.create({
   page: { flex: 1, paddingHorizontal: 22 },
   topBar: { height: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   closeButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  center: { flex: 1 },
+  centerContent: { flexGrow: 1, justifyContent: 'center', alignItems: 'center' },
   boltOrb: { width: 124, height: 124, borderRadius: 62, alignItems: 'center', justifyContent: 'center', marginBottom: 26 },
   boltInner: { width: 83, height: 83, borderRadius: 42, alignItems: 'center', justifyContent: 'center' },
   setupBoltOrb: { width: 86, height: 86, borderRadius: 43, marginBottom: 18 },

@@ -1,0 +1,17 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.studybolt.backgroundplayback'
+version = '1.0.0'
+
+android {
+  namespace 'com.studybolt.backgroundplayback'
+
+  defaultConfig {
+    minSdkVersion 26
+    versionCode 1
+    versionName '1.0.0'
+  }
+}

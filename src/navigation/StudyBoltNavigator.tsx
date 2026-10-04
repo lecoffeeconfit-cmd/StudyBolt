@@ -28,6 +28,7 @@ import { StudyPackScreen } from '../screens/StudyPackScreen';
 import { VisualReviewScreen } from '../screens/VisualReviewScreen';
 import { SharedStudyPackScreen } from '../screens/SharedStudyPackScreen';
 import { SmartStudyScreen } from '../screens/SmartStudyScreen';
+import { SpeedReviewScreen } from '../screens/SpeedReviewScreen';
 import { WidgetsScreen } from '../screens/WidgetsScreen';
 import { combineStudyPacks } from '../services/studyPack';
 import { parseShareToken } from '../services/sharing';
@@ -53,6 +54,10 @@ export function StudyBoltNavigator() {
   }, [openDeck, state.decks]);
 
   const openFlagged = useCallback(() => setRoute({ type: 'flagged' }), []);
+
+  const openSpeedReview = useCallback((scope: { deckId?: string; courseId?: string; returnDeckId?: string }) => {
+    setRoute({ type: 'speed-review', ...scope });
+  }, []);
 
   const completeProcessing = useCallback((deck: StudyPack) => {
     addDeck(deck);
@@ -134,6 +139,7 @@ export function StudyBoltNavigator() {
           onOpenDeck={openDeck}
           onCreateReview={createReview}
           onOpenFlagged={openFlagged}
+          onOpenSpeedReview={(courseId) => openSpeedReview({ courseId })}
           onImport={(asset, studyClass) => setRoute({ type: 'processing', asset, courseId: studyClass.id, courseName: studyClass.name })}
         />
       );
@@ -170,7 +176,7 @@ export function StudyBoltNavigator() {
         onOpenPlanner={() => setTab('planner')}
       />
     );
-  }, [createReview, openDeck, openFlagged, plannerFocusDeckId, tab]);
+  }, [createReview, openDeck, openFlagged, openSpeedReview, plannerFocusDeckId, tab]);
 
   if (!hydrated || authLoading) {
     return (
@@ -209,6 +215,14 @@ export function StudyBoltNavigator() {
       {!showOnboarding && !showAccountOnboarding && route.type === 'legal' ? <LegalScreen onBack={() => setRoute({ type: 'main' })} /> : null}
       {!showOnboarding && !showAccountOnboarding && route.type === 'reset-password' ? <ResetPasswordScreen onComplete={() => setRoute({ type: 'main' })} /> : null}
       {!showOnboarding && !showAccountOnboarding && route.type === 'smart-study' ? <SmartStudyScreen initialMode={route.mode} focusDeckId={route.deckId} onBack={() => setRoute(route.deckId ? { type: 'deck', deckId: route.deckId } : { type: 'main' })} /> : null}
+      {!showOnboarding && !showAccountOnboarding && route.type === 'speed-review' ? (
+        <SpeedReviewScreen
+          deckId={route.deckId}
+          courseId={route.courseId}
+          onBack={() => setRoute(route.returnDeckId ? { type: 'deck', deckId: route.returnDeckId } : { type: 'main' })}
+          onOpenDeck={(deckId) => setRoute({ type: 'deck', deckId, tool: 'audio' })}
+        />
+      ) : null}
       {!showOnboarding && !showAccountOnboarding && route.type === 'exam' ? <ExamModeScreen
         deckId={route.deckId}
         onBack={(tool = 'quiz', targetDeckId) => setRoute(targetDeckId || route.deckId ? { type: 'deck', deckId: targetDeckId ?? route.deckId!, tool } : { type: 'main' })}
@@ -252,6 +266,7 @@ export function StudyBoltNavigator() {
             setRoute({ type: 'main' });
           }}
           onStartStudy={(mode, deckId) => setRoute({ type: 'smart-study', mode, deckId })}
+          onOpenSpeedReview={(deckId) => openSpeedReview({ deckId, returnDeckId: deckId })}
           onOpenExam={(deckId) => setRoute({ type: 'exam', deckId })}
           onOpenVisualReview={(deckId) => setRoute({ type: 'visual-review', deckId })}
           onRequireAuth={() => {

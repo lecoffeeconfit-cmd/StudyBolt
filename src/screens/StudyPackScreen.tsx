@@ -1,7 +1,8 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { setAudioModeAsync } from 'expo-audio';
 import * as Speech from 'expo-speech';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Animated, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '../AuthContext';
@@ -10,8 +11,9 @@ import { Card, FlagButton, Header, Icon, Pill, PrimaryButton, ProgressBar, Secti
 import type { IconName } from '../components/ui';
 import { StudyPackShareSheet } from '../components/StudyPackShareSheet';
 import { useStudyBolt } from '../StudyBoltContext';
+import StudyCastBackgroundPlayback from '../../modules/studybolt-background-playback';
 import { getFlaggedItemId } from '../models';
-import type { AiRequestChannel, AiTutorAction, AiTutorConversation, AiTutorQuota, AiTutorResponse, AnswerConfidence, FlaggedItemInput, Flashcard, FlashcardConfidence, NoteBlock, QuizAnswerRecord, QuizQuestion, QuizQuestionCount, SharedStudyPackMetadata, StudyPack, StudyPackMaterial, StudyTool } from '../models';
+import type { AiRequestChannel, AiTutorAction, AiTutorContext, AiTutorConversation, AiTutorQuota, AiTutorResponse, AnswerConfidence, FlaggedItemInput, Flashcard, FlashcardConfidence, NoteBlock, QuizAnswerRecord, QuizQuestion, QuizQuestionCount, SharedStudyPackMetadata, StudyPack, StudyPackMaterial, StudyTool } from '../models';
 import { fetchTutorQuota, isAiTutorConfigured, tutorContextAtPosition } from '../services/aiTutor';
 import { runStudyBoltAI } from '../services/aiRouter';
 import { canAttemptOnDeviceAI, getOnDeviceAIAvailability, initialOnDeviceAIAvailability } from '../services/onDeviceAI';
@@ -31,7 +33,64 @@ const TABS: Array<{ id: StudyTool; label: string }> = [
   { id: 'coach', label: 'Coach' },
 ];
 
-const PLAYBACK_RATES = [0.75, 1, 1.25, 1.5, 1.75, 2];
+const PLAYBACK_RATES = [0.75, 0.9, 1, 1.25, 1.5, 1.75, 2];
+const TARGET_SPEECH_CHUNK_CHARS = 600;
+const MAX_SPEECH_CHUNK_CHARS = Math.max(1, Math.min(900, Speech.maxSpeechInputLength));
+type StudyCastMode = 'original' | 'summary' | 'flashcards';
+const AUDIO_MODES: Array<{ id: StudyCastMode; label: string; icon: IconName }> = [
+  { id: 'original', label: 'Original', icon: 'file-document-outline' },
+  { id: 'summary', label: 'Quick Review', icon: 'creation' },
+  { id: 'flashcards', label: 'Flashcards', icon: 'cards-outline' },
+];
+
+type StudyCastSpeechChunk = { text: string; startWord: number; endWord: number };
+
+function splitStudyCastSpeech(words: string[], startWord: number): StudyCastSpeechChunk[] {
+  const chunks: StudyCastSpeechChunk[] = [];
+  let cursor = startWord;
+
+  while (cursor < words.length) {
+    const chunkStart = cursor;
+    let chunkLength = 0;
+
+    while (cursor < words.length) {
+      const word = words[cursor]!;
+      const nextLength = chunkLength + (chunkLength ? 1 : 0) + word.length;
+      if (cursor > chunkStart && nextLength > MAX_SPEECH_CHUNK_CHARS) break;
+      chunkLength = nextLength;
+      cursor += 1;
+
+      const sentenceEnd = /[.!?…]["'’”)}\]]*$/.test(word);
+      if (chunkLength >= TARGET_SPEECH_CHUNK_CHARS && sentenceEnd) break;
+    }
+
+    const chunkWords = words.slice(chunkStart, cursor);
+    let text = chunkWords.join(' ');
+    while (text.length > MAX_SPEECH_CHUNK_CHARS && chunkWords.length > 1) {
+      chunkWords.pop();
+      cursor -= 1;
+      text = chunkWords.join(' ');
+    }
+    if (text.length > MAX_SPEECH_CHUNK_CHARS) text = text.slice(0, MAX_SPEECH_CHUNK_CHARS);
+
+    chunks.push({ text, startWord: chunkStart, endWord: cursor });
+  }
+
+  return chunks;
+}
+
+function flashcardListeningText(card: Flashcard, index: number): string {
+  const spokenField = (value: string) => {
+    const clean = value.replace(/\s+/g, ' ').trim();
+    return /[.!?…]["'’”)}\]]*$/.test(clean) ? clean : `${clean}.`;
+  };
+  return [
+    `Flashcard ${index + 1}.`,
+    `Front. ${spokenField(card.front)}`,
+    `Back. ${spokenField(card.back)}`,
+    ...(card.explanation?.trim() ? [`Explanation. ${spokenField(card.explanation)}`] : []),
+  ].join(' ');
+}
 
 function noteFlag(deck: StudyPack, note: NoteBlock): FlaggedItemInput {
   return {
@@ -94,6 +153,7 @@ export function StudyPackScreen({
   onBack,
   onPlan,
   onStartStudy,
+  onOpenSpeedReview,
   onOpenExam,
   onOpenVisualReview,
   onRequireAuth,
@@ -107,6 +167,7 @@ export function StudyPackScreen({
   onBack: () => void;
   onPlan: (deckId: string) => void;
   onStartStudy?: (mode: SmartStudyMode, deckId: string) => void;
+  onOpenSpeedReview?: (deckId: string) => void;
   onOpenExam?: (deckId?: string) => void;
   onOpenVisualReview?: (deckId: string) => void;
   onRequireAuth?: () => void;
@@ -171,7 +232,7 @@ export function StudyPackScreen({
         })}
       </ScrollView>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {tool === 'overview' ? <Overview deck={deck} onTool={setTool} onPlan={() => onPlan(deck.id)} onStartStudy={onStartStudy ? (mode) => onStartStudy(mode, deck.id) : undefined} onOpenVisualReview={onOpenVisualReview ? () => onOpenVisualReview(deck.id) : undefined} shared={shared} /> : null}
+        {tool === 'overview' ? <Overview deck={deck} onTool={setTool} onPlan={() => onPlan(deck.id)} onStartStudy={onStartStudy ? (mode) => onStartStudy(mode, deck.id) : undefined} onOpenSpeedReview={onOpenSpeedReview ? () => onOpenSpeedReview(deck.id) : undefined} onOpenVisualReview={onOpenVisualReview ? () => onOpenVisualReview(deck.id) : undefined} shared={shared} /> : null}
         {tool === 'notes' ? <Notes deck={deck} readOnly={shared} /> : null}
         {tool === 'flashcards' ? <MaterialGate deck={deck} material="flashcards" shared={shared}><Flashcards deck={deck} readOnly={shared} /></MaterialGate> : null}
         {tool === 'quiz' ? <MaterialGate deck={deck} material="quiz" shared={shared}><Quiz deck={deck} readOnly={shared} onOpenExam={onOpenExam} /></MaterialGate> : null}
@@ -183,7 +244,7 @@ export function StudyPackScreen({
   );
 }
 
-function Overview({ deck, onTool, onPlan, onStartStudy, onOpenVisualReview, shared }: { deck: StudyPack; onTool: (tool: StudyTool) => void; onPlan: () => void; onStartStudy?: (mode: SmartStudyMode) => void; onOpenVisualReview?: () => void; shared?: boolean }) {
+function Overview({ deck, onTool, onPlan, onStartStudy, onOpenSpeedReview, onOpenVisualReview, shared }: { deck: StudyPack; onTool: (tool: StudyTool) => void; onPlan: () => void; onStartStudy?: (mode: SmartStudyMode) => void; onOpenSpeedReview?: () => void; onOpenVisualReview?: () => void; shared?: boolean }) {
   const { colors, state } = useStudyBolt();
   const materialReady = (material: StudyPackMaterial) => !deck.generation || deck.generation.materials[material].status === 'ready';
   const mastery = calculateMastery(deck);
@@ -230,6 +291,18 @@ function Overview({ deck, onTool, onPlan, onStartStudy, onOpenVisualReview, shar
         <ToolCard icon="clipboard-text-outline" title="Quiz & Full Test" detail={materialReady('quiz') ? `${state.quizQuestionCount} practice questions + cumulative test` : 'Preparing your quiz…'} color={colors.mint} background={colors.mintSoft} onPress={() => onTool('quiz')} />
         <ToolCard icon="headphones" title="StudyCast" detail={materialReady('audio') ? 'Listen and ask about any section' : 'Creating audio summary…'} color="#A45FEB" background={colors.purpleSoft} onPress={() => onTool('audio')} />
       </View>
+
+      {!shared && onOpenSpeedReview ? (
+        <Card onPress={onOpenSpeedReview} style={[styles.speedReviewBanner, { backgroundColor: colors.purpleSoft, borderColor: `${colors.purple}44` }]}>
+          <View style={[styles.speedReviewBannerIcon, { backgroundColor: colors.purple }]}><Icon name="speedometer" size={22} color={colors.primaryText} /></View>
+          <View style={styles.speedReviewBannerCopy}>
+            <Text style={[styles.speedReviewBannerTitle, { color: colors.text }]}>Speed Review</Text>
+            <Text style={[styles.speedReviewBannerText, { color: colors.textSecondary }]}>Hear a short, fast pass through this PowerPoint.</Text>
+          </View>
+          <Pill label="1.5×" tone="purple" />
+          <Icon name="arrow-right" color={colors.purple} />
+        </Card>
+      ) : null}
 
       <Card onPress={() => onTool('coach')} style={[styles.coachBanner, styles.flatCard, { backgroundColor: colors.mode === 'dark' ? colors.primarySoft : '#EEF5FF' }]}>
         <View style={[styles.coachBannerIcon, { backgroundColor: colors.primary }]}><Icon name="creation" size={23} color={colors.primaryText} /></View>
@@ -475,16 +548,69 @@ function Notes({ deck, readOnly = false }: { deck: StudyPack; readOnly?: boolean
 
 function Flashcards({ deck, readOnly = false }: { deck: StudyPack; readOnly?: boolean }) {
   const { colors, recordStudyEvent, updateDeck, toggleFlag, isFlagged } = useStudyBolt();
+  const { width: screenWidth } = useWindowDimensions();
   const [index, setIndex] = useState(0);
   const [revealed, setRevealed] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
   const cardShownAt = useRef(Date.now());
   const answerRevealedAt = useRef<number | null>(null);
+  const speechGenerationRef = useRef(0);
+  const swipeX = useRef(new Animated.Value(0)).current;
+  const swipeAnimating = useRef(false);
   const card = deck.flashcards[index];
+  const swipeRotation = swipeX.interpolate({
+    inputRange: [-screenWidth, 0, screenWidth],
+    outputRange: ['-3deg', '0deg', '3deg'],
+    extrapolate: 'clamp',
+  });
+  const swipeResponder = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => false,
+    onMoveShouldSetPanResponder: (_event, gesture) => !swipeAnimating.current && Math.abs(gesture.dx) > 14 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.2,
+    onPanResponderTerminationRequest: () => false,
+    onPanResponderMove: (_event, gesture) => swipeX.setValue(gesture.dx),
+    onPanResponderRelease: (_event, gesture) => {
+      const direction = gesture.dx <= -45 ? -1 : gesture.dx >= 45 ? 1 : 0;
+      const canNavigate = direction < 0
+        ? index < deck.flashcards.length - 1
+        : direction > 0 && index > 0;
+      if (direction && canNavigate) {
+        swipeAnimating.current = true;
+        Animated.timing(swipeX, {
+          toValue: direction * screenWidth,
+          duration: 170,
+          useNativeDriver: true,
+        }).start(({ finished }) => {
+          if (!finished) {
+            swipeAnimating.current = false;
+            Animated.spring(swipeX, { toValue: 0, useNativeDriver: true, speed: 22, bounciness: 4 }).start();
+            return;
+          }
+          setIndex((current) => Math.max(0, Math.min(deck.flashcards.length - 1, current - direction)));
+          setRevealed(false);
+          requestAnimationFrame(() => {
+            swipeX.setValue(-direction * 30);
+            Animated.spring(swipeX, { toValue: 0, useNativeDriver: true, speed: 22, bounciness: 4 })
+              .start(() => { swipeAnimating.current = false; });
+          });
+        });
+      } else {
+        Animated.spring(swipeX, { toValue: 0, useNativeDriver: true, speed: 22, bounciness: 4 }).start();
+      }
+    },
+    onPanResponderTerminate: () => {
+      Animated.spring(swipeX, { toValue: 0, useNativeDriver: true, speed: 22, bounciness: 4 }).start();
+    },
+  }), [deck.flashcards.length, index, screenWidth, swipeX]);
 
   useEffect(() => {
     cardShownAt.current = Date.now();
     answerRevealedAt.current = null;
-  }, [card?.id]);
+    setSpeaking(false);
+    return () => {
+      speechGenerationRef.current += 1;
+      void Speech.stop();
+    };
+  }, [deck.id, card?.id]);
 
   if (!card) return <EmptyTool icon="cards-outline" title="No flashcards yet" message="Regenerate this Study Pack after source processing is connected." />;
 
@@ -508,6 +634,40 @@ function Flashcards({ deck, readOnly = false }: { deck: StudyPack; readOnly?: bo
     setIndex((current) => Math.min(deck.flashcards.length - 1, current + 1));
   };
 
+  const stopReadAloud = () => {
+    speechGenerationRef.current += 1;
+    void Speech.stop();
+    setSpeaking(false);
+  };
+
+  const toggleReadAloud = () => {
+    if (speaking) return stopReadAloud();
+
+    const text = revealed
+      ? [card.back, card.explanation].filter(Boolean).join('. ')
+      : card.front;
+    const generation = ++speechGenerationRef.current;
+    setSpeaking(true);
+    void setAudioModeAsync({ playsInSilentMode: true, shouldPlayInBackground: true, interruptionMode: 'duckOthers' })
+      .catch(() => undefined)
+      .then(() => {
+        if (generation !== speechGenerationRef.current) return;
+        Speech.speak(text, {
+          rate: 0.95,
+          useApplicationAudioSession: true,
+          onDone: () => {
+            if (generation === speechGenerationRef.current) setSpeaking(false);
+          },
+          onStopped: () => {
+            if (generation === speechGenerationRef.current) setSpeaking(false);
+          },
+          onError: () => {
+            if (generation === speechGenerationRef.current) setSpeaking(false);
+          },
+        });
+      });
+  };
+
   return (
     <>
       <View style={styles.toolHeadingRow}>
@@ -523,35 +683,54 @@ function Flashcards({ deck, readOnly = false }: { deck: StudyPack; readOnly?: bo
           <Icon name="source-branch" size={15} color={colors.textMuted} />
           <Text style={[styles.source, { color: colors.textMuted }]}>{card.source.label}</Text>
         </View>
-        {!readOnly ? <FlagButton flagged={isFlagged(getFlaggedItemId(deck.id, 'flashcard', card.id))} onPress={() => toggleFlag(flashcardFlag(deck, card))} /> : null}
+        <View style={styles.flashcardToolbarActions}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={speaking ? 'Stop reading aloud' : revealed ? 'Read definition aloud' : 'Read question aloud'}
+            onPress={toggleReadAloud}
+            style={[styles.readAloudButton, { backgroundColor: colors.purpleSoft, borderColor: `${colors.purple}55` }]}
+          >
+            <Icon name={speaking ? 'stop' : 'volume-high'} size={16} color={colors.purple} />
+            <Text style={[styles.readAloudText, { color: colors.purple }]}>{speaking ? 'Stop' : 'Read aloud'}</Text>
+          </Pressable>
+          {!readOnly ? <FlagButton flagged={isFlagged(getFlaggedItemId(deck.id, 'flashcard', card.id))} onPress={() => toggleFlag(flashcardFlag(deck, card))} /> : null}
+        </View>
       </View>
-      <Pressable onPress={() => setRevealed((value) => {
-        if (!value && answerRevealedAt.current === null) answerRevealedAt.current = Date.now();
-        return !value;
-      })} style={{ marginTop: 20 }}>
-        <Card style={[styles.flashcard, { borderColor: revealed ? colors.purple : colors.border, backgroundColor: revealed ? colors.purpleSoft : colors.card }]}>
-          <View style={styles.flashcardTop}>
-            <Pill label={revealed ? 'ANSWER' : 'QUESTION'} tone="purple" />
-          </View>
-          <View style={styles.flashcardCenter}>
-            <Icon name={revealed ? 'lightbulb-on' : 'brain'} size={35} color={colors.purple} />
-            <Text style={[styles.flashcardText, { color: colors.text }]}>{revealed ? card.back : card.front}</Text>
-            {revealed && card.explanation ? <Text style={[styles.flashcardExplanation, { color: colors.textSecondary }]}>{card.explanation}</Text> : null}
-          </View>
-          <View style={[styles.tapHint, { borderTopColor: colors.border }]}>
-            <Icon name="gesture-tap" size={18} color={colors.textMuted} />
-            <Text style={[styles.tapHintText, { color: colors.textMuted }]}>Tap card to {revealed ? 'show question' : 'reveal answer'}</Text>
-          </View>
-        </Card>
-      </Pressable>
+      <Animated.View
+        {...swipeResponder.panHandlers}
+        style={{ marginTop: 20, transform: [{ translateX: swipeX }, { rotate: swipeRotation }] }}
+      >
+        <Pressable accessibilityHint="Tap to reveal the answer. Swipe left for the next card or right for the previous card." onPress={() => {
+          if (speaking) stopReadAloud();
+          setRevealed((value) => {
+            if (!value && answerRevealedAt.current === null) answerRevealedAt.current = Date.now();
+            return !value;
+          });
+        }}>
+          <Card style={[styles.flashcard, { borderColor: revealed ? colors.purple : colors.border, backgroundColor: revealed ? colors.purpleSoft : colors.card }]}>
+            <View style={styles.flashcardTop}>
+              <Pill label={revealed ? 'ANSWER' : 'QUESTION'} tone="purple" />
+            </View>
+            <View style={styles.flashcardCenter}>
+              <Icon name={revealed ? 'lightbulb-on' : 'brain'} size={35} color={colors.purple} />
+              <Text style={[styles.flashcardText, { color: colors.text }]}>{revealed ? card.back : card.front}</Text>
+              {revealed && card.explanation ? <Text style={[styles.flashcardExplanation, { color: colors.textSecondary }]}>{card.explanation}</Text> : null}
+            </View>
+            <View style={[styles.tapHint, { borderTopColor: colors.border }]}>
+              <Icon name="gesture-tap" size={18} color={colors.textMuted} />
+              <Text style={[styles.tapHintText, { color: colors.textMuted }]}>{revealed ? 'Tap to show question · Swipe for another card' : 'Tap to reveal · Swipe left or right to browse'}</Text>
+            </View>
+          </Card>
+        </Pressable>
+      </Animated.View>
 
       <View style={styles.cardNav}>
         <Pressable accessibilityLabel="Previous card" disabled={index === 0} onPress={() => { setIndex((value) => Math.max(0, value - 1)); setRevealed(false); }} style={[styles.navButton, { backgroundColor: colors.card, borderColor: colors.border, opacity: index === 0 ? 0.4 : 1 }]}>
-          <Icon name="chevron-left" color={colors.textSecondary} />
+          <Icon name="chevron-left" size={27} color={colors.textSecondary} />
         </Pressable>
         <Text style={[styles.confidenceHint, { color: colors.textMuted }]}>{readOnly ? 'Preview the answer, then save a copy to study' : revealed ? 'How well did you know it?' : 'Retrieve, then reveal'}</Text>
         <Pressable accessibilityLabel="Next card" disabled={index === deck.flashcards.length - 1} onPress={() => { setIndex((value) => Math.min(deck.flashcards.length - 1, value + 1)); setRevealed(false); }} style={[styles.navButton, { backgroundColor: colors.card, borderColor: colors.border, opacity: index === deck.flashcards.length - 1 ? 0.4 : 1 }]}>
-          <Icon name="chevron-right" color={colors.textSecondary} />
+          <Icon name="chevron-right" size={27} color={colors.textSecondary} />
         </Pressable>
       </View>
 
@@ -1007,13 +1186,49 @@ function AskSuggestion({ icon, label, onPress }: { icon: IconName; label: string
   return <Pressable onPress={onPress} style={[styles.askSuggestion, { backgroundColor: colors.card, borderColor: colors.border }]}><Icon name={icon} size={19} color={colors.primary} /><Text style={[styles.askSuggestionText, { color: colors.textSecondary }]}>{label}</Text><Icon name="chevron-right" size={17} color={colors.textMuted} /></Pressable>;
 }
 
+function SeekProgress({ progress, color, onSeek, currentPosition, total }: { progress: number; color: string; onSeek: (progress: number) => void; currentPosition: number; total: number }) {
+  const { colors } = useStudyBolt();
+  const [width, setWidth] = useState(1);
+  const seekRef = useRef(onSeek);
+  seekRef.current = onSeek;
+  const responder = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: () => true,
+    onPanResponderTerminationRequest: () => false,
+    onPanResponderGrant: (event) => seekRef.current(Math.max(0, Math.min(1, event.nativeEvent.locationX / width))),
+    onPanResponderMove: (event) => seekRef.current(Math.max(0, Math.min(1, event.nativeEvent.locationX / width))),
+  }), [width]);
+  const safeProgress = Math.max(0, Math.min(100, progress));
+  return (
+    <View
+      {...responder.panHandlers}
+      onLayout={(event) => setWidth(Math.max(1, event.nativeEvent.layout.width))}
+      accessibilityRole="adjustable"
+      accessibilityLabel="Audio position"
+      accessibilityValue={{ min: 0, max: total, now: currentPosition }}
+      accessibilityActions={[{ name: 'increment', label: 'Skip forward' }, { name: 'decrement', label: 'Skip back' }]}
+      onAccessibilityAction={(event) => {
+        const direction = event.nativeEvent.actionName === 'increment' ? 1 : -1;
+        seekRef.current(Math.max(0, Math.min(1, currentPosition / Math.max(1, total) + direction * 0.05)));
+      }}
+      style={styles.seekTouchArea}
+    >
+      <View style={[styles.seekTrack, { backgroundColor: colors.border }]}>
+        <View style={[styles.seekFill, { backgroundColor: color, width: `${safeProgress}%` }]} />
+        <View style={[styles.seekThumb, { backgroundColor: color, left: `${safeProgress}%` }]} />
+      </View>
+    </View>
+  );
+}
+
 function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPack; readOnly?: boolean; onRequireAuth?: () => void }) {
   const { colors, recordStudyEvent, updateDeck } = useStudyBolt();
   const { user, getAccessToken } = useAuth();
-  const [mode, setMode] = useState<'original' | 'summary'>('summary');
+  const [mode, setMode] = useState<StudyCastMode>('summary');
   const [playing, setPlaying] = useState(false);
-  const [rate, setRate] = useState(1);
+  const [rate, setRate] = useState(0.9);
   const [position, setPosition] = useState(deck.audioPosition);
+  const [flashcardPosition, setFlashcardPosition] = useState(0);
   const [voices, setVoices] = useState<Speech.Voice[]>([]);
   const [voiceIdentifier, setVoiceIdentifier] = useState<string>();
   const [speedSheetVisible, setSpeedSheetVisible] = useState(false);
@@ -1041,28 +1256,79 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
   const tutorConversationRef = useRef<AiTutorConversation>({ turns: [] });
   const tutorResponseRef = useRef<AiTutorResponse | undefined>(undefined);
   const [onDeviceAI, setOnDeviceAI] = useState(initialOnDeviceAIAvailability);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const sessionStartRef = useRef<number | null>(null);
   const askResumePositionRef = useRef(deck.audioPosition);
+  const textAudioPositionRef = useRef(deck.audioPosition);
+  const playbackGenerationRef = useRef(0);
   const lastTutorRequestRef = useRef<{ action: AiTutorAction; question?: string }>({ action: 'explain' });
-  const text = mode === 'original' ? deck.originalText : (deck.audioSummary || deck.quickReview);
+  const flashcardNarrations = useMemo(() => deck.flashcards.map(flashcardListeningText), [deck.flashcards]);
+  const flashcardRanges = useMemo(() => {
+    let cursor = 0;
+    return flashcardNarrations.map((narration) => {
+      const startWord = cursor;
+      cursor += narration.split(/\s+/).filter(Boolean).length;
+      return { startWord, endWord: cursor };
+    });
+  }, [flashcardNarrations]);
+  const text = mode === 'original'
+    ? deck.originalText
+    : mode === 'summary'
+      ? (deck.audioSummary || deck.quickReview)
+      : flashcardNarrations.join(' ');
   const words = useMemo(() => text.split(/\s+/).filter(Boolean), [text]);
   const voice = voices.find((item) => item.identifier === voiceIdentifier);
-  const tutorContext = useMemo(() => tutorContextAtPosition(deck, position, words.length), [deck, position, words.length]);
+  const contextAtPosition = (targetPosition: number): AiTutorContext => {
+    const baseContext = tutorContextAtPosition(deck, targetPosition, words.length);
+    if (mode !== 'flashcards' || !deck.flashcards.length) return baseContext;
+    const activeRange = flashcardRanges.findIndex((range) => targetPosition < range.endWord);
+    const currentIndex = activeRange < 0 ? deck.flashcards.length - 1 : activeRange;
+    const cardChunk = (index: number) => {
+      const card = deck.flashcards[index]!;
+      return {
+        id: card.id,
+        title: `Flashcard ${index + 1}`,
+        text: [`Front: ${card.front}`, `Back: ${card.back}`, card.explanation ? `Explanation: ${card.explanation}` : ''].filter(Boolean).join('\n').slice(0, 4_000),
+      };
+    };
+    return {
+      ...baseContext,
+      currentChunk: cardChunk(currentIndex),
+      nearbyChunks: [currentIndex - 1, currentIndex + 1]
+        .filter((index) => index >= 0 && index < deck.flashcards.length)
+        .map(cardChunk),
+    };
+  };
+  const tutorContext = useMemo(() => contextAtPosition(position), [deck, mode, position, words.length, flashcardRanges]);
 
   useEffect(() => {
     Speech.getAvailableVoicesAsync().then((available) => {
       const english = available.filter((item) => item.language.toLowerCase().startsWith('en'));
-      setVoices((english.length ? english : available).sort((a, b) => a.name.localeCompare(b.name)).slice(0, 60));
+      const preferredPool = english.length ? english : available;
+      const sorted = [...preferredPool].sort((a, b) => {
+        const qualityOrder = Number(b.quality === Speech.VoiceQuality.Enhanced) - Number(a.quality === Speech.VoiceQuality.Enhanced);
+        return qualityOrder || a.name.localeCompare(b.name);
+      });
+      setVoices(sorted.slice(0, 60));
+      const enhancedVoice = english.find((item) => item.quality === Speech.VoiceQuality.Enhanced);
+      if (enhancedVoice) setVoiceIdentifier((current) => current ?? enhancedVoice.identifier);
     }).catch(() => setVoices([]));
     return () => {
       driveModeActiveRef.current = false;
       voiceAutoListenRef.current = false;
       voiceSpeechGenerationRef.current += 1;
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      playbackGenerationRef.current += 1;
       voiceInputRef.current?.stop();
       void Speech.stop();
+      if (Platform.OS === 'android') void StudyCastBackgroundPlayback?.stop().catch(() => undefined);
     };
+  }, []);
+
+  useEffect(() => {
+    void setAudioModeAsync({
+      playsInSilentMode: true,
+      shouldPlayInBackground: true,
+      interruptionMode: 'duckOthers',
+    }).catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -1075,22 +1341,21 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
     return () => { active = false; };
   }, []);
 
-  useEffect(() => {
-    if (!playing) {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      intervalRef.current = null;
+  const persistPosition = (nextPosition: number) => {
+    if (mode === 'flashcards') {
+      setFlashcardPosition(nextPosition);
       return;
     }
-    intervalRef.current = setInterval(() => {
-      setPosition((current) => Math.min(words.length, current + Math.max(1, Math.round(2.25 * rate))));
-    }, 1000);
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, [playing, rate, words.length]);
-
-  const persistPosition = (nextPosition: number) => {
+    textAudioPositionRef.current = nextPosition;
     if (!readOnly) updateDeck(deck.id, (current) => ({ ...current, audioPosition: nextPosition }));
+  };
+  const updatePlaybackPosition = (nextPosition: number) => {
+    setPosition(nextPosition);
+    if (mode === 'flashcards') setFlashcardPosition(nextPosition);
+    else textAudioPositionRef.current = nextPosition;
+  };
+  const stopBackgroundPlayback = () => {
+    if (Platform.OS === 'android') void StudyCastBackgroundPlayback?.stop().catch(() => undefined);
   };
   const recordAudioProgress = (nextPosition: number) => {
     const startedAt = sessionStartRef.current;
@@ -1106,44 +1371,108 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
     });
   };
   const stopAt = async (nextPosition: number) => {
+    const generation = ++playbackGenerationRef.current;
     await Speech.stop();
+    if (generation !== playbackGenerationRef.current) return;
     setPlaying(false);
-    setPosition(nextPosition);
+    stopBackgroundPlayback();
+    updatePlaybackPosition(nextPosition);
     persistPosition(nextPosition);
     recordAudioProgress(nextPosition);
   };
   const playFrom = (requestedPosition: number) => {
     if (!words.length) return;
     const start = requestedPosition >= words.length ? 0 : Math.max(0, requestedPosition);
-    setPosition(start);
+    const speechWords = words.map((word) => word.length > MAX_SPEECH_CHUNK_CHARS ? 'reference' : word);
+    const chunks = splitStudyCastSpeech(speechWords, start);
+    if (!chunks.length) return;
+    const generation = ++playbackGenerationRef.current;
+    updatePlaybackPosition(start);
     sessionStartRef.current = start;
     setPlaying(true);
     setVoiceSessionState(interactiveMode ? 'speaking' : 'idle');
-    Speech.speak(words.slice(start).join(' '), {
-      rate,
-      voice: voice?.identifier,
-      onDone: () => {
-        setPlaying(false);
-        setVoiceSessionState(interactiveMode ? 'paused' : 'idle');
-        setPosition(words.length);
-        persistPosition(words.length);
-        recordAudioProgress(words.length);
-      },
-      onStopped: () => setPlaying(false),
-      onError: () => setPlaying(false),
+    void setAudioModeAsync({
+      playsInSilentMode: true,
+      shouldPlayInBackground: true,
+      interruptionMode: 'duckOthers',
+    }).catch(() => undefined).then(() => {
+      if (generation !== playbackGenerationRef.current) return;
+      const beginSpeaking = () => {
+        if (generation !== playbackGenerationRef.current) return;
+        chunks.forEach((chunk, index) => {
+          Speech.speak(chunk.text, {
+            rate,
+            voice: voice?.identifier,
+            useApplicationAudioSession: true,
+            onBoundary: ({ charIndex }: { charIndex: number }) => {
+              if (generation !== playbackGenerationRef.current) return;
+              const wordsBeforeBoundary = chunk.text.slice(0, Math.max(0, charIndex)).trim().split(/\s+/).filter(Boolean).length;
+              updatePlaybackPosition(Math.min(chunk.endWord - 1, chunk.startWord + wordsBeforeBoundary));
+            },
+            onDone: () => {
+              if (generation !== playbackGenerationRef.current) return;
+            updatePlaybackPosition(chunk.endWord);
+              persistPosition(chunk.endWord);
+              if (index === chunks.length - 1) {
+                setPlaying(false);
+                setVoiceSessionState(interactiveMode ? 'paused' : 'idle');
+                stopBackgroundPlayback();
+                recordAudioProgress(words.length);
+              }
+            },
+            onStopped: () => {
+              if (generation === playbackGenerationRef.current) {
+                setPlaying(false);
+                stopBackgroundPlayback();
+              }
+            },
+            onError: () => {
+              if (generation !== playbackGenerationRef.current) return;
+              playbackGenerationRef.current += 1;
+              void Speech.stop();
+              setPlaying(false);
+              setVoiceSessionState(interactiveMode ? 'paused' : 'idle');
+              stopBackgroundPlayback();
+            },
+          });
+        });
+      };
+      if (Platform.OS === 'android' && StudyCastBackgroundPlayback) {
+        void StudyCastBackgroundPlayback.start(deck.title).catch(() => undefined).then(beginSpeaking);
+      } else {
+        beginSpeaking();
+      }
     });
   };
   const togglePlay = async () => {
     if (playing) { await stopAt(position); setVoiceSessionState(interactiveMode ? 'paused' : 'idle'); }
     else playFrom(position);
   };
-  const switchMode = async (next: 'original' | 'summary') => {
+  const switchMode = async (next: StudyCastMode) => {
+    if (next === mode) return;
+    const previousMode = mode;
+    const previousPosition = position;
+    playbackGenerationRef.current += 1;
     await Speech.stop();
+    stopBackgroundPlayback();
     setPlaying(false);
+    recordAudioProgress(previousPosition);
     sessionStartRef.current = null;
     setMode(next);
+    if (previousMode === 'flashcards') setFlashcardPosition(previousPosition);
+    else textAudioPositionRef.current = previousPosition;
+    if (next === 'flashcards') {
+      if (previousMode !== 'flashcards' && !readOnly) updateDeck(deck.id, (current) => ({ ...current, audioPosition: previousPosition }));
+      setPosition(flashcardPosition);
+      return;
+    }
+    if (previousMode === 'flashcards') {
+      setPosition(textAudioPositionRef.current);
+      return;
+    }
+    textAudioPositionRef.current = 0;
     setPosition(0);
-    persistPosition(0);
+    if (!readOnly) updateDeck(deck.id, (current) => ({ ...current, audioPosition: 0 }));
   };
   const changeRate = (direction: -1 | 1) => {
     const currentIndex = PLAYBACK_RATES.indexOf(rate);
@@ -1166,7 +1495,27 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
   const previewVoice = (nextVoice?: Speech.Voice) => {
     void Speech.stop().then(() => Speech.speak('Hi, I’m ready to study with you.', { rate: 1, voice: nextVoice?.identifier }));
   };
-  const skip = async (amount: number) => stopAt(Math.max(0, Math.min(words.length, position + amount)));
+  const seekToPosition = async (requestedPosition: number) => {
+    const nextPosition = Math.max(0, Math.min(words.length, Math.round(requestedPosition)));
+    const resumeAfterSeek = playing;
+    if (resumeAfterSeek) {
+      const generation = ++playbackGenerationRef.current;
+      await Speech.stop();
+      if (generation !== playbackGenerationRef.current) return;
+      setPlaying(false);
+      recordAudioProgress(position);
+    }
+    updatePlaybackPosition(nextPosition);
+    persistPosition(nextPosition);
+    if (resumeAfterSeek && nextPosition < words.length) playFrom(nextPosition);
+    else if (resumeAfterSeek) stopBackgroundPlayback();
+  };
+  const seekToProgress = (nextProgress: number) => {
+    void seekToPosition(Math.round(words.length * nextProgress));
+  };
+  const skip = async (seconds: number) => {
+    await seekToPosition(position + seconds * 2.25 * rate);
+  };
 
   const loadQuota = async () => {
     const accessToken = await getAccessToken();
@@ -1184,7 +1533,7 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
       const result = await runStudyBoltAI({
         action,
         question,
-        context: tutorContextAtPosition(deck, channel === 'voice' ? position : askResumePositionRef.current, words.length),
+        context: contextAtPosition(channel === 'voice' ? position : askResumePositionRef.current),
         accessToken,
         conversation: tutorConversationRef.current,
         depth: action === 'teach' || action === 'deep-dive' ? 'deep' : action === 'quick-answer' ? 'quick' : 'normal',
@@ -1339,11 +1688,11 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
     }
     if (command === 'exit') { await closeDriveMode(); return; }
     if (command === 'continue') { voiceAutoListenRef.current = false; playFrom(position); return; }
-    if (command === 'back') { await skip(-34); speakVoiceReply('Moved back about fifteen seconds.'); return; }
-    if (command === 'skip') { await skip(34); speakVoiceReply('Moved forward about fifteen seconds.'); return; }
+    if (command === 'back') { await skip(-15); speakVoiceReply('Moved back about fifteen seconds.'); return; }
+    if (command === 'skip') { await skip(15); speakVoiceReply('Moved forward about fifteen seconds.'); return; }
     if (command === 'repeat') {
       if (voiceReplyRef.current) speakVoiceReply(voiceReplyRef.current);
-      else playFrom(Math.max(0, position - 34));
+      else playFrom(Math.max(0, position - 15 * 2.25 * rate));
       return;
     }
 
@@ -1466,31 +1815,43 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
         <Pill label="DEVICE TTS" tone="purple" />
       </View>
       <View style={[styles.audioModeSwitch, { backgroundColor: colors.cardStrong }]}>
-        {(['original', 'summary'] as const).map((item) => (
-          <Pressable key={item} onPress={() => void switchMode(item)} style={[styles.audioMode, mode === item && { backgroundColor: colors.card }]}>
-            <Icon name={item === 'original' ? 'file-document-outline' : 'creation'} size={18} color={mode === item ? colors.purple : colors.textMuted} />
-            <Text style={[styles.audioModeText, { color: mode === item ? colors.text : colors.textMuted }]}>{item === 'original' ? 'Original' : 'Quick Review'}</Text>
-          </Pressable>
-        ))}
+        {AUDIO_MODES.map((item) => {
+          const active = mode === item.id;
+          const disabled = item.id === 'flashcards' && deck.flashcards.length === 0;
+          return (
+            <Pressable
+              key={item.id}
+              accessibilityRole="radio"
+              accessibilityState={{ checked: active, disabled }}
+              accessibilityLabel={item.id === 'flashcards' ? 'Listen to all flashcards' : `${item.label} listening mode`}
+              disabled={disabled}
+              onPress={() => void switchMode(item.id)}
+              style={[styles.audioMode, active && { backgroundColor: colors.card }, disabled && styles.audioModeDisabled]}
+            >
+              <Icon name={item.icon} size={17} color={active ? colors.purple : colors.textMuted} />
+              <Text numberOfLines={1} style={[styles.audioModeText, { color: active ? colors.text : colors.textMuted }]}>{item.label}</Text>
+            </Pressable>
+          );
+        })}
       </View>
       <Card style={[styles.player, { backgroundColor: colors.mode === 'dark' ? '#111820' : '#11162F' }]}>
         <View style={styles.playerArtWrap}>
           <View style={[styles.playerGlow, { backgroundColor: colors.purple }]} />
           <View style={styles.playerArt}><MaterialCommunityIcons name="lightning-bolt" size={50} color="#C8B5FF" /></View>
         </View>
-        <Text style={styles.nowPlaying}>{mode === 'original' ? 'ORIGINAL STUDYCAST' : 'QUICK REVIEW'}</Text>
+        <Text style={styles.nowPlaying}>{mode === 'original' ? 'ORIGINAL STUDYCAST' : mode === 'flashcards' ? 'FLASHCARD LISTENING' : 'QUICK REVIEW'}</Text>
         <Text style={styles.audioTitle}>{deck.title}</Text>
         <Text style={styles.audioCourse}>{deck.courseName} · {remainingMinutes || '< 1'} min remaining</Text>
         <View style={styles.currentSection}><Text style={styles.currentSectionLabel}>NOW STUDYING</Text><Text numberOfLines={1} style={styles.currentSectionTitle}>{tutorContext.currentChunk.title}</Text></View>
-        <View style={styles.audioProgress}><ProgressBar progress={progress} color={colors.purple} /></View>
+        <View style={styles.audioProgress}><SeekProgress progress={progress} color={colors.purple} onSeek={seekToProgress} currentPosition={position} total={words.length} /></View>
         <View style={styles.timeRow}>
           <Text style={styles.timeText}>{Math.floor(position / (2.25 * rate) / 60)}:{Math.floor((position / (2.25 * rate)) % 60).toString().padStart(2, '0')}</Text>
-          <Text style={styles.timeText}>≈ {Math.ceil(words.length / (135 * rate))}:00</Text>
+          <Text style={styles.timeText}>−{Math.floor((words.length - position) / (2.25 * rate) / 60)}:{Math.floor(((words.length - position) / (2.25 * rate)) % 60).toString().padStart(2, '0')}</Text>
         </View>
         <View style={styles.controls}>
-          <Pressable accessibilityLabel="Skip back 15 seconds" onPress={() => void skip(-34)} style={styles.smallControl}><Icon name="rewind-15" color="#D9DCF0" size={29} /></Pressable>
+          <Pressable accessibilityLabel="Skip back 15 seconds" onPress={() => void skip(-15)} style={styles.smallControl}><Icon name="rewind-15" color="#D9DCF0" size={29} /></Pressable>
           <Pressable accessibilityLabel={playing ? 'Pause audio' : 'Play audio'} onPress={() => void togglePlay()} style={[styles.playButton, { backgroundColor: colors.purple }]}><Icon name={playing ? 'pause' : 'play'} color={colors.primaryText} size={35} /></Pressable>
-          <Pressable accessibilityLabel="Skip forward 15 seconds" onPress={() => void skip(34)} style={styles.smallControl}><Icon name="fast-forward-15" color="#D9DCF0" size={29} /></Pressable>
+          <Pressable accessibilityLabel="Skip forward 15 seconds" onPress={() => void skip(15)} style={styles.smallControl}><Icon name="fast-forward-15" color="#D9DCF0" size={29} /></Pressable>
         </View>
         <Pressable accessibilityRole="button" onPress={() => void openAsk()} style={styles.askStudyBoltButton}>
           <View style={styles.askStudyBoltIcon}><Icon name="creation" size={20} color="#C8B5FF" /></View>
@@ -1526,7 +1887,7 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
         </Pressable>
         <Pressable accessibilityRole="button" onPress={() => void openDriveMode()} style={[styles.driveButton, { backgroundColor: colors.card, borderColor: colors.border }]}><Icon name="car" size={18} color={colors.purple} /><Text style={[styles.driveButtonText, { color: colors.text }]}>Drive mode</Text></Pressable>
       </View>
-      <Card style={[styles.audioInfo, { backgroundColor: colors.primarySoft }]}><Icon name="information-outline" color={colors.primary} /><Text style={[styles.audioInfoText, { color: colors.textSecondary }]}>{mode === 'original' ? 'Original mode reads extracted lecture text in source order. Normal listening never calls AI.' : 'Quick Review uses the saved summary and device speech. AI runs only after you choose an Ask action.'}</Text></Card>
+      <Card style={[styles.audioInfo, { backgroundColor: colors.primarySoft }]}><Icon name="information-outline" color={colors.primary} /><Text style={[styles.audioInfoText, { color: colors.textSecondary }]}>{mode === 'original' ? 'Original mode reads extracted lecture text in source order. Normal listening never calls AI.' : mode === 'flashcards' ? 'Flashcard mode reads every front, back, and available explanation in order.' : 'Quick Review uses the saved summary and device speech. AI runs only after you choose an Ask action.'}</Text></Card>
       {Platform.OS === 'web' ? <Text style={[styles.webAudio, { color: colors.textMuted }]}>Browser voice availability varies by operating system.</Text> : null}
 
       <SpeedPickerSheet visible={speedSheetVisible} rates={PLAYBACK_RATES} selected={rate} onSelect={selectRate} onClose={() => setSpeedSheetVisible(false)} />
@@ -1601,7 +1962,15 @@ function MaterialUnavailable({ deck, material }: { deck: StudyPack; material: St
       <View style={[styles.materialStateIcon, { backgroundColor: failed ? `${colors.danger}15` : colors.primarySoft }]}>
         {failed ? <Icon name="alert-outline" size={30} color={colors.danger} /> : <ActivityIndicator color={colors.primary} />}
       </View>
-      <Text style={[styles.emptyTitle, { color: colors.text }]}>{failed ? `${label} needs another try` : `${label} is being created`}</Text>
+      <Text
+        numberOfLines={1}
+        ellipsizeMode="tail"
+        adjustsFontSizeToFit
+        minimumFontScale={0.72}
+        style={[styles.emptyTitle, styles.materialEmptyTitle, { color: colors.text }]}
+      >
+        {failed ? `${label} needs another try` : `${label} is being created`}
+      </Text>
       <Text style={[styles.emptyText, { color: colors.textSecondary }]}>{failed ? state?.error || 'This item failed without affecting the rest of your Study Pack.' : state?.stage || 'This item will become available as soon as it is ready.'}</Text>
       {failed ? <PrimaryButton label={`Retry ${label}`} icon="refresh" onPress={() => retryStudyPackMaterial(deck.id, material)} style={styles.materialRetry} /> : null}
     </View>
@@ -1649,6 +2018,11 @@ const styles = StyleSheet.create({
   toolCopy: { flex: 1, minWidth: 0 },
   toolTitle: { fontSize: 13, fontWeight: '800' },
   toolDetail: { fontSize: 10, lineHeight: 14, marginTop: 2 },
+  speedReviewBanner: { marginTop: 10, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: StyleSheet.hairlineWidth },
+  speedReviewBannerIcon: { width: 43, height: 43, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  speedReviewBannerCopy: { flex: 1 },
+  speedReviewBannerTitle: { fontSize: 13, fontWeight: '900' },
+  speedReviewBannerText: { fontSize: 10, lineHeight: 15, marginTop: 2 },
   coachBanner: { marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 11 },
   coachBannerIcon: { width: 46, height: 46, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   coachBannerTitle: { fontSize: 13, fontWeight: '900' },
@@ -1721,13 +2095,16 @@ const styles = StyleSheet.create({
   flashcardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   flashcardToolbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 16, marginBottom: 4 },
   flashcardSource: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  flashcardToolbarActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  readAloudButton: { minHeight: 36, paddingHorizontal: 10, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  readAloudText: { fontSize: 10, fontWeight: '800' },
   flashcardCenter: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, gap: 17 },
   flashcardText: { fontSize: 23, lineHeight: 31, textAlign: 'center', fontWeight: '800', letterSpacing: -0.5 },
   flashcardExplanation: { textAlign: 'center', fontSize: 12, lineHeight: 18 },
   tapHint: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 13, flexDirection: 'row', gap: 7, justifyContent: 'center', alignItems: 'center' },
   tapHintText: { fontSize: 10 },
   cardNav: { marginTop: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  navButton: { width: 45, height: 45, borderRadius: 15, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center' },
+  navButton: { width: 52, height: 52, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center' },
   confidenceHint: { fontSize: 10, fontWeight: '700' },
   confidenceRow: { flexDirection: 'row', gap: 8, marginTop: 15 },
   confidenceButton: { flex: 1, minHeight: 58, borderRadius: 15, borderWidth: 1, alignItems: 'center', justifyContent: 'center', gap: 4 },
@@ -1818,8 +2195,9 @@ const styles = StyleSheet.create({
   connectionHint: { flexDirection: 'row', alignItems: 'center', gap: 9, padding: 12, borderRadius: 14, marginTop: 12 },
   connectionHintText: { flex: 1, fontSize: 9, lineHeight: 14 },
   audioModeSwitch: { flexDirection: 'row', borderRadius: 15, padding: 4, marginBottom: 14 },
-  audioMode: { flex: 1, flexDirection: 'row', gap: 7, alignItems: 'center', justifyContent: 'center', paddingVertical: 10, borderRadius: 12 },
-  audioModeText: { fontSize: 11, fontWeight: '800' },
+  audioMode: { flex: 1, minWidth: 0, flexDirection: 'row', gap: 4, alignItems: 'center', justifyContent: 'center', paddingVertical: 10, borderRadius: 12 },
+  audioModeDisabled: { opacity: 0.42 },
+  audioModeText: { flexShrink: 1, fontSize: 10, fontWeight: '800' },
   player: { padding: 22, alignItems: 'center' },
   playerArtWrap: { width: 130, height: 130, alignItems: 'center', justifyContent: 'center', marginVertical: 8 },
   playerGlow: { position: 'absolute', width: 112, height: 112, borderRadius: 56, opacity: 0.22 },
@@ -1830,7 +2208,11 @@ const styles = StyleSheet.create({
   currentSection: { alignSelf: 'stretch', alignItems: 'center', marginTop: 14 },
   currentSectionLabel: { color: '#857DA8', fontSize: 7, fontWeight: '900', letterSpacing: 1 },
   currentSectionTitle: { maxWidth: '90%', color: '#CFCAE5', fontSize: 10, fontWeight: '800', marginTop: 3 },
-  audioProgress: { width: '100%', marginTop: 18 },
+  audioProgress: { width: '100%', marginTop: 14 },
+  seekTouchArea: { width: '100%', height: 28, justifyContent: 'center' },
+  seekTrack: { width: '100%', height: 5, borderRadius: 4, justifyContent: 'center' },
+  seekFill: { position: 'absolute', left: 0, top: 0, height: 5, borderRadius: 4 },
+  seekThumb: { position: 'absolute', width: 14, height: 14, borderRadius: 7, marginLeft: -7, top: -4.5, borderWidth: 2, borderColor: '#F2EDFF' },
   timeRow: { width: '100%', flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
   timeText: { color: '#929EAA', fontSize: 9 },
   controls: { flexDirection: 'row', alignItems: 'center', gap: 27, marginTop: 17 },
@@ -1892,6 +2274,7 @@ const styles = StyleSheet.create({
   drivePlay: { width: 76, height: 76, borderRadius: 38, alignItems: 'center', justifyContent: 'center' },
   emptyTool: { paddingVertical: 80, alignItems: 'center', gap: 11 },
   emptyTitle: { fontSize: 19, fontWeight: '800' },
+  materialEmptyTitle: { width: '100%', maxWidth: '100%', fontSize: 17, letterSpacing: -0.35, textAlign: 'center' },
   emptyText: { textAlign: 'center', fontSize: 12, lineHeight: 18, maxWidth: 300 },
   materialStateIcon: { width: 58, height: 58, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   materialRetry: { minWidth: 200, marginTop: 8 },
