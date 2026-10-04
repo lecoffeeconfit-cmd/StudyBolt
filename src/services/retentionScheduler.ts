@@ -47,6 +47,10 @@ function smartCardId(deckId: string, questionId: string): string | null {
 function flashcardObservation(event: StudyEvent): ReviewObservation | null {
   const at = validDate(event.occurredAt);
   if (!at || !event.confidence) return null;
+  if (event.reviewRating === 'again') return { at, rating: Rating.Again, quality: 1 };
+  if (event.reviewRating === 'hard') return { at, rating: Rating.Hard, quality: 3 };
+  if (event.reviewRating === 'good') return { at, rating: Rating.Good, quality: 4 };
+  if (event.reviewRating === 'easy') return { at, rating: Rating.Easy, quality: 5 };
   if (event.confidence === 'new') return { at, rating: Rating.Again, quality: 2 };
   if (event.confidence === 'learning') return { at, rating: Rating.Hard, quality: 3 };
   return { at, rating: Rating.Good, quality: 5 };

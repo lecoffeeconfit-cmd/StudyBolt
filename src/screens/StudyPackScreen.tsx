@@ -13,7 +13,7 @@ import { StudyPackShareSheet } from '../components/StudyPackShareSheet';
 import { useStudyBolt } from '../StudyBoltContext';
 import StudyCastBackgroundPlayback from '../../modules/studybolt-background-playback';
 import { getFlaggedItemId } from '../models';
-import type { AiRequestChannel, AiTutorAction, AiTutorContext, AiTutorConversation, AiTutorQuota, AiTutorResponse, AnswerConfidence, FlaggedItemInput, Flashcard, FlashcardConfidence, NoteBlock, QuizAnswerRecord, QuizQuestion, QuizQuestionCount, SharedStudyPackMetadata, StudyPack, StudyPackMaterial, StudyTool } from '../models';
+import type { AiRequestChannel, AiTutorAction, AiTutorContext, AiTutorConversation, AiTutorQuota, AiTutorResponse, AnswerConfidence, FlaggedItemInput, Flashcard, FlashcardConfidence, FlashcardReviewRating, NoteBlock, QuizAnswerRecord, QuizDifficulty, QuizQuestion, QuizQuestionCount, SharedStudyPackMetadata, StudyPack, StudyPackMaterial, StudyTool } from '../models';
 import { fetchTutorQuota, isAiTutorConfigured, tutorContextAtPosition } from '../services/aiTutor';
 import { runStudyBoltAI } from '../services/aiRouter';
 import { canAttemptOnDeviceAI, getOnDeviceAIAvailability, initialOnDeviceAIAvailability } from '../services/onDeviceAI';
@@ -176,6 +176,7 @@ export function StudyPackScreen({
   const { colors, state } = useStudyBolt();
   const insets = useSafeAreaInsets();
   const [tool, setTool] = useState<StudyTool>(initialTool);
+  const [coachSeed, setCoachSeed] = useState('');
   const [shareVisible, setShareVisible] = useState(false);
   const deck = deckOverride ?? state.decks.find((item) => item.id === deckId);
 
@@ -234,11 +235,11 @@ export function StudyPackScreen({
       </ScrollView>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {tool === 'overview' ? <Overview deck={deck} onTool={setTool} onPlan={() => onPlan(deck.id)} onStartStudy={onStartStudy ? (mode) => onStartStudy(mode, deck.id) : undefined} onOpenSpeedReview={onOpenSpeedReview ? () => onOpenSpeedReview(deck.id) : undefined} onOpenVisualReview={onOpenVisualReview ? () => onOpenVisualReview(deck.id) : undefined} shared={shared} /> : null}
-        {tool === 'notes' ? <Notes deck={deck} readOnly={shared} /> : null}
+        {tool === 'notes' ? <Notes deck={deck} readOnly={shared} onAskSection={(note) => { setCoachSeed(`Help me understand this section in simpler words: ${note.title}. ${note.summary ?? note.keyIdea ?? note.bullets.join(' ')}`); setTool('coach'); }} /> : null}
         {tool === 'flashcards' ? <MaterialGate deck={deck} material="flashcards" shared={shared}><Flashcards deck={deck} readOnly={shared} /></MaterialGate> : null}
         {tool === 'quiz' ? <MaterialGate deck={deck} material="quiz" shared={shared}><Quiz deck={deck} readOnly={shared} onOpenExam={onOpenExam} /></MaterialGate> : null}
         {tool === 'audio' ? <MaterialGate deck={deck} material="audio" shared={shared}><AudioPlayer deck={deck} readOnly={shared} onRequireAuth={onRequireAuth} /></MaterialGate> : null}
-        {tool === 'coach' ? <StudyCoach deck={deck} onTool={setTool} onStartStudy={onStartStudy ? (mode) => onStartStudy(mode, deck.id) : undefined} /> : null}
+        {tool === 'coach' ? <StudyCoach deck={deck} onTool={setTool} initialQuestion={coachSeed} onStartStudy={onStartStudy ? (mode) => onStartStudy(mode, deck.id) : undefined} /> : null}
       </ScrollView>
       {!shared ? <StudyPackShareSheet deck={deck} visible={shareVisible} onClose={() => setShareVisible(false)} onRequireAuth={onRequireAuth} /> : null}
     </View>
@@ -385,21 +386,22 @@ function ToolCard({ icon, title, detail, color, background, onPress }: { icon: I
 
 type NoteMode = 'simplified' | 'detailed';
 
-function NoteBulletList({ points, color }: { points: string[]; color: string }) {
+function NoteBulletList({ points, color, onAsk }: { points: string[]; color: string; onAsk?: (point: string) => void }) {
   const { colors } = useStudyBolt();
   return (
     <View style={styles.bullets}>
       {points.map((point) => (
         <View key={point} style={styles.bulletRow}>
           <View style={[styles.bullet, { backgroundColor: color }]} />
-          <Text style={[styles.bulletText, { color: colors.textSecondary }]}>{point}</Text>
+          <Text selectable style={[styles.bulletText, { color: colors.textSecondary }]}>{point}</Text>
+          {onAsk ? <Pressable accessibilityRole="button" accessibilityLabel="Ask StudyBolt about this selected idea" hitSlop={8} onPress={() => onAsk(point)} style={[styles.askBullet, { backgroundColor: colors.purpleSoft }]}><Icon name="message-text-outline" size={14} color={colors.purple} /></Pressable> : null}
         </View>
       ))}
     </View>
   );
 }
 
-function Notes({ deck, readOnly = false }: { deck: StudyPack; readOnly?: boolean }) {
+function Notes({ deck, readOnly = false, onAskSection }: { deck: StudyPack; readOnly?: boolean; onAskSection: (note: NoteBlock) => void }) {
   const { colors, recordStudyEvent, updateDeck, toggleFlag, isFlagged } = useStudyBolt();
   const [mode, setMode] = useState<NoteMode>('simplified');
   const mastery = calculateMastery(deck);
@@ -461,6 +463,7 @@ function Notes({ deck, readOnly = false }: { deck: StudyPack; readOnly?: boolean
             : 'Use this when you need the fuller lecture model, supporting claims, relationships, and source-linked recall.'}
         </Text>
       </View>
+      <NotesToolkit deck={deck} readOnly={readOnly} />
       <View style={styles.noteList}>
         {notes.map((note, index) => {
           const reviewed = deck.reviewedNoteIds.includes(note.id);
@@ -469,7 +472,7 @@ function Notes({ deck, readOnly = false }: { deck: StudyPack; readOnly?: boolean
               <View style={styles.noteTop}>
                 <View style={[styles.noteNumber, { backgroundColor: colors.primarySoft }]}><Text style={[styles.noteNumberText, { color: colors.primary }]}>{index + 1}</Text></View>
                 <View style={styles.noteHeadingCopy}>
-                  <Text style={[styles.noteTitle, { color: colors.text }]}>{note.title}</Text>
+                  <Text selectable style={[styles.noteTitle, { color: colors.text }]}>{note.title}</Text>
                   <Text style={[styles.source, { color: colors.textMuted }]}>{note.source.label}</Text>
                 </View>
                 {!readOnly ? <FlagButton flagged={isFlagged(getFlaggedItemId(deck.id, 'note', note.id))} onPress={() => toggleFlag(noteFlag(deck, note))} /> : null}
@@ -477,11 +480,11 @@ function Notes({ deck, readOnly = false }: { deck: StudyPack; readOnly?: boolean
               {note.summary ? (
                 <View style={[styles.noteSummary, { backgroundColor: colors.primarySoft }]}>
                   <Text style={[styles.noteBlockLabel, { color: colors.primary }]}>BIG PICTURE</Text>
-                  <Text style={[styles.noteSummaryText, { color: colors.text }]}>{note.summary}</Text>
+                  <Text selectable style={[styles.noteSummaryText, { color: colors.text }]}>{note.summary}</Text>
                 </View>
               ) : null}
               <Text style={[styles.noteSectionLabel, { color: colors.textMuted }]}>CORE IDEAS</Text>
-              <NoteBulletList points={note.bullets} color={colors.primary} />
+              <NoteBulletList points={note.bullets} color={colors.primary} onAsk={(point) => onAskSection({ ...note, summary: point })} />
               {mode === 'detailed' ? note.sections?.map((section) => (
                 <View key={section.heading} style={[styles.detailSection, { borderTopColor: colors.border }]}>
                   <View style={styles.detailSectionHeading}>
@@ -508,7 +511,7 @@ function Notes({ deck, readOnly = false }: { deck: StudyPack; readOnly?: boolean
                   <Icon name="lightbulb-on-outline" size={18} color={colors.mint} />
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.keyIdeaLabel, { color: colors.mint }]}>KEY IDEA</Text>
-                    <Text style={[styles.keyIdeaText, { color: colors.textSecondary }]}>{note.keyIdea}</Text>
+                    <Text selectable style={[styles.keyIdeaText, { color: colors.textSecondary }]}>{note.keyIdea}</Text>
                   </View>
                 </View>
               ) : null}
@@ -530,13 +533,16 @@ function Notes({ deck, readOnly = false }: { deck: StudyPack; readOnly?: boolean
                   <Text style={[styles.reviewedText, { color: colors.textMuted }]}>Preview only</Text>
                 </View>
               ) : (
-                <Pressable
-                  onPress={() => toggleReviewed(note.id)}
-                  style={[styles.reviewedButton, { backgroundColor: reviewed ? colors.mintSoft : colors.cardStrong }]}
-                >
-                  <Icon name={reviewed ? 'check-circle' : 'checkbox-blank-circle-outline'} size={18} color={reviewed ? colors.mint : colors.textMuted} />
-                  <Text style={[styles.reviewedText, { color: reviewed ? colors.mint : colors.textSecondary }]}>{reviewed ? 'Reviewed' : 'Mark reviewed'}</Text>
-                </Pressable>
+                <View style={styles.noteActions}>
+                  <Pressable onPress={() => toggleReviewed(note.id)} style={[styles.reviewedButton, { backgroundColor: reviewed ? colors.mintSoft : colors.cardStrong }]}>
+                    <Icon name={reviewed ? 'check-circle' : 'checkbox-blank-circle-outline'} size={18} color={reviewed ? colors.mint : colors.textMuted} />
+                    <Text style={[styles.reviewedText, { color: reviewed ? colors.mint : colors.textSecondary }]}>{reviewed ? 'Reviewed' : 'Mark reviewed'}</Text>
+                  </Pressable>
+                  <Pressable onPress={() => onAskSection(note)} style={[styles.reviewedButton, { backgroundColor: colors.purpleSoft }]}>
+                    <Icon name="message-text-outline" size={17} color={colors.purple} />
+                    <Text style={[styles.reviewedText, { color: colors.purple }]}>Ask about section</Text>
+                  </Pressable>
+                </View>
               )}
             </Card>
           );
@@ -547,12 +553,80 @@ function Notes({ deck, readOnly = false }: { deck: StudyPack; readOnly?: boolean
   );
 }
 
+type NotesTool = 'cheat-sheet' | 'terms' | 'compare' | 'examples' | 'practice';
+
+function NotesToolkit({ deck, readOnly }: { deck: StudyPack; readOnly: boolean }) {
+  const { colors, updateDeck } = useStudyBolt();
+  const [active, setActive] = useState<NotesTool>();
+  const tools: Array<{ id: NotesTool; label: string; icon: IconName }> = [
+    { id: 'cheat-sheet', label: 'Cheat sheet', icon: 'file-document-outline' },
+    { id: 'terms', label: 'Key terms', icon: 'format-list-bulleted' },
+    { id: 'compare', label: 'Compare', icon: 'compare-horizontal' },
+    { id: 'examples', label: 'Examples', icon: 'flask-outline' },
+    { id: 'practice', label: 'More practice', icon: 'plus-circle-outline' },
+  ];
+  const examples = deck.notes.flatMap((note) => (note.examples ?? []).map((example) => ({ title: note.title, text: example })));
+  const cheatPoints = [...new Set(deck.notes.flatMap((note) => [note.keyIdea, note.summary, note.bullets[0]].filter((value): value is string => Boolean(value))))].slice(0, 12);
+
+  const addPracticeSet = () => {
+    updateDeck(deck.id, (current) => {
+      const stamp = Date.now();
+      const cards = current.notes.slice(0, 5).map((note, index) => ({
+        id: `custom-card-${stamp}-${index}`,
+        front: note.recallPrompts?.[0] ?? `Explain ${note.title} in your own words.`,
+        back: note.keyIdea ?? note.summary ?? note.bullets[0] ?? note.title,
+        explanation: note.bullets.slice(0, 2).join(' '),
+        confidence: 'new' as const,
+        source: note.source,
+      })).filter((card) => !current.flashcards.some((existing) => existing.front === card.front));
+      const questions = current.notes.slice(0, 5).map((note, index) => {
+        const correct = note.keyIdea ?? note.summary ?? note.bullets[0] ?? note.title;
+        const alternatives = current.notes.filter((item) => item.id !== note.id).map((item) => item.keyIdea ?? item.summary ?? item.bullets[0] ?? item.title).slice(0, 3);
+        const fallbacks = ['This statement reverses the source relationship.', 'This statement belongs to a different topic.', 'This statement is not supported by the source section.'];
+        while (alternatives.length < 3) alternatives.push(fallbacks[alternatives.length] ?? `Unsupported option ${alternatives.length + 1}`);
+        const correctIndex = index % 4;
+        const options = [...alternatives];
+        options.splice(correctIndex, 0, correct);
+        return { id: `custom-question-${stamp}-${index}`, type: 'multiple-choice' as const, prompt: `Which statement best explains “${note.title}”?`, options, correctIndex, explanation: correct, source: note.source, difficulty: 'medium' as const };
+      }).filter((question) => !current.quiz.some((existing) => existing.prompt === question.prompt));
+      return { ...current, flashcards: [...current.flashcards, ...cards], quiz: [...current.quiz, ...questions] };
+    });
+    setActive('practice');
+  };
+
+  return (
+    <Card style={[styles.notesToolkit, { backgroundColor: colors.cardStrong }]}>
+      <View style={styles.notesToolkitHeader}>
+        <View style={[styles.notesToolkitIcon, { backgroundColor: colors.primarySoft }]}><Icon name="creation" size={19} color={colors.primary} /></View>
+        <View style={{ flex: 1 }}><Text style={[styles.notesToolkitTitle, { color: colors.text }]}>Study tools</Text><Text style={[styles.notesToolkitSubtitle, { color: colors.textMuted }]}>Built from this Study Pack</Text></View>
+      </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.notesToolRow}>
+        {tools.map((tool) => <Pressable key={tool.id} onPress={() => setActive((value) => value === tool.id ? undefined : tool.id)} style={[styles.notesToolChip, { backgroundColor: active === tool.id ? colors.primary : colors.card, borderColor: active === tool.id ? colors.primary : colors.border }]}><Icon name={tool.icon} size={15} color={active === tool.id ? colors.primaryText : colors.primary} /><Text style={[styles.notesToolText, { color: active === tool.id ? colors.primaryText : colors.textSecondary }]}>{tool.label}</Text></Pressable>)}
+      </ScrollView>
+      {active ? (
+        <View style={[styles.notesToolOutput, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          {active === 'cheat-sheet' ? <>{cheatPoints.map((point, index) => <View key={`${point}-${index}`} style={styles.toolPoint}><Text style={[styles.toolPointNumber, { color: colors.primary }]}>{index + 1}</Text><Text selectable style={[styles.toolPointText, { color: colors.textSecondary }]}>{point}</Text></View>)}</> : null}
+          {active === 'terms' ? <>{deck.flashcards.slice(0, 12).map((card) => <View key={card.id} style={styles.termRow}><Text selectable style={[styles.termTitle, { color: colors.text }]}>{card.front}</Text><Text selectable style={[styles.termDefinition, { color: colors.textSecondary }]}>{card.back}</Text></View>)}</> : null}
+          {active === 'compare' ? <View style={styles.compareRow}>{deck.notes.slice(0, 2).map((note) => <View key={note.id} style={[styles.compareColumn, { backgroundColor: colors.primarySoft }]}><Text style={[styles.compareTitle, { color: colors.primary }]}>{note.title}</Text><Text selectable style={[styles.compareText, { color: colors.textSecondary }]}>{note.keyIdea ?? note.summary ?? note.bullets[0]}</Text></View>)}</View> : null}
+          {active === 'examples' ? <>{(examples.length ? examples : deck.notes.slice(0, 4).map((note) => ({ title: note.title, text: `Connect ${note.title} to a situation from class, work, or daily life using: ${note.keyIdea ?? note.summary ?? note.bullets[0]}` }))).map((example, index) => <View key={`${example.title}-${index}`} style={styles.exampleToolRow}><Icon name="lightbulb-on-outline" size={17} color={colors.warning} /><View style={{ flex: 1 }}><Text style={[styles.exampleToolTitle, { color: colors.text }]}>{example.title}</Text><Text selectable style={[styles.exampleToolText, { color: colors.textSecondary }]}>{example.text}</Text></View></View>)}</> : null}
+          {active === 'practice' ? <View><Text style={[styles.practiceToolText, { color: colors.textSecondary }]}>Create up to five extra editable cards and matching questions from the key ideas in these notes.</Text>{!readOnly ? <PrimaryButton label="Add cards + questions" icon="plus" onPress={addPracticeSet} style={styles.practiceToolButton} /> : null}</View> : null}
+        </View>
+      ) : null}
+    </Card>
+  );
+}
+
 function Flashcards({ deck, readOnly = false }: { deck: StudyPack; readOnly?: boolean }) {
   const { colors, recordStudyEvent, updateDeck, toggleFlag, isFlagged } = useStudyBolt();
   const { width: screenWidth } = useWindowDimensions();
   const [index, setIndex] = useState(0);
   const [revealed, setRevealed] = useState(false);
   const [speaking, setSpeaking] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editFront, setEditFront] = useState('');
+  const [editBack, setEditBack] = useState('');
+  const [editExplanation, setEditExplanation] = useState('');
+  const [editTopic, setEditTopic] = useState('');
   const cardShownAt = useRef(Date.now());
   const answerRevealedAt = useRef<number | null>(null);
   const speechGenerationRef = useRef(0);
@@ -615,7 +689,7 @@ function Flashcards({ deck, readOnly = false }: { deck: StudyPack; readOnly?: bo
 
   if (!card) return <EmptyTool icon="cards-outline" title="No flashcards yet" message="Regenerate this Study Pack after source processing is connected." />;
 
-  const setConfidence = (confidence: FlashcardConfidence) => {
+  const setConfidence = (rating: FlashcardReviewRating, confidence: FlashcardConfidence) => {
     if (readOnly) return;
     recordStudyEvent({
       type: 'flashcard-review',
@@ -623,6 +697,7 @@ function Flashcards({ deck, readOnly = false }: { deck: StudyPack; readOnly?: bo
       courseId: deck.courseId,
       cardId: card.id,
       confidence,
+      reviewRating: rating,
       previousConfidence: card.confidence,
       responseTimeMs: answerRevealedAt.current === null ? undefined : Math.max(0, answerRevealedAt.current - cardShownAt.current),
       durationMinutes: Math.max(0.1, Math.round(((Date.now() - cardShownAt.current) / 6000)) / 10),
@@ -633,6 +708,29 @@ function Flashcards({ deck, readOnly = false }: { deck: StudyPack; readOnly?: bo
     }));
     setRevealed(false);
     setIndex((current) => Math.min(deck.flashcards.length - 1, current + 1));
+  };
+
+  const openEditor = () => {
+    setEditFront(card.front);
+    setEditBack(card.back);
+    setEditExplanation(card.explanation ?? '');
+    setEditTopic(card.source.label);
+    setEditing(true);
+  };
+
+  const saveCard = () => {
+    if (!editFront.trim() || !editBack.trim()) return;
+    updateDeck(deck.id, (current) => ({
+      ...current,
+      flashcards: current.flashcards.map((item) => item.id === card.id ? {
+        ...item,
+        front: editFront.trim(),
+        back: editBack.trim(),
+        explanation: editExplanation.trim() || undefined,
+        source: { ...item.source, label: editTopic.trim() || item.source.label },
+      } : item),
+    }));
+    setEditing(false);
   };
 
   const stopReadAloud = () => {
@@ -685,6 +783,11 @@ function Flashcards({ deck, readOnly = false }: { deck: StudyPack; readOnly?: bo
           <Text style={[styles.source, { color: colors.textMuted }]}>{card.source.label}</Text>
         </View>
         <View style={styles.flashcardToolbarActions}>
+          {!readOnly ? (
+            <Pressable accessibilityRole="button" accessibilityLabel="Edit flashcard" onPress={openEditor} style={[styles.iconToolButton, { backgroundColor: colors.cardStrong, borderColor: colors.border }]}>
+              <Icon name="pencil-outline" size={16} color={colors.textSecondary} />
+            </Pressable>
+          ) : null}
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={speaking ? 'Stop reading aloud' : revealed ? 'Read definition aloud' : 'Read question aloud'}
@@ -737,12 +840,41 @@ function Flashcards({ deck, readOnly = false }: { deck: StudyPack; readOnly?: bo
 
       {revealed && !readOnly ? (
         <View style={styles.confidenceRow}>
-          <ConfidenceButton icon="refresh" label="Again" color={colors.danger} background={`${colors.danger}18`} onPress={() => setConfidence('new')} />
-          <ConfidenceButton icon="progress-clock" label="Learning" color={colors.warning} background={`${colors.warning}18`} onPress={() => setConfidence('learning')} />
-          <ConfidenceButton icon="check-bold" label="Got it" color={colors.mint} background={colors.mintSoft} onPress={() => setConfidence('known')} />
+          <ConfidenceButton icon="refresh" label="Again" color={colors.danger} background={`${colors.danger}18`} onPress={() => setConfidence('again', 'new')} />
+          <ConfidenceButton icon="progress-clock" label="Hard" color={colors.warning} background={`${colors.warning}18`} onPress={() => setConfidence('hard', 'learning')} />
+          <ConfidenceButton icon="check" label="Good" color={colors.primary} background={colors.primarySoft} onPress={() => setConfidence('good', 'known')} />
+          <ConfidenceButton icon="lightning-bolt" label="Easy" color={colors.mint} background={colors.mintSoft} onPress={() => setConfidence('easy', 'known')} />
         </View>
       ) : null}
+      <Modal visible={editing} transparent animationType="slide" onRequestClose={() => setEditing(false)}>
+        <View style={styles.editorModalRoot}>
+          <Pressable accessibilityLabel="Close flashcard editor" style={StyleSheet.absoluteFill} onPress={() => setEditing(false)} />
+          <View style={[styles.editorSheet, { backgroundColor: colors.backgroundRaised, borderColor: colors.border }]}>
+            <View style={[styles.editorHandle, { backgroundColor: colors.border }]} />
+            <View style={styles.editorHeader}>
+              <View style={{ flex: 1 }}><Text style={[styles.editorTitle, { color: colors.text }]}>Edit flashcard</Text><Text style={[styles.editorSubtitle, { color: colors.textMuted }]}>Changes stay in this Study Pack.</Text></View>
+              <Pressable accessibilityLabel="Close" hitSlop={10} onPress={() => setEditing(false)}><Icon name="close" color={colors.textMuted} /></Pressable>
+            </View>
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              <EditorField label="FRONT" value={editFront} onChangeText={setEditFront} colors={colors} multiline />
+              <EditorField label="BACK" value={editBack} onChangeText={setEditBack} colors={colors} multiline />
+              <EditorField label="EXPLANATION" value={editExplanation} onChangeText={setEditExplanation} colors={colors} multiline />
+              <EditorField label="CHAPTER OR TOPIC TAG" value={editTopic} onChangeText={setEditTopic} colors={colors} />
+              <PrimaryButton label="Save card" icon="check" disabled={!editFront.trim() || !editBack.trim()} onPress={saveCard} style={styles.editorSave} />
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </>
+  );
+}
+
+function EditorField({ label, value, onChangeText, colors, multiline = false }: { label: string; value: string; onChangeText: (value: string) => void; colors: ReturnType<typeof useStudyBolt>['colors']; multiline?: boolean }) {
+  return (
+    <View style={styles.editorField}>
+      <Text style={[styles.editorLabel, { color: colors.textMuted }]}>{label}</Text>
+      <TextInput value={value} onChangeText={onChangeText} multiline={multiline} placeholderTextColor={colors.textMuted} style={[styles.editorInput, multiline && styles.editorInputMultiline, { color: colors.text, backgroundColor: colors.card, borderColor: colors.border }]} />
+    </View>
   );
 }
 
@@ -758,6 +890,8 @@ function ConfidenceButton({ icon, label, color, background, onPress }: { icon: I
 function Quiz({ deck, readOnly = false, onOpenExam }: { deck: StudyPack; readOnly?: boolean; onOpenExam?: (deckId?: string) => void }) {
   const { colors, recordStudyEvent, state, setQuizQuestionCount, updateDeck, toggleFlag, isFlagged } = useStudyBolt();
   const [kind, setKind] = useState<AssessmentKind>('practice');
+  const [scope, setScope] = useState<'all' | 'weak'>('all');
+  const [difficulty, setDifficulty] = useState<'all' | QuizDifficulty>('all');
   const [index, setIndex] = useState(0);
   const [selected, setSelected] = useState<number | null>(null);
   const [answerConfidence, setAnswerConfidence] = useState<AnswerConfidence | null>(null);
@@ -765,15 +899,31 @@ function Quiz({ deck, readOnly = false, onOpenExam }: { deck: StudyPack; readOnl
   const [finished, setFinished] = useState(false);
   const [recorded, setRecorded] = useState(false);
   const [answers, setAnswers] = useState<QuizAnswerRecord[]>([]);
+  const [similarQuestion, setSimilarQuestion] = useState<QuizQuestion>();
+  const [simpleExplanation, setSimpleExplanation] = useState(false);
+  const [reviewingMistakes, setReviewingMistakes] = useState(false);
   const quizStartedAt = useRef(Date.now());
   const questionShownAt = useRef(Date.now());
-  const practicePool = useMemo(() => buildAssessment(deck, 'practice'), [deck.flashcards, deck.id, deck.notes, deck.quiz]);
+  const practicePool = useMemo(() => buildAssessment(deck, 'practice').map((item, itemIndex) => ({
+    ...item,
+    difficulty: item.difficulty ?? (itemIndex % 3 === 0 ? 'easy' : itemIndex % 3 === 1 ? 'medium' : 'hard'),
+  })), [deck.flashcards, deck.id, deck.notes, deck.quiz]);
+  const weakSections = useMemo(() => {
+    const sections = new Set(deck.flashcards.filter((card) => card.confidence !== 'known').map((card) => card.source.sectionId));
+    state.activityEvents.forEach((event) => event.quizAnswers?.forEach((answer) => {
+      if ((answer.sourceDeckId ?? event.deckId) === deck.id && !answer.correct) sections.add(answer.sourceSectionId);
+    }));
+    return sections;
+  }, [deck.flashcards, deck.id, state.activityEvents]);
+  const filteredPracticePool = useMemo(() => {
+    return practicePool.filter((item) => (scope === 'all' || weakSections.has(item.source.sectionId)) && (difficulty === 'all' || item.difficulty === difficulty));
+  }, [difficulty, practicePool, scope, weakSections]);
   const questions = useMemo(
-    () => buildAssessment(deck, kind, kind === 'practice' ? state.quizQuestionCount : undefined),
-    [deck.flashcards, deck.id, deck.notes, deck.outline, deck.quiz, kind, state.quizQuestionCount],
+    () => kind === 'practice' ? filteredPracticePool.slice(0, state.quizQuestionCount) : buildAssessment(deck, kind),
+    [deck.flashcards, deck.id, deck.notes, deck.outline, deck.quiz, filteredPracticePool, kind, state.quizQuestionCount],
   );
   const coverage = useMemo(() => getAssessmentCoverage(deck, questions), [deck, questions]);
-  const question = questions[index];
+  const question = similarQuestion ?? questions[index];
 
   useEffect(() => {
     setIndex(0);
@@ -784,14 +934,24 @@ function Quiz({ deck, readOnly = false, onOpenExam }: { deck: StudyPack; readOnl
     setFinished(false);
     setRecorded(false);
     quizStartedAt.current = Date.now();
-  }, [deck.id, kind, state.quizQuestionCount]);
+    setSimilarQuestion(undefined);
+    setSimpleExplanation(false);
+    setReviewingMistakes(false);
+  }, [deck.id, difficulty, kind, scope, state.quizQuestionCount]);
 
   useEffect(() => {
     questionShownAt.current = Date.now();
     setAnswerConfidence(null);
   }, [question?.id]);
 
-  if (!question) return <EmptyTool icon="clipboard-alert-outline" title="No quiz yet" message="No quiz questions were available for this Study Pack." />;
+  if (!question) return (
+    <View style={styles.emptyTool}>
+      <Icon name="filter-remove-outline" size={46} color={colors.textMuted} />
+      <Text style={[styles.emptyTitle, { color: colors.text }]}>No questions match</Text>
+      <Text style={[styles.emptyText, { color: colors.textSecondary }]}>This Study Pack has no questions for the selected topic and difficulty combination.</Text>
+      <PrimaryButton label="Show all questions" icon="filter-remove-outline" onPress={() => { setScope('all'); setDifficulty('all'); }} style={styles.emptyQuizReset} />
+    </View>
+  );
 
   const choose = (optionIndex: number) => {
     if (selected !== null) return;
@@ -819,16 +979,38 @@ function Quiz({ deck, readOnly = false, onOpenExam }: { deck: StudyPack; readOnl
     }]);
   };
 
+  const trySimilarQuestion = () => {
+    if (!question.options.length) return;
+    const shift = Math.max(1, (question.correctIndex + 1) % question.options.length);
+    const options = [...question.options.slice(shift), ...question.options.slice(0, shift)];
+    const correctAnswer = question.options[question.correctIndex];
+    setSimilarQuestion({
+      ...question,
+      id: `${question.originQuestionId ?? question.id}-similar-${answers.length + 1}`,
+      originQuestionId: question.originQuestionId ?? question.id,
+      prompt: `Try the same idea from another angle: ${question.prompt}`,
+      options,
+      correctIndex: Math.max(0, options.findIndex((option) => option === correctAnswer)),
+    });
+    setSelected(null);
+    setAnswerConfidence(null);
+    setSimpleExplanation(false);
+    questionShownAt.current = Date.now();
+  };
+
   const next = () => {
     if (selected === null) return;
     if (index < questions.length - 1) {
       setIndex((value) => value + 1);
       setSelected(null);
       setAnswerConfidence(null);
+      setSimilarQuestion(undefined);
+      setSimpleExplanation(false);
       return;
     }
     const finalCorrect = correctCount;
-    const score = Math.round((finalCorrect / questions.length) * 100);
+    const answerTotal = Math.max(1, answers.length);
+    const score = Math.round((finalCorrect / answerTotal) * 100);
     if (!recorded && !readOnly) {
       updateDeck(deck.id, (current) => kind === 'practice'
         ? { ...current, quizAttempts: [...current.quizAttempts, score] }
@@ -848,7 +1030,8 @@ function Quiz({ deck, readOnly = false, onOpenExam }: { deck: StudyPack; readOnl
   };
 
   if (finished) {
-    const score = Math.round((correctCount / questions.length) * 100);
+    const score = Math.round((correctCount / Math.max(1, answers.length)) * 100);
+    const missedAnswers = answers.filter((answer) => !answer.correct);
     return (
       <View style={styles.results}>
         <View style={[styles.resultIcon, { backgroundColor: score >= 70 ? colors.mintSoft : colors.primarySoft }]}>
@@ -856,12 +1039,34 @@ function Quiz({ deck, readOnly = false, onOpenExam }: { deck: StudyPack; readOnl
         </View>
         <Text style={[styles.resultTitle, { color: colors.text }]}>{score >= 80 ? 'Strong work!' : score >= 60 ? 'Good foundation' : 'Keep retrieving'}</Text>
         <Text style={[styles.resultScore, { color: colors.text }]}>{score}%</Text>
-        <Text style={[styles.resultText, { color: colors.textSecondary }]}>{correctCount} of {questions.length} correct on your {kind === 'practice' ? 'practice quiz' : 'full PowerPoint test'}.{readOnly ? ' This preview result was not saved.' : ' Your mastery estimate now includes this attempt.'}</Text>
+        <Text style={[styles.resultText, { color: colors.textSecondary }]}>{correctCount} of {answers.length} correct on your {kind === 'practice' ? 'practice quiz' : 'full PowerPoint test'}.{readOnly ? ' This preview result was not saved.' : ' Your mastery estimate now includes this attempt.'}</Text>
         <Card style={[styles.resultTip, { backgroundColor: colors.primarySoft }]}>
           <Icon name="brain" color={colors.primary} />
           <Text style={[styles.resultTipText, { color: colors.textSecondary }]}>Try again after a short gap. Retrieval spaced over time is more useful than repeating immediately.</Text>
         </Card>
-        <PrimaryButton label="Try a fresh run" icon="refresh" onPress={() => { setIndex(0); setSelected(null); setAnswerConfidence(null); setCorrectCount(0); setAnswers([]); setFinished(false); setRecorded(false); quizStartedAt.current = Date.now(); questionShownAt.current = Date.now(); }} />
+        {missedAnswers.length ? (
+          <Pressable onPress={() => setReviewingMistakes((value) => !value)} style={[styles.reviewMistakesButton, { backgroundColor: colors.purpleSoft, borderColor: colors.purple }]}>
+            <Icon name="book-alert-outline" size={18} color={colors.purple} />
+            <Text style={[styles.reviewMistakesText, { color: colors.purple }]}>{reviewingMistakes ? 'Hide mistakes' : `Review ${missedAnswers.length} mistake${missedAnswers.length === 1 ? '' : 's'}`}</Text>
+            <Icon name={reviewingMistakes ? 'chevron-up' : 'chevron-down'} size={18} color={colors.purple} />
+          </Pressable>
+        ) : null}
+        {reviewingMistakes ? (
+          <View style={styles.mistakeReviewList}>
+            {missedAnswers.map((answer, answerIndex) => {
+              const missed = [...questions, ...practicePool].find((item) => item.id === answer.questionId || item.id === answer.originQuestionId);
+              return (
+                <Card key={`${answer.questionId}-${answerIndex}`} style={[styles.mistakeReviewCard, { borderColor: colors.border }]}>
+                  <Text style={[styles.mistakeReviewQuestion, { color: colors.text }]}>{missed?.prompt ?? 'Review this missed idea'}</Text>
+                  <Text style={[styles.mistakeReviewChoice, { color: colors.danger }]}>You chose: {answer.selectedAnswer ?? 'No answer'}</Text>
+                  <Text style={[styles.mistakeReviewChoice, { color: colors.mint }]}>Correct: {answer.correctAnswer ?? missed?.explanation}</Text>
+                  {missed?.explanation ? <Text style={[styles.mistakeReviewExplanation, { color: colors.textSecondary }]}>{missed.explanation}</Text> : null}
+                </Card>
+              );
+            })}
+          </View>
+        ) : null}
+        <PrimaryButton label="Try a fresh run" icon="refresh" onPress={() => { setIndex(0); setSelected(null); setAnswerConfidence(null); setCorrectCount(0); setAnswers([]); setSimilarQuestion(undefined); setSimpleExplanation(false); setFinished(false); setRecorded(false); quizStartedAt.current = Date.now(); questionShownAt.current = Date.now(); }} />
       </View>
     );
   }
@@ -889,22 +1094,32 @@ function Quiz({ deck, readOnly = false, onOpenExam }: { deck: StudyPack; readOnl
           <Pill label={kind === 'practice' ? `${questions.length} Q` : `${coverage.covered}/${coverage.total} sections`} tone={kind === 'practice' ? 'blue' : 'mint'} />
         </View>
         {kind === 'practice' ? (
+          <>
           <View style={styles.countChoices}>
-            {([10, 15, 20] as QuizQuestionCount[]).map((count) => {
+            {([5, 10, 15, 20, 30] as QuizQuestionCount[]).map((count) => {
               const active = state.quizQuestionCount === count;
-              const disabled = practicePool.length < count;
               return (
                 <Pressable
                   key={count}
-                  disabled={disabled}
                   onPress={() => setQuizQuestionCount(count)}
-                  style={[styles.countChip, { backgroundColor: active ? colors.primary : colors.card, borderColor: active ? colors.primary : colors.border, opacity: disabled ? 0.4 : 1 }]}
+                  style={[styles.countChip, { backgroundColor: active ? colors.primary : colors.card, borderColor: active ? colors.primary : colors.border }]}
                 >
                   <Text style={[styles.countText, { color: active ? colors.primaryText : colors.textSecondary }]}>{count}</Text>
                 </Pressable>
               );
             })}
           </View>
+          <View style={styles.quizFilterBlock}>
+            <Text style={[styles.quizFilterLabel, { color: colors.textMuted }]}>TOPICS</Text>
+            <View style={styles.quizFilterRow}>
+              {(['all', 'weak'] as const).map((value) => <Pressable key={value} onPress={() => setScope(value)} style={[styles.quizFilterChip, { backgroundColor: scope === value ? colors.primary : colors.card, borderColor: scope === value ? colors.primary : colors.border }]}><Text style={[styles.quizFilterText, { color: scope === value ? colors.primaryText : colors.textSecondary }]}>{value === 'all' ? 'All topics' : 'Weak only'}</Text></Pressable>)}
+            </View>
+            <Text style={[styles.quizFilterLabel, { color: colors.textMuted }]}>DIFFICULTY</Text>
+            <View style={styles.quizFilterRow}>
+              {(['all', 'easy', 'medium', 'hard'] as const).map((value) => <Pressable key={value} onPress={() => setDifficulty(value)} style={[styles.quizFilterChip, { backgroundColor: difficulty === value ? colors.purple : colors.card, borderColor: difficulty === value ? colors.purple : colors.border }]}><Text style={[styles.quizFilterText, { color: difficulty === value ? colors.primaryText : colors.textSecondary }]}>{value === 'all' ? 'Mixed' : value[0]!.toUpperCase() + value.slice(1)}</Text></Pressable>)}
+            </View>
+          </View>
+          </>
         ) : (
           <View style={styles.coverageRow}>
             <Icon name="check-decagram" color={colors.mint} size={18} />
@@ -914,7 +1129,7 @@ function Quiz({ deck, readOnly = false, onOpenExam }: { deck: StudyPack; readOnl
         {!readOnly && onOpenExam ? (
           <Pressable onPress={() => onOpenExam(deck.id)} style={[styles.adaptiveExamLink, { backgroundColor: colors.card, borderColor: colors.primary }]}> 
             <Icon name="lightning-bolt" size={17} color={colors.primary} />
-            <View style={{ flex: 1 }}><Text style={[styles.adaptiveExamLinkTitle, { color: colors.text }]}>Open Adaptive Exam</Text><Text style={[styles.adaptiveExamLinkText, { color: colors.textSecondary }]}>Multi-pack sources, targeted concepts, timer, and full analytics</Text></View>
+            <View style={{ flex: 1 }}><Text style={[styles.adaptiveExamLinkTitle, { color: colors.text }]}>Practice / Adaptive Exam</Text><Text style={[styles.adaptiveExamLinkText, { color: colors.textSecondary }]}>Timed mode · answers at the end · targeted concepts · readiness score</Text></View>
             <Icon name="arrow-right" size={18} color={colors.primary} />
           </Pressable>
         ) : null}
@@ -986,7 +1201,13 @@ function Quiz({ deck, readOnly = false, onOpenExam }: { deck: StudyPack; readOnl
           <View style={{ flex: 1 }}>
             <Text style={[styles.feedbackTitle, { color: colors.text }]}>{selected === question.correctIndex ? 'Correct' : answerConfidence === 'very-sure' ? 'Confident, but incorrect' : 'Not quite'}</Text>
             <Text style={[styles.feedbackText, { color: colors.textSecondary }]}>{question.explanation}</Text>
+            {selected !== question.correctIndex ? <Text style={[styles.wrongAnswerWhy, { color: colors.textSecondary }]}>You chose “{question.options[selected]}.” The source supports “{question.options[question.correctIndex]},” so the selected option does not match this concept.</Text> : null}
+            {simpleExplanation ? <Text style={[styles.simpleExplanation, { color: colors.text }]}><Text style={{ fontWeight: '900' }}>In simpler words: </Text>The key answer is “{question.options[question.correctIndex]}.” {question.explanation.split(/[.!?]/)[0]}.</Text> : null}
             {selected !== question.correctIndex && answerConfidence === 'very-sure' ? <Text style={[styles.confidentWrongText, { color: colors.danger }]}>High-priority misconception · added to adaptive review</Text> : null}
+            <View style={styles.feedbackActions}>
+              <Pressable onPress={() => setSimpleExplanation((value) => !value)} style={[styles.feedbackAction, { backgroundColor: colors.card }]}><Icon name="creation" size={15} color={colors.primary} /><Text style={[styles.feedbackActionText, { color: colors.primary }]}>Explain simpler</Text></Pressable>
+              <Pressable onPress={trySimilarQuestion} style={[styles.feedbackAction, { backgroundColor: colors.card }]}><Icon name="refresh" size={15} color={colors.purple} /><Text style={[styles.feedbackActionText, { color: colors.purple }]}>Similar question</Text></Pressable>
+            </View>
           </View>
         </Card>
       ) : null}
@@ -995,10 +1216,10 @@ function Quiz({ deck, readOnly = false, onOpenExam }: { deck: StudyPack; readOnl
   );
 }
 
-type CoachView = 'ask' | 'teach' | 'connect';
+type CoachView = 'ask' | 'teach' | 'recall' | 'connect';
 type CoachAnswer = { title: string; lines: string[] };
 
-function StudyCoach({ deck, onTool, onStartStudy }: { deck: StudyPack; onTool: (tool: StudyTool) => void; onStartStudy?: (mode: SmartStudyMode) => void }) {
+function StudyCoach({ deck, onTool, onStartStudy, initialQuestion = '' }: { deck: StudyPack; onTool: (tool: StudyTool) => void; onStartStudy?: (mode: SmartStudyMode) => void; initialQuestion?: string }) {
   const { colors } = useStudyBolt();
   const { getAccessToken } = useAuth();
   const [view, setView] = useState<CoachView>('ask');
@@ -1006,9 +1227,17 @@ function StudyCoach({ deck, onTool, onStartStudy }: { deck: StudyPack; onTool: (
   const [answer, setAnswer] = useState<CoachAnswer>();
   const [noteIndex, setNoteIndex] = useState(0);
   const [teaching, setTeaching] = useState('');
+  const [recallText, setRecallText] = useState('');
+  const [recallRevealed, setRecallRevealed] = useState(false);
   const [feedback, setFeedback] = useState<{ score: number; covered: string[]; missing: string[] }>();
   const [coachLoading, setCoachLoading] = useState(false);
   const note = deck.notes[noteIndex] ?? deck.notes[0];
+
+  useEffect(() => {
+    if (!initialQuestion) return;
+    setView('ask');
+    setQuestion(initialQuestion);
+  }, [initialQuestion]);
 
   const answerPrompt = async (kind: 'important' | 'confuse' | 'weak' | 'custom') => {
     if (kind === 'important' || kind === 'confuse' || kind === 'custom') {
@@ -1076,6 +1305,7 @@ function StudyCoach({ deck, onTool, onStartStudy }: { deck: StudyPack; onTool: (
         {([
           { id: 'ask', label: 'Ask', icon: 'message-text-outline' },
           { id: 'teach', label: 'Teach it', icon: 'account-voice' },
+          { id: 'recall', label: 'Recall', icon: 'brain' },
           { id: 'connect', label: 'Connect', icon: 'transit-connection-variant' },
         ] as Array<{ id: CoachView; label: string; icon: IconName }>).map((item) => {
           const active = view === item.id;
@@ -1149,6 +1379,31 @@ function StudyCoach({ deck, onTool, onStartStudy }: { deck: StudyPack; onTool: (
               <Text style={[styles.feedbackSectionLabel, { color: colors.mint }]}>YOU COVERED</Text>
               <Text style={[styles.feedbackSectionText, { color: colors.textSecondary }]}>{feedback.covered.length ? feedback.covered.join(' ') : 'You started an explanation, but the source’s central ideas did not appear clearly yet.'}</Text>
               {feedback.missing.length ? <><Text style={[styles.feedbackSectionLabel, { color: colors.warning }]}>ADD OR CLARIFY</Text><Text style={[styles.feedbackSectionText, { color: colors.textSecondary }]}>{feedback.missing.slice(0, 2).join(' ')}</Text></> : null}
+            </Card>
+          ) : null}
+        </>
+      ) : null}
+
+      {view === 'recall' ? (
+        <>
+          <View style={styles.toolHeadingRow}>
+            <View style={{ flex: 1 }}><Text style={[styles.toolHeading, { color: colors.text }]}>Free recall</Text><Text style={[styles.toolSubheading, { color: colors.textSecondary }]}>Write what you remember before checking the source.</Text></View>
+            <Pill label="NO CUES" tone="blue" />
+          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.topicChips}>
+            {deck.notes.map((item, index) => <Pressable key={item.id} onPress={() => { setNoteIndex(index); setRecallText(''); setRecallRevealed(false); }} style={[styles.topicChip, { backgroundColor: index === noteIndex ? colors.primary : colors.card, borderColor: index === noteIndex ? colors.primary : colors.border }]}><Text style={[styles.topicChipText, { color: index === noteIndex ? colors.primaryText : colors.textSecondary }]}>{item.title}</Text></Pressable>)}
+          </ScrollView>
+          <Card style={[styles.teachPromptCard, { backgroundColor: colors.primarySoft }]}>
+            <Text style={[styles.teachEyebrow, { color: colors.primary }]}>FROM MEMORY ONLY</Text>
+            <Text style={[styles.teachPrompt, { color: colors.text }]}>What can you recall about {note.title}?</Text>
+            <TextInput multiline value={recallText} onChangeText={(value) => { setRecallText(value); setRecallRevealed(false); }} placeholder="Write every idea you can remember…" placeholderTextColor={colors.textMuted} style={[styles.teachInput, { color: colors.text, backgroundColor: colors.card, borderColor: colors.border }]} />
+            <PrimaryButton label={recallRevealed ? 'Source revealed' : 'Reveal key ideas'} icon="eye-outline" disabled={recallText.trim().length < 5 || recallRevealed} onPress={() => setRecallRevealed(true)} />
+          </Card>
+          {recallRevealed ? (
+            <Card style={[styles.recallFeedbackCard, { borderColor: colors.mint, backgroundColor: colors.mintSoft }]}>
+              <View style={styles.coachAnswerHeading}><Icon name="check-decagram-outline" color={colors.mint} /><Text style={[styles.coachAnswerTitle, { color: colors.text }]}>Check against the source</Text></View>
+              {[note.keyIdea, ...note.bullets].filter((value): value is string => Boolean(value)).slice(0, 6).map((idea, index) => <View key={`${idea}-${index}`} style={styles.coachAnswerLine}><View style={[styles.coachAnswerNumber, { backgroundColor: colors.card }]}><Text style={[styles.coachAnswerNumberText, { color: colors.mint }]}>{index + 1}</Text></View><Text selectable style={[styles.coachAnswerText, { color: colors.textSecondary }]}>{idea}</Text></View>)}
+              <Text style={[styles.recallSelfCheck, { color: colors.textMuted }]}>Add any missing ideas in your own words, then try again later without looking.</Text>
             </Card>
           ) : null}
         </>
@@ -2085,6 +2340,30 @@ const styles = StyleSheet.create({
   toolSubheading: { fontSize: 12, marginTop: 3 },
   noteGuide: { flexDirection: 'row', alignItems: 'center', gap: 9, borderRadius: 14, padding: 12, marginBottom: 12 },
   noteGuideText: { flex: 1, fontSize: 11, lineHeight: 15 },
+  notesToolkit: { padding: 14, marginBottom: 14 },
+  notesToolkitHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  notesToolkitIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  notesToolkitTitle: { fontSize: 13, fontWeight: '900' },
+  notesToolkitSubtitle: { fontSize: 9, marginTop: 2 },
+  notesToolRow: { gap: 7, paddingTop: 12, paddingBottom: 3 },
+  notesToolChip: { minHeight: 38, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10 },
+  notesToolText: { fontSize: 9, fontWeight: '900' },
+  notesToolOutput: { borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, padding: 12, marginTop: 10 },
+  toolPoint: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, marginVertical: 5 },
+  toolPointNumber: { width: 18, fontSize: 10, lineHeight: 16, fontWeight: '900' },
+  toolPointText: { flex: 1, fontSize: 10, lineHeight: 16 },
+  termRow: { marginVertical: 6 },
+  termTitle: { fontSize: 11, fontWeight: '900' },
+  termDefinition: { fontSize: 10, lineHeight: 15, marginTop: 2 },
+  compareRow: { flexDirection: 'row', gap: 8 },
+  compareColumn: { flex: 1, borderRadius: 12, padding: 10 },
+  compareTitle: { fontSize: 10, fontWeight: '900' },
+  compareText: { fontSize: 9, lineHeight: 14, marginTop: 5 },
+  exampleToolRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, marginVertical: 6 },
+  exampleToolTitle: { fontSize: 10, fontWeight: '900' },
+  exampleToolText: { fontSize: 9, lineHeight: 14, marginTop: 2 },
+  practiceToolText: { fontSize: 10, lineHeight: 16 },
+  practiceToolButton: { marginTop: 11 },
   noteList: { gap: 12 },
   noteCard: { padding: 18 },
   noteTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 11 },
@@ -2100,6 +2379,7 @@ const styles = StyleSheet.create({
   bulletRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
   bullet: { width: 5, height: 5, borderRadius: 3, marginTop: 7 },
   bulletText: { flex: 1, fontSize: 12, lineHeight: 18 },
+  askBullet: { width: 29, height: 29, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
   detailSection: { borderTopWidth: StyleSheet.hairlineWidth, marginTop: 18, paddingTop: 16 },
   detailSectionHeading: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   detailSectionIcon: { width: 28, height: 28, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
@@ -2119,11 +2399,13 @@ const styles = StyleSheet.create({
   recallText: { flex: 1, fontSize: 11, lineHeight: 16, fontWeight: '700' },
   reviewedButton: { alignSelf: 'flex-start', flexDirection: 'row', gap: 6, alignItems: 'center', marginTop: 14, paddingHorizontal: 11, paddingVertical: 8, borderRadius: 11 },
   reviewedText: { fontSize: 11, fontWeight: '800' },
+  noteActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   flashcard: { minHeight: 390, padding: 20 },
   flashcardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   flashcardToolbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 16, marginBottom: 4 },
   flashcardSource: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   flashcardToolbarActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  iconToolButton: { width: 36, height: 36, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center' },
   readAloudButton: { minHeight: 36, paddingHorizontal: 10, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   readAloudText: { fontSize: 10, fontWeight: '800' },
   flashcardCenter: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, gap: 17 },
@@ -2137,6 +2419,17 @@ const styles = StyleSheet.create({
   confidenceRow: { flexDirection: 'row', gap: 8, marginTop: 15 },
   confidenceButton: { flex: 1, minHeight: 58, borderRadius: 15, borderWidth: 1, alignItems: 'center', justifyContent: 'center', gap: 4 },
   confidenceButtonText: { fontSize: 10, fontWeight: '900' },
+  editorModalRoot: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(13,18,38,0.45)' },
+  editorSheet: { width: '100%', maxWidth: 560, maxHeight: '88%', alignSelf: 'center', borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 20, paddingTop: 10, paddingBottom: Platform.OS === 'ios' ? 28 : 20 },
+  editorHandle: { width: 42, height: 4, borderRadius: 3, alignSelf: 'center', marginBottom: 16 },
+  editorHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 10 },
+  editorTitle: { fontSize: 21, lineHeight: 26, fontWeight: '900' },
+  editorSubtitle: { fontSize: 10, marginTop: 3 },
+  editorField: { marginTop: 13 },
+  editorLabel: { fontSize: 8, fontWeight: '900', letterSpacing: 0.8, marginBottom: 6 },
+  editorInput: { minHeight: 47, borderRadius: 14, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, fontSize: 12 },
+  editorInputMultiline: { minHeight: 82, textAlignVertical: 'top' },
+  editorSave: { marginTop: 18 },
   assessmentSwitcher: { flexDirection: 'row', borderRadius: 16, padding: 4, gap: 4, marginBottom: 12 },
   assessmentMode: { flex: 1, minHeight: 43, borderRadius: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
   assessmentModeText: { fontSize: 11, fontWeight: '800' },
@@ -2144,9 +2437,14 @@ const styles = StyleSheet.create({
   quizSetupTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   quizSetupTitle: { fontSize: 13, fontWeight: '900' },
   quizSetupText: { fontSize: 10, lineHeight: 15, marginTop: 3 },
-  countChoices: { flexDirection: 'row', gap: 8, marginTop: 13 },
+  countChoices: { flexDirection: 'row', gap: 6, marginTop: 13 },
   countChip: { flex: 1, height: 39, borderRadius: 12, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   countText: { fontSize: 12, fontWeight: '900' },
+  quizFilterBlock: { gap: 7, marginTop: 13 },
+  quizFilterLabel: { fontSize: 8, fontWeight: '900', letterSpacing: 0.8, marginTop: 2 },
+  quizFilterRow: { flexDirection: 'row', gap: 6 },
+  quizFilterChip: { flex: 1, minHeight: 34, borderRadius: 10, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  quizFilterText: { fontSize: 9, fontWeight: '900' },
   coverageRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 12 },
   coverageText: { flex: 1, fontSize: 10, fontWeight: '700' },
   adaptiveExamLink: { flexDirection: 'row', alignItems: 'center', gap: 9, borderWidth: 1, borderRadius: 14, padding: 10, marginTop: 13 },
@@ -2171,6 +2469,11 @@ const styles = StyleSheet.create({
   feedback: { marginTop: 12, flexDirection: 'row', gap: 10, alignItems: 'flex-start', borderWidth: 1 },
   feedbackTitle: { fontSize: 13, fontWeight: '900' },
   feedbackText: { fontSize: 11, lineHeight: 16, marginTop: 3 },
+  wrongAnswerWhy: { fontSize: 10, lineHeight: 15, marginTop: 7 },
+  simpleExplanation: { fontSize: 10, lineHeight: 15, marginTop: 8 },
+  feedbackActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 10 },
+  feedbackAction: { minHeight: 35, borderRadius: 10, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 9 },
+  feedbackActionText: { fontSize: 9, fontWeight: '900' },
   confidentWrongText: { fontSize: 9, lineHeight: 13, fontWeight: '900', marginTop: 6 },
   nextButton: { marginTop: 14 },
   results: { alignItems: 'center', paddingTop: 35, gap: 9 },
@@ -2180,6 +2483,14 @@ const styles = StyleSheet.create({
   resultText: { textAlign: 'center', fontSize: 12, lineHeight: 18, maxWidth: 310 },
   resultTip: { flexDirection: 'row', gap: 10, alignItems: 'center', marginVertical: 15 },
   resultTipText: { flex: 1, fontSize: 11, lineHeight: 16 },
+  reviewMistakesButton: { alignSelf: 'stretch', minHeight: 48, borderRadius: 14, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  reviewMistakesText: { flex: 1, fontSize: 11, fontWeight: '900' },
+  mistakeReviewList: { alignSelf: 'stretch', gap: 9 },
+  mistakeReviewCard: { borderWidth: StyleSheet.hairlineWidth },
+  mistakeReviewQuestion: { fontSize: 12, lineHeight: 17, fontWeight: '900' },
+  mistakeReviewChoice: { fontSize: 10, lineHeight: 15, marginTop: 5 },
+  mistakeReviewExplanation: { fontSize: 10, lineHeight: 15, marginTop: 7 },
+  emptyQuizReset: { alignSelf: 'stretch', marginTop: 8 },
   coachSwitcher: { flexDirection: 'row', borderRadius: 16, padding: 4, gap: 4, marginBottom: 20 },
   coachMode: { flex: 1, minHeight: 43, borderRadius: 13, borderWidth: StyleSheet.hairlineWidth, borderColor: 'transparent', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   coachModeText: { fontSize: 10, fontWeight: '900' },
@@ -2206,6 +2517,8 @@ const styles = StyleSheet.create({
   teachPrompt: { fontSize: 19, lineHeight: 26, fontWeight: '900', marginTop: 7 },
   teachInput: { minHeight: 150, borderWidth: 1, borderRadius: 15, padding: 13, marginVertical: 15, fontSize: 12, lineHeight: 19, textAlignVertical: 'top' },
   teachFeedback: { marginTop: 12, borderWidth: 1 },
+  recallFeedbackCard: { marginTop: 12, borderWidth: 1 },
+  recallSelfCheck: { fontSize: 9, lineHeight: 14, marginTop: 12 },
   teachFeedbackTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
   teachFeedbackLabel: { fontSize: 8, fontWeight: '900', letterSpacing: 0.8 },
   teachScore: { fontSize: 28, fontWeight: '900', marginTop: 2 },

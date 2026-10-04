@@ -8,7 +8,8 @@ export type AnswerConfidence = 'unsure' | 'somewhat-sure' | 'very-sure';
 export type StudyTool = 'overview' | 'notes' | 'flashcards' | 'quiz' | 'audio' | 'coach';
 export type StudyPackMaterial = 'simpleNotes' | 'detailedNotes' | 'keyConcepts' | 'flashcards' | 'audio' | 'quiz';
 export type StudyPackMaterialStatus = 'queued' | 'generating' | 'ready' | 'failed';
-export type QuizQuestionCount = 10 | 15 | 20;
+export type QuizQuestionCount = 5 | 10 | 15 | 20 | 30;
+export type FlashcardReviewRating = 'again' | 'hard' | 'good' | 'easy';
 export type LibrarySort = 'default' | 'recent' | 'oldest' | 'alphabetical';
 export type SharedStudyPackVisibility = 'private' | 'link' | 'public';
 export type DiscoverSort = 'newest' | 'popular' | 'saved';
@@ -169,6 +170,7 @@ export interface StudyEvent {
   noteId?: string;
   cardId?: string;
   confidence?: FlashcardConfidence;
+  reviewRating?: FlashcardReviewRating;
   previousConfidence?: FlashcardConfidence;
   responseTimeMs?: number;
   quizScore?: number;

@@ -1,7 +1,9 @@
 import * as DocumentPicker from 'expo-document-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
-import React, { useEffect, useMemo, useRef } from 'react';
-import { Alert, Animated, Easing, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import * as Notifications from 'expo-notifications';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Animated, AppState, Easing, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useStudyBolt } from '../StudyBoltContext';
 import type { ImportAsset, StudyPack } from '../models';
@@ -9,9 +11,76 @@ import { calculateMastery } from '../services/mastery';
 import { buildMistakeNotebook, buildSmartStudyBrief } from '../services/adaptiveStudy';
 import type { SmartStudyMode } from '../services/adaptiveStudy';
 import { DOCUMENT_PICKER_TYPE, pageLabel } from '../services/documentTypes';
+import {
+  DEFAULT_STUDY_TIMER_SETTINGS,
+  loadStudyTimerSettings,
+  studyTimerMethodLabel,
+  subscribeToStudyTimerSettings,
+  type StudyTimerSettings,
+} from '../services/studyTimer';
 import { BoltMark, Card, Header, Icon, Pill, ProgressBar, Screen, SectionHeader } from '../components/ui';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import { useAuth } from '../AuthContext';
+
+const POMODORO_STORAGE_KEY = '@studybolt/pomodoro-timer/v1';
+
+type PomodoroPhase = 'focus' | 'break';
+type PomodoroSession = {
+  phase: PomodoroPhase;
+  status: 'running' | 'paused' | 'complete';
+  endAt: number | null;
+  remainingSeconds: number;
+  notificationId?: string;
+  alarmAvailable?: boolean;
+  durationMinutes?: number;
+  methodLabel?: string;
+  recorded?: boolean;
+  alerted?: boolean;
+};
+
+async function schedulePomodoroAlarm(phase: PomodoroPhase, endAt: number, requestPermission: boolean, settings: StudyTimerSettings) {
+  if (Platform.OS === 'web') return { notificationId: undefined, available: false };
+
+  try {
+    const channelId = `study-timer-${settings.alarmMode}`;
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync(channelId, {
+        name: settings.alarmMode === 'sound-vibration' ? 'Study timer alarms' : settings.alarmMode === 'vibration' ? 'Study timer vibration' : 'Study timer silent alerts',
+        importance: settings.alarmMode === 'silent' ? Notifications.AndroidImportance.DEFAULT : Notifications.AndroidImportance.HIGH,
+        sound: settings.alarmMode === 'sound-vibration' ? 'default' : null,
+        enableVibrate: settings.alarmMode !== 'silent',
+        vibrationPattern: settings.alarmMode !== 'silent' ? [0, 250, 250, 250] : undefined,
+      });
+    }
+    const current = await Notifications.getPermissionsAsync();
+    const status = current.status === 'granted' || !requestPermission
+      ? current.status
+      : (await Notifications.requestPermissionsAsync()).status;
+    if (status !== 'granted') return { notificationId: undefined, available: false };
+
+    const notificationId = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: phase === 'focus' ? 'Focus session complete' : 'Break is over',
+        body: phase === 'focus' ? `Nice work. Take a ${settings.breakMinutes}-minute break.` : `Ready for another ${settings.focusMinutes}-minute focus session?`,
+        sound: settings.alarmMode === 'sound-vibration' ? 'default' : false,
+        data: { studyBolt: true, type: 'pomodoro', phase, alarmMode: settings.alarmMode },
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: new Date(endAt),
+        channelId: Platform.OS === 'android' ? channelId : undefined,
+      },
+    });
+    return { notificationId, available: true };
+  } catch {
+    return { notificationId: undefined, available: false };
+  }
+}
+
+async function cancelPomodoroAlarm(notificationId?: string) {
+  if (Platform.OS === 'web' || !notificationId) return;
+  await Notifications.cancelScheduledNotificationAsync(notificationId).catch(() => undefined);
+}
 
 export function HomeScreen({
   onOpenDeck,
@@ -201,6 +270,8 @@ export function HomeScreen({
         )}
       </Pressable>
 
+      <PomodoroTimerCard />
+
       {brief.examDaysLeft !== null ? (
         <Pressable onPress={onOpenPlanner} style={[styles.examCard, { backgroundColor: colors.cardStrong }]}>
           <View style={[styles.examIcon, { backgroundColor: brief.examDaysLeft <= 1 ? `${colors.danger}15` : colors.primarySoft }]}><Icon name="school-outline" size={22} color={brief.examDaysLeft <= 1 ? colors.danger : colors.primary} /></View>
@@ -249,6 +320,213 @@ export function HomeScreen({
         ))}
       </View>
     </Screen>
+  );
+}
+
+function PomodoroTimerCard() {
+  const { colors, state, setFocusMinutes, recordStudyEvent } = useStudyBolt();
+  const [session, setSession] = useState<PomodoroSession | null>(null);
+  const [timerSettings, setTimerSettings] = useState(DEFAULT_STUDY_TIMER_SETTINGS);
+  const [clock, setClock] = useState(Date.now());
+  const [ready, setReady] = useState(false);
+  const [settingsReady, setSettingsReady] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const remainingSeconds = session?.status === 'running' && session.endAt
+    ? Math.max(0, Math.ceil((session.endAt - clock) / 1000))
+    : session?.remainingSeconds ?? timerSettings.focusMinutes * 60;
+  const timeLabel = `${Math.floor(remainingSeconds / 60).toString().padStart(2, '0')}:${(remainingSeconds % 60).toString().padStart(2, '0')}`;
+
+  useEffect(() => {
+    let mounted = true;
+    const unsubscribe = subscribeToStudyTimerSettings((next) => {
+      if (mounted) setTimerSettings(next);
+    });
+    void loadStudyTimerSettings().then((next) => {
+      if (!mounted) return;
+      setTimerSettings(next);
+      setSettingsReady(true);
+    }).catch(() => {
+      if (mounted) setSettingsReady(true);
+    });
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    void AsyncStorage.getItem(POMODORO_STORAGE_KEY).then(async (raw) => {
+      if (!mounted) return;
+      if (raw) {
+        try {
+          const saved = JSON.parse(raw) as PomodoroSession;
+          if ((saved.phase === 'focus' || saved.phase === 'break')
+            && ['running', 'paused', 'complete'].includes(saved.status)
+            && Number.isFinite(saved.remainingSeconds)) {
+            const restored = saved.status === 'running' && (!saved.endAt || saved.endAt <= Date.now())
+              ? { ...saved, status: 'complete' as const, endAt: null, remainingSeconds: 0, notificationId: undefined }
+              : saved;
+            setSession(restored);
+            if (restored !== saved) await AsyncStorage.setItem(POMODORO_STORAGE_KEY, JSON.stringify(restored));
+          } else {
+            await AsyncStorage.removeItem(POMODORO_STORAGE_KEY);
+          }
+        } catch {
+          await AsyncStorage.removeItem(POMODORO_STORAGE_KEY);
+        }
+      }
+      if (mounted) setReady(true);
+    }).catch(() => {
+      if (mounted) setReady(true);
+    });
+    return () => { mounted = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!ready || session?.status !== 'running') return;
+    const timer = setInterval(() => setClock(Date.now()), 1000);
+    const appStateSubscription = AppState.addEventListener('change', (appState) => {
+      if (appState === 'active') setClock(Date.now());
+    });
+    return () => {
+      clearInterval(timer);
+      appStateSubscription.remove();
+    };
+  }, [ready, session?.status]);
+
+  useEffect(() => {
+    if (!ready || session?.status !== 'running' || remainingSeconds > 0) return;
+    const completed: PomodoroSession = { ...session, status: 'complete', endAt: null, remainingSeconds: 0, notificationId: undefined };
+    setSession(completed);
+    void AsyncStorage.setItem(POMODORO_STORAGE_KEY, JSON.stringify(completed)).catch(() => undefined);
+  }, [ready, remainingSeconds, session]);
+
+  useEffect(() => {
+    if (session?.status !== 'complete') return;
+    const completed = { ...session };
+    let changed = false;
+    if (session.phase === 'focus' && !session.recorded) {
+      completed.recorded = true;
+      changed = true;
+      const durationMinutes = session.durationMinutes ?? 25;
+      setFocusMinutes(state.focusMinutes + durationMinutes);
+      recordStudyEvent({ type: 'focus', durationMinutes });
+    }
+    if (!session.alarmAvailable && !session.alerted) {
+      completed.alerted = true;
+      changed = true;
+      Alert.alert('Time’s up', session.phase === 'focus' ? `Your focus session is complete. Take a ${timerSettings.breakMinutes}-minute break.` : `Your break is over. Ready for another ${timerSettings.focusMinutes}-minute focus session?`);
+    }
+    if (changed) {
+      setSession(completed);
+      void AsyncStorage.setItem(POMODORO_STORAGE_KEY, JSON.stringify(completed)).catch(() => undefined);
+    }
+  }, [recordStudyEvent, session, setFocusMinutes, state.focusMinutes, timerSettings.breakMinutes, timerSettings.focusMinutes]);
+
+  const saveSession = (next: PomodoroSession | null) => {
+    setSession(next);
+    if (next) void AsyncStorage.setItem(POMODORO_STORAGE_KEY, JSON.stringify(next)).catch(() => undefined);
+    else void AsyncStorage.removeItem(POMODORO_STORAGE_KEY).catch(() => undefined);
+  };
+
+  const startPhase = async (phase: PomodoroPhase, seconds: number, askForPermission: boolean, resumedSession?: PomodoroSession) => {
+    setStarting(true);
+    try {
+      await cancelPomodoroAlarm(session?.notificationId);
+      const endAt = Date.now() + seconds * 1000;
+      const alarm = await schedulePomodoroAlarm(phase, endAt, askForPermission, timerSettings);
+      if (!alarm.available) {
+        const message = Platform.OS === 'web'
+          ? 'The timer will count down while StudyBolt is open. Use the mobile app for a lock-screen alarm.'
+          : 'The timer will still count down. Enable StudyBolt notifications to hear the alarm when your screen is locked.';
+        Alert.alert('Alarm unavailable', message);
+      }
+      const next: PomodoroSession = {
+        phase,
+        status: 'running',
+        endAt,
+        remainingSeconds: seconds,
+        notificationId: alarm.notificationId,
+        alarmAvailable: alarm.available,
+        durationMinutes: resumedSession?.durationMinutes ?? Math.max(1, Math.round(seconds / 60)),
+        methodLabel: resumedSession?.methodLabel ?? studyTimerMethodLabel(timerSettings),
+      };
+      setClock(Date.now());
+      saveSession(next);
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  const primaryAction = () => {
+    if (starting || !ready || !settingsReady) return;
+    if (!session) {
+      void startPhase('focus', timerSettings.focusMinutes * 60, true);
+    } else if (session.status === 'running') {
+      const pausedAt = Date.now();
+      const pausedSeconds = Math.max(0, Math.ceil(((session.endAt ?? pausedAt) - pausedAt) / 1000));
+      void cancelPomodoroAlarm(session.notificationId);
+      setClock(pausedAt);
+      saveSession({
+        ...session,
+        status: pausedSeconds > 0 ? 'paused' : 'complete',
+        endAt: null,
+        remainingSeconds: pausedSeconds,
+        notificationId: undefined,
+      });
+    } else if (session.status === 'paused') {
+      void startPhase(session.phase, remainingSeconds, false, session);
+    } else {
+      const nextPhase = session.phase === 'focus' ? 'break' : 'focus';
+      const nextDuration = (nextPhase === 'focus' ? timerSettings.focusMinutes : timerSettings.breakMinutes) * 60;
+      void startPhase(nextPhase, nextDuration, false);
+    }
+  };
+
+  const stopSession = () => {
+    void cancelPomodoroAlarm(session?.notificationId);
+    saveSession(null);
+  };
+
+  const phaseLabel = session?.phase === 'break' ? 'Short break' : 'Focus session';
+  const detail = !session
+    ? `${timerSettings.focusMinutes} min focus · ${timerSettings.breakMinutes} min break`
+    : session.status === 'running'
+      ? `${phaseLabel} · in progress`
+      : session.status === 'paused'
+        ? `Paused · ${timeLabel} left`
+        : session.phase === 'focus'
+          ? 'Focus complete · take a short break'
+          : 'Break complete · ready to focus?';
+  const actionLabel = !session
+    ? `Start ${timerSettings.focusMinutes}-minute focus timer`
+    : session.status === 'running'
+      ? 'Pause timer'
+      : session.status === 'paused'
+        ? 'Resume timer'
+        : session.phase === 'focus'
+          ? `Start ${timerSettings.breakMinutes}-minute break`
+          : `Start ${timerSettings.focusMinutes}-minute focus timer`;
+  const actionIcon = !session || session.status === 'paused' || session.status === 'complete' ? 'play' : 'pause';
+
+  return (
+    <View style={[styles.pomodoroCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <View style={[styles.pomodoroIcon, { backgroundColor: colors.purpleSoft }]}><Icon name={session?.phase === 'break' ? 'coffee-outline' : 'timer-outline'} size={20} color={colors.purple} /></View>
+      <View style={styles.pomodoroCopy}>
+        <Text style={[styles.pomodoroTitle, { color: colors.text }]}>{session?.methodLabel ?? studyTimerMethodLabel(timerSettings)}</Text>
+        <Text numberOfLines={1} style={[styles.pomodoroDetail, { color: colors.textMuted }]}>{detail}</Text>
+      </View>
+      <Text accessibilityLabel={`Time remaining ${timeLabel}`} style={[styles.pomodoroTime, { color: session?.status === 'complete' ? colors.mint : colors.text }]}>{session?.status === 'complete' ? 'DONE' : timeLabel}</Text>
+      {session ? (
+        <Pressable accessibilityRole="button" accessibilityLabel={session.status === 'complete' ? 'Reset Pomodoro timer' : 'Stop Pomodoro timer'} accessibilityState={{ disabled: starting }} disabled={starting} hitSlop={6} onPress={stopSession} style={({ pressed }) => [styles.pomodoroStop, { backgroundColor: colors.backgroundRaised, opacity: starting ? 0.45 : pressed ? 0.72 : 1 }]}>
+          <Icon name="stop" size={16} color={colors.textMuted} />
+        </Pressable>
+      ) : null}
+      <Pressable accessibilityRole="button" accessibilityLabel={actionLabel} accessibilityState={{ disabled: !ready || !settingsReady || starting }} disabled={!ready || !settingsReady || starting} onPress={primaryAction} style={({ pressed }) => [styles.pomodoroAction, { backgroundColor: colors.purple, opacity: !ready || !settingsReady || starting ? 0.5 : pressed ? 0.82 : 1 }]}>
+        <Icon name={starting ? 'timer-sand' : actionIcon} size={18} color={colors.primaryText} />
+      </Pressable>
+    </View>
   );
 }
 
@@ -329,6 +607,14 @@ const styles = StyleSheet.create({
   examIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   examTitle: { fontSize: 11, fontWeight: '900' },
   examText: { fontSize: 9, lineHeight: 13, marginTop: 3 },
+  pomodoroCard: { minHeight: 70, borderRadius: 17, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 11, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 10 },
+  pomodoroIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  pomodoroCopy: { flex: 1, minWidth: 0 },
+  pomodoroTitle: { fontSize: 12, fontWeight: '900' },
+  pomodoroDetail: { fontSize: 9, marginTop: 3 },
+  pomodoroTime: { minWidth: 47, textAlign: 'right', fontSize: 14, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  pomodoroStop: { width: 32, height: 32, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  pomodoroAction: { width: 38, height: 38, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   sectionLabel: { fontSize: 17, fontWeight: '800', letterSpacing: -0.2, marginTop: 22 },
   quickActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
   quickAction: { flexBasis: '48%', flexGrow: 1, minHeight: 74, borderRadius: 15, borderWidth: StyleSheet.hairlineWidth, padding: 10, paddingLeft: 50, justifyContent: 'center' },

@@ -17,6 +17,7 @@ const MODES: Array<{ id: SmartStudyMode; label: string; icon: IconName; detail: 
   { id: 'pretest', label: 'Pre-Test', icon: 'radar', detail: 'Skip what you know' },
   { id: 'cram', label: 'Cram', icon: 'fire', detail: 'Highest yield first' },
 ];
+const SESSION_LENGTHS = [5, 10, 20, 30] as const;
 
 const FORMAT_LABELS: Record<SmartStudyItem['format'], string> = {
   'multiple-choice': 'Recognition',
@@ -32,6 +33,7 @@ export function SmartStudyScreen({ initialMode = 'smart', focusDeckId, onBack }:
   const { colors, recordStudyEvent, state, updateDeck } = useStudyBolt();
   const insets = useSafeAreaInsets();
   const [mode, setMode] = useState<SmartStudyMode>(initialMode);
+  const [sessionMinutes, setSessionMinutes] = useState<(typeof SESSION_LENGTHS)[number]>(10);
   const [phase, setPhase] = useState<Phase>('intro');
   const [index, setIndex] = useState(0);
   const [confidence, setConfidence] = useState<AnswerConfidence | null>(null);
@@ -41,7 +43,7 @@ export function SmartStudyScreen({ initialMode = 'smart', focusDeckId, onBack }:
   const [results, setResults] = useState<SessionResult[]>([]);
   const questionStartedAt = useRef(Date.now());
   const sessionStartedAt = useRef(Date.now());
-  const brief = useMemo(() => buildSmartStudyBrief(state, mode, focusDeckId), [focusDeckId, mode, state]);
+  const brief = useMemo(() => buildSmartStudyBrief(state, mode, focusDeckId, sessionMinutes), [focusDeckId, mode, sessionMinutes, state]);
   const item = brief.items[index];
   const introPalette = mode === 'smart'
     ? colors.mode === 'dark'
@@ -204,6 +206,31 @@ export function SmartStudyScreen({ initialMode = 'smart', focusDeckId, onBack }:
             );
           })}
         </ScrollView>
+
+        <View style={styles.lengthHeading}>
+          <View>
+            <Text style={[styles.lengthTitle, { color: colors.text }]}>Session length</Text>
+            <Text style={[styles.lengthHint, { color: colors.textMuted }]}>StudyBolt fills the time with your highest priority prompts.</Text>
+          </View>
+          <Icon name="timer-outline" size={20} color={colors.primary} />
+        </View>
+        <View style={styles.lengthRow}>
+          {SESSION_LENGTHS.map((minutes) => {
+            const active = minutes === sessionMinutes;
+            return (
+              <Pressable
+                key={minutes}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+                onPress={() => setSessionMinutes(minutes)}
+                style={[styles.lengthChoice, { backgroundColor: active ? colors.primary : colors.card, borderColor: active ? colors.primary : colors.border }]}
+              >
+                <Text style={[styles.lengthValue, { color: active ? colors.primaryText : colors.text }]}>{minutes}</Text>
+                <Text style={[styles.lengthUnit, { color: active ? colors.primaryText : colors.textMuted }]}>min</Text>
+              </Pressable>
+            );
+          })}
+        </View>
 
         <Text style={[styles.sectionTitle, { color: colors.text }]}>Why these questions</Text>
         <Card style={[styles.signalCard, styles.flatCard]}>
@@ -392,6 +419,13 @@ const styles = StyleSheet.create({
   modeCard: { minWidth: 147, minHeight: 59, borderRadius: 15, borderWidth: 1, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 9 },
   modeLabel: { fontSize: 11, fontWeight: '900' },
   modeDetail: { fontSize: 8, marginTop: 2 },
+  lengthHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 4, marginBottom: 10 },
+  lengthTitle: { fontSize: 14, fontWeight: '900' },
+  lengthHint: { fontSize: 9, lineHeight: 13, marginTop: 2 },
+  lengthRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
+  lengthChoice: { flex: 1, minHeight: 51, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  lengthValue: { fontSize: 16, lineHeight: 19, fontWeight: '900' },
+  lengthUnit: { fontSize: 8, fontWeight: '800', marginTop: 1 },
   sectionTitle: { fontSize: 18, fontWeight: '900', marginTop: 10, marginBottom: 11 },
   signalCard: { flexDirection: 'row', paddingHorizontal: 8, paddingVertical: 14 },
   signal: { flex: 1, alignItems: 'center' },

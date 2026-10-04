@@ -172,7 +172,7 @@ function interleave<T extends { deckId: string }>(items: T[]): T[] {
   return output;
 }
 
-export function buildSmartStudyBrief(state: StudyBoltState, mode: SmartStudyMode = 'smart', focusDeckId?: string): SmartStudyBrief {
+export function buildSmartStudyBrief(state: StudyBoltState, mode: SmartStudyMode = 'smart', focusDeckId?: string, targetMinutes?: number): SmartStudyBrief {
   const analytics = buildAnalytics(state);
   const { bySection } = missCounts(state);
   const insightByCard = new Map(
@@ -201,7 +201,10 @@ export function buildSmartStudyBrief(state: StudyBoltState, mode: SmartStudyMode
     return { deck, cardIndex, mastery, priority, reason, checkpoint: Boolean(due && mastery >= 65), unseen, due, atRisk, misses };
   }));
   const eligible = mode === 'pretest' ? candidates.filter((item) => item.unseen || item.mastery < 80) : candidates;
-  const ranked = eligible.sort((a, b) => b.priority - a.priority).slice(0, mode === 'cram' ? 12 : mode === 'pretest' ? 8 : 10);
+  const defaultCount = mode === 'cram' ? 12 : mode === 'pretest' ? 8 : 10;
+  const minutesPerPrompt = mode === 'cram' ? 1.1 : 1.4;
+  const requestedCount = targetMinutes ? Math.max(1, Math.ceil(targetMinutes / minutesPerPrompt)) : defaultCount;
+  const ranked = eligible.sort((a, b) => b.priority - a.priority).slice(0, requestedCount);
   const items = interleave(ranked.map((item) => makeCardItem(item.deck, item.cardIndex, item.mastery, item.reason, item.checkpoint)));
   const examDaysLeft = daysUntil(state.plan.targetDate);
   const examConceptsRemaining = candidates.filter((candidate) => candidate.mastery < 80).length;
@@ -212,7 +215,7 @@ export function buildSmartStudyBrief(state: StudyBoltState, mode: SmartStudyMode
     weakTopics: candidates.filter((candidate) => candidate.mastery < 65).length,
     recentMistakes: new Set(candidates.filter((candidate) => candidate.misses > 0).map((candidate) => `${candidate.deck.id}:${candidate.deck.flashcards[candidate.cardIndex]?.source.sectionId}`)).size,
     atRisk: candidates.filter((candidate) => candidate.atRisk).length,
-    estimatedMinutes: Math.max(5, Math.round(items.length * (mode === 'cram' ? 1.1 : 1.4))),
+    estimatedMinutes: Math.max(5, Math.round(items.length * minutesPerPrompt)),
     examDaysLeft,
     examConceptsRemaining,
   };

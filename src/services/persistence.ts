@@ -5,7 +5,7 @@ import { initialState } from '../data/mockStudyPacks';
 import { ensureDistinctNoteLayers } from './noteLayers';
 
 const STORAGE_KEY = '@studybolt/state/v1';
-const QUIZ_COUNTS: QuizQuestionCount[] = [10, 15, 20];
+const QUIZ_COUNTS: QuizQuestionCount[] = [5, 10, 15, 20, 30];
 const LIBRARY_SORTS: LibrarySort[] = ['default', 'recent', 'oldest', 'alphabetical'];
 
 function isFlaggedItem(value: unknown): value is FlaggedItem {

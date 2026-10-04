@@ -610,6 +610,13 @@ function ActivityAnalytics({ analytics, goalMinutes }: { analytics: AnalyticsSna
         })}
       </Card>
 
+      <SectionHeader title="Time by topic" action="Source-linked activity" />
+      <Card>
+        {analytics.topicStudyTime.length ? analytics.topicStudyTime.slice(0, 12).map((topic, index) => (
+          <HorizontalValue key={topic.id} label={topic.title} value={topic.minutes} max={Math.max(1, ...analytics.topicStudyTime.map((item) => item.minutes))} formatted={formatMinutes(topic.minutes)} color={topic.color} last={index === Math.min(11, analytics.topicStudyTime.length - 1)} />
+        )) : <EmptyInsight icon="clock-outline" title="No topic time yet" detail="Review a note, card, or quiz question to build source-linked topic time." />}
+      </Card>
+
       <SectionHeader title="More activity stats" action="Secondary insights" />
       <View style={styles.compactStats}>
         <CompactStat label="Longest session" value={activity.longestSession === null ? 'More history needed' : formatMinutes(activity.longestSession)} />

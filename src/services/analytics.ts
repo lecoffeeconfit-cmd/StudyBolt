@@ -98,6 +98,7 @@ export interface AnalyticsSnapshot {
   improvingConcepts: ConceptInsight[] | null;
   forgottenConcepts: ConceptInsight[] | null;
   topicMastery: Array<{ id: string; title: string; courseName: string; value: number }>;
+  topicStudyTime: Array<{ id: string; title: string; courseName: string; color: string; minutes: number }>;
   classes: Array<{ id: string; name: string; emoji: string; color: string; mastery: number; studyMinutes: number }>;
   packs: Array<{ id: string; title: string; courseName: string; color: string; completion: number; remaining: number; studyMinutes: number }>;
   packCompletion: number;
@@ -370,6 +371,49 @@ export function buildAnalytics(state: StudyBoltState, now = new Date()): Analyti
     if (answerScore !== null) values.push(answerScore);
     return { id: `${deck.id}:${section.id}`, title: section.title, courseName: deck.courseName, value: values.length ? clamp(average(values)) : 0 };
   })).sort((a, b) => b.value - a.value);
+
+  const topicMinutes = new Map<string, number>();
+  events.forEach((event) => {
+    if (minutesFor(event) <= 0) return;
+    const add = (deckId: string | undefined, sectionId: string | undefined, minutes: number) => {
+      if (!deckId || !sectionId) return;
+      const key = `${deckId}:${sectionId}`;
+      topicMinutes.set(key, (topicMinutes.get(key) ?? 0) + minutes);
+    };
+    if (event.quizAnswers?.length) {
+      const counts = new Map<string, number>();
+      event.quizAnswers.forEach((answer) => {
+        const answerDeckId = answer.sourceDeckId ?? event.deckId;
+        if (!answerDeckId) return;
+        const key = `${answerDeckId}:${answer.sourceSectionId}`;
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      });
+      counts.forEach((count, key) => {
+        const separator = key.indexOf(':');
+        add(key.slice(0, separator), key.slice(separator + 1), minutesFor(event) * count / event.quizAnswers!.length);
+      });
+      return;
+    }
+    if (!event.deckId) return;
+    const deck = state.decks.find((item) => item.id === event.deckId);
+    if (!deck) return;
+    const noteSection = event.noteId ? deck.notes.find((note) => note.id === event.noteId)?.source.sectionId : undefined;
+    const cardSection = event.cardId ? deck.flashcards.find((card) => card.id === event.cardId)?.source.sectionId : undefined;
+    add(deck.id, noteSection ?? cardSection, minutesFor(event));
+  });
+  const topicStudyTime = state.decks.flatMap((deck) => {
+    const sections = new Map<string, string>();
+    deck.outline.forEach((section) => sections.set(section.id, section.title));
+    deck.notes.forEach((note) => sections.set(note.source.sectionId, sections.get(note.source.sectionId) ?? note.title));
+    deck.flashcards.forEach((card) => sections.set(card.source.sectionId, sections.get(card.source.sectionId) ?? card.source.label));
+    return [...sections].map(([sectionId, title]) => ({
+      id: `${deck.id}:${sectionId}`,
+      title,
+      courseName: deck.courseName,
+      color: deck.color,
+      minutes: Math.round((topicMinutes.get(`${deck.id}:${sectionId}`) ?? 0) * 10) / 10,
+    }));
+  }).filter((topic) => topic.minutes > 0).sort((a, b) => b.minutes - a.minutes);
 
   const packRows = state.decks.map((deck) => {
     const completion = packCompletion(deck, events);
@@ -795,6 +839,7 @@ export function buildAnalytics(state: StudyBoltState, now = new Date()): Analyti
     improvingConcepts,
     forgottenConcepts,
     topicMastery,
+    topicStudyTime,
     classes: classRows,
     packs: packRows,
     packCompletion: packCompletionAverage,

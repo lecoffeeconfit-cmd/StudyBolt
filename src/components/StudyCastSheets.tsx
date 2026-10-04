@@ -1,7 +1,9 @@
 import type { Voice } from 'expo-speech';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
+  Easing,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -16,6 +18,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { AiTutorAction, AiTutorQuota, AiTutorResponse } from '../models';
 import { useStudyBolt } from '../StudyBoltContext';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 import { radius } from '../theme';
 import { Icon, Pill, PrimaryButton } from './ui';
 import type { IconName } from './ui';
@@ -116,6 +119,54 @@ const SHORTCUTS: Array<{ id: Exclude<AiTutorAction, 'ask'>; label: string; icon:
   { id: 'quiz', label: 'Quiz me', icon: 'brain' },
 ];
 
+function TutorQuotaMeter({ quota }: { quota: AiTutorQuota }) {
+  const { colors } = useStudyBolt();
+  const reducedMotion = useReducedMotion();
+  const fill = useRef(new Animated.Value(0)).current;
+  const limit = Math.max(0, quota.limit);
+  const used = Math.max(0, Math.min(limit, quota.used));
+  const progress = limit > 0 ? used / limit : 0;
+  const fillColor = quota.remaining <= 0 ? colors.danger : quota.softWarning ? colors.warning : colors.purple;
+
+  useEffect(() => {
+    fill.stopAnimation();
+    if (reducedMotion) {
+      fill.setValue(progress);
+      return;
+    }
+    const animation = Animated.timing(fill, {
+      toValue: progress,
+      duration: 560,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [fill, progress, reducedMotion]);
+
+  return (
+    <View style={styles.quotaMeter}>
+      <View style={styles.quotaMeterLabels}>
+        <Text style={[styles.quotaMeterTitle, { color: colors.textSecondary }]}>Cloud AI usage</Text>
+        <Text style={[styles.quotaMeterValue, { color: colors.text }]}>{used} / {limit}</Text>
+      </View>
+      <View
+        accessibilityRole="progressbar"
+        accessibilityLabel="Secure cloud AI usage"
+        accessibilityValue={{ min: 0, max: Math.max(1, limit), now: used, text: `${used} of ${limit} interactions used` }}
+        style={[styles.quotaTrack, { backgroundColor: colors.border }]}
+      >
+        <Animated.View
+          style={[styles.quotaFill, {
+            backgroundColor: fillColor,
+            width: fill.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }),
+          }]}
+        />
+      </View>
+    </View>
+  );
+}
+
 export function AskStudyBoltSheet({
   visible,
   sectionTitle,
@@ -202,7 +253,12 @@ export function AskStudyBoltSheet({
                 <Text style={[styles.providerDetail, { color: colors.textSecondary }]}>{providerDetail}</Text>
               </View>
             </View>
-            {provider === 'cloud' && quota ? <View style={styles.quotaRow}><Pill label={`${quota.remaining} StudyBolt AI interactions remaining`} tone={quota.remaining > 2 ? 'purple' : 'neutral'} /><Text style={[styles.quotaPlan, { color: colors.textMuted }]}>{quota.plan === 'premium' ? 'Premium' : 'Free'} · this period</Text></View> : null}
+            {provider === 'cloud' && quota ? (
+              <View style={styles.quotaSection}>
+                <View style={styles.quotaRow}><Pill label={`${quota.remaining} StudyBolt AI interactions remaining`} tone={quota.remaining > 2 ? 'purple' : 'neutral'} /><Text style={[styles.quotaPlan, { color: colors.textMuted }]}>{quota.plan === 'premium' ? 'Premium' : 'Free'} · this period</Text></View>
+                <TutorQuotaMeter quota={quota} />
+              </View>
+            ) : null}
             {provider === 'cloud' && quota?.softWarning ? <View style={[styles.quotaWarning, { backgroundColor: colors.primarySoft }]}><Icon name="information-outline" size={17} color={colors.primary} /><Text style={[styles.quotaWarningText, { color: colors.textSecondary }]}>You’re approaching this period’s secure-cloud AI limit. Cached and on-device answers do not consume it.</Text></View> : null}
 
             {!signedIn || !configured ? (
@@ -320,8 +376,15 @@ const styles = StyleSheet.create({
   previewButton: { width: 37, height: 37, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   askScroll: { marginTop: 12 },
   askContent: { paddingBottom: 12 },
+  quotaSection: { marginTop: 9, gap: 7 },
   quotaRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   quotaPlan: { fontSize: 8, fontWeight: '700' },
+  quotaMeter: { gap: 4 },
+  quotaMeterLabels: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  quotaMeterTitle: { fontSize: 9, fontWeight: '700' },
+  quotaMeterValue: { fontSize: 9, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  quotaTrack: { height: 7, borderRadius: 7, overflow: 'hidden' },
+  quotaFill: { height: '100%', borderRadius: 7 },
   quotaWarning: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, borderRadius: 11, padding: 9, marginTop: 8 },
   quotaWarningText: { flex: 1, fontSize: 9, lineHeight: 13 },
   providerRow: { flexDirection: 'row', alignItems: 'center', gap: 11, borderRadius: 14, paddingHorizontal: 13, paddingVertical: 11 },

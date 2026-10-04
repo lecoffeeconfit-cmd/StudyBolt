@@ -8,10 +8,12 @@ const REMINDER_IDS_KEY = '@studybolt/study-reminder-ids/v1';
 
 if (Platform.OS !== 'web') {
   Notifications.setNotificationHandler({
-    handleNotification: async () => ({
+    handleNotification: async (notification) => ({
       shouldShowBanner: true,
       shouldShowList: true,
-      shouldPlaySound: false,
+      shouldPlaySound: notification.request.content.data?.type === 'pomodoro'
+        && (notification.request.content.data?.alarmMode === undefined
+          || notification.request.content.data?.alarmMode === 'sound-vibration'),
       shouldSetBadge: false,
     }),
   });

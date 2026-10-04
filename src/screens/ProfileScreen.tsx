@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { Linking, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Linking, Modal, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Card, Header, Icon, Pill, PrimaryButton, Screen, SectionHeader } from '../components/ui';
 import type { IconName } from '../components/ui';
@@ -7,6 +8,16 @@ import { useStudyBolt } from '../StudyBoltContext';
 import type { RetentionMode, StudyType, ThemePreference } from '../models';
 import { learningEvidence } from '../data/learningScience';
 import { useAuth } from '../AuthContext';
+import {
+  DEFAULT_STUDY_TIMER_SETTINGS,
+  loadStudyTimerSettings,
+  saveStudyTimerSettings,
+  STUDY_TIMER_PRESETS,
+  studyTimerMethodLabel,
+  subscribeToStudyTimerSettings,
+  type StudyTimerAlarmMode,
+  type StudyTimerSettings,
+} from '../services/studyTimer';
 
 const THEMES: Array<{ id: ThemePreference; label: string; icon: IconName }> = [
   { id: 'system', label: 'System', icon: 'cellphone' },
@@ -36,7 +47,47 @@ export function ProfileScreen({ onOpenOnboarding, onOpenAuth, onManageAccount, o
   const { user, profile, updateProfile } = useAuth();
   const [studyTypeBusy, setStudyTypeBusy] = useState(false);
   const [studyTypeNotice, setStudyTypeNotice] = useState<string | null>(null);
+  const [timerSettings, setTimerSettings] = useState(DEFAULT_STUDY_TIMER_SETTINGS);
+  const [timerDraft, setTimerDraft] = useState(DEFAULT_STUDY_TIMER_SETTINGS);
+  const [timerSettingsVisible, setTimerSettingsVisible] = useState(false);
+  const [timerSaving, setTimerSaving] = useState(false);
+  const [timerError, setTimerError] = useState<string | null>(null);
   const initial = (profile?.displayName?.[0] ?? user?.email?.[0] ?? 'H').toUpperCase();
+
+  useEffect(() => {
+    let mounted = true;
+    const unsubscribe = subscribeToStudyTimerSettings((next) => {
+      if (mounted) setTimerSettings(next);
+    });
+    void loadStudyTimerSettings().then((next) => {
+      if (mounted) setTimerSettings(next);
+    });
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
+  }, []);
+
+  const openTimerSettings = () => {
+    setTimerDraft(timerSettings);
+    setTimerError(null);
+    setTimerSettingsVisible(true);
+  };
+
+  const saveTimerSettings = async () => {
+    setTimerSaving(true);
+    setTimerError(null);
+    try {
+      const saved = await saveStudyTimerSettings(timerDraft);
+      setTimerSettings(saved);
+      setTimerSettingsVisible(false);
+    } catch {
+      setTimerError('StudyBolt could not save these timer settings. Please try again.');
+    } finally {
+      setTimerSaving(false);
+    }
+  };
+
   return (
     <Screen>
       <Header title="Profile" right={<Pill label={user ? 'Signed in' : 'Guest'} tone={user ? 'mint' : 'neutral'} />} />
@@ -124,7 +175,7 @@ export function ProfileScreen({ onOpenOnboarding, onOpenAuth, onManageAccount, o
       <Card style={styles.settingsCard}>
         <Setting icon="bell-outline" title="Reminders" detail={state.plan.remindersEnabled ? 'Enabled in current plan' : 'Off'} />
         <Setting icon="speedometer" title="Playback speed" detail="1.0× default" />
-        <Setting icon="timer-outline" title="Focus timer" detail="25 min focus · 5 min break" />
+        <Setting icon="timer-outline" title="Study timer" detail={`${studyTimerMethodLabel(timerSettings)} · ${timerSettings.focusMinutes} min focus · ${timerSettings.breakMinutes} min break`} onPress={openTimerSettings} />
         <Setting icon="view-dashboard-outline" title="Study widgets" detail="Add glanceable study views to your Home Screen" onPress={onOpenWidgets} />
         <Setting icon="download-circle-outline" title="Offline study" detail={`${state.decks.length} packs stored locally`} last />
       </Card>
@@ -214,7 +265,128 @@ export function ProfileScreen({ onOpenOnboarding, onOpenAuth, onManageAccount, o
         ))}
       </Card>
       <Text style={[styles.footer, { color: colors.textMuted }]}>Small steps. Big futures. ⚡</Text>
+
+      <StudyTimerSettingsSheet
+        visible={timerSettingsVisible}
+        draft={timerDraft}
+        saving={timerSaving}
+        error={timerError}
+        onChange={setTimerDraft}
+        onSave={() => void saveTimerSettings()}
+        onClose={() => setTimerSettingsVisible(false)}
+      />
     </Screen>
+  );
+}
+
+const TIMER_ALARM_OPTIONS: Array<{ id: StudyTimerAlarmMode; label: string; detail: string; icon: IconName }> = [
+  { id: 'sound-vibration', label: 'Sound', detail: 'Sound and vibration', icon: 'bell-ring-outline' },
+  { id: 'vibration', label: 'Quiet', detail: 'Vibration when supported', icon: 'vibrate' },
+  { id: 'silent', label: 'Silent', detail: 'Notification only', icon: 'bell-off-outline' },
+];
+
+function StudyTimerSettingsSheet({
+  visible,
+  draft,
+  saving,
+  error,
+  onChange,
+  onSave,
+  onClose,
+}: {
+  visible: boolean;
+  draft: StudyTimerSettings;
+  saving: boolean;
+  error: string | null;
+  onChange: (settings: StudyTimerSettings) => void;
+  onSave: () => void;
+  onClose: () => void;
+}) {
+  const { colors } = useStudyBolt();
+  const insets = useSafeAreaInsets();
+  const adjustMinutes = (field: 'focusMinutes' | 'breakMinutes', amount: number) => {
+    const min = field === 'focusMinutes' ? 5 : 1;
+    const max = field === 'focusMinutes' ? 120 : 30;
+    onChange({ ...draft, method: 'custom', [field]: Math.max(min, Math.min(max, draft[field] + amount)) });
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={[styles.timerModalRoot, { backgroundColor: colors.mode === 'dark' ? 'rgba(0,0,0,0.72)' : 'rgba(17,28,78,0.34)' }]}>
+        <Pressable accessibilityLabel="Close study timer settings" onPress={onClose} style={StyleSheet.absoluteFill} />
+        <View style={[styles.timerSheet, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow, paddingBottom: Math.max(insets.bottom, 20) }]}>
+          <View style={[styles.timerHandle, { backgroundColor: colors.border }]} />
+          <View style={styles.timerHeading}>
+            <View style={[styles.timerHeadingIcon, { backgroundColor: colors.purpleSoft }]}><Icon name="timer-outline" size={23} color={colors.purple} /></View>
+            <View style={{ flex: 1 }}><Text style={[styles.timerSheetTitle, { color: colors.text }]}>Study timer</Text><Text style={[styles.timerSheetSubtitle, { color: colors.textSecondary }]}>Used by the timer button on Home</Text></View>
+            <Pressable accessibilityLabel="Close" hitSlop={10} onPress={onClose} style={styles.timerClose}><Icon name="close" size={22} color={colors.textMuted} /></Pressable>
+          </View>
+
+          <Text style={[styles.timerSectionLabel, { color: colors.textMuted }]}>STUDY METHOD</Text>
+          <View style={styles.timerPresetRow}>
+            {STUDY_TIMER_PRESETS.map((preset) => {
+              const selected = draft.method === preset.id;
+              const icon: IconName = preset.id === 'quick-sprint' ? 'flash-outline' : preset.id === 'deep-focus' ? 'brain' : 'timer-outline';
+              return (
+                <Pressable
+                  key={preset.id}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
+                  onPress={() => onChange({ ...draft, method: preset.id, focusMinutes: preset.focusMinutes, breakMinutes: preset.breakMinutes })}
+                  style={({ pressed }) => [styles.timerPreset, { backgroundColor: selected ? colors.purpleSoft : colors.cardStrong, borderColor: selected ? colors.purple : colors.border, opacity: pressed ? 0.75 : 1 }]}
+                >
+                  <Icon name={icon} size={18} color={selected ? colors.purple : colors.textMuted} />
+                  <Text style={[styles.timerPresetTitle, { color: selected ? colors.purple : colors.text }]}>{preset.label}</Text>
+                  <Text style={[styles.timerPresetDetail, { color: colors.textMuted }]}>{preset.focusMinutes}/{preset.breakMinutes} min</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <View style={styles.timerDurationRow}>
+            <TimerDurationControl label="Focus" value={draft.focusMinutes} step={5} onAdjust={(amount) => adjustMinutes('focusMinutes', amount)} />
+            <TimerDurationControl label="Break" value={draft.breakMinutes} step={1} onAdjust={(amount) => adjustMinutes('breakMinutes', amount)} />
+          </View>
+
+          <Text style={[styles.timerSectionLabel, { color: colors.textMuted }]}>ALARM MODE</Text>
+          <View style={styles.timerAlarmRow}>
+            {TIMER_ALARM_OPTIONS.map((option) => {
+              const selected = draft.alarmMode === option.id;
+              return (
+                <Pressable
+                  key={option.id}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
+                  onPress={() => onChange({ ...draft, alarmMode: option.id })}
+                  style={({ pressed }) => [styles.timerAlarm, { backgroundColor: selected ? colors.primarySoft : colors.cardStrong, borderColor: selected ? colors.primary : colors.border, opacity: pressed ? 0.75 : 1 }]}
+                >
+                  <Icon name={option.icon} size={18} color={selected ? colors.primary : colors.textMuted} />
+                  <Text style={[styles.timerAlarmTitle, { color: selected ? colors.primary : colors.text }]}>{option.label}</Text>
+                  <Text style={[styles.timerAlarmDetail, { color: colors.textMuted }]}>{option.detail}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <Text style={[styles.timerNote, { color: colors.textMuted }]}>Changes apply to the next timer. Notification behavior also follows your phone’s sound and vibration settings.</Text>
+          {error ? <Text style={[styles.timerError, { color: colors.danger }]}>{error}</Text> : null}
+          <PrimaryButton label={saving ? 'Saving…' : 'Save timer settings'} icon="check" disabled={saving} onPress={onSave} style={styles.timerSave} />
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function TimerDurationControl({ label, value, step, onAdjust }: { label: string; value: number; step: number; onAdjust: (amount: number) => void }) {
+  const { colors } = useStudyBolt();
+  return (
+    <View style={[styles.timerDuration, { backgroundColor: colors.cardStrong, borderColor: colors.border }]}>
+      <Text style={[styles.timerDurationLabel, { color: colors.textMuted }]}>{label.toUpperCase()}</Text>
+      <View style={styles.timerStepper}>
+        <Pressable accessibilityLabel={`Decrease ${label.toLowerCase()} time`} onPress={() => onAdjust(-step)} style={[styles.timerStepButton, { backgroundColor: colors.card }]}><Icon name="minus" size={17} color={colors.primary} /></Pressable>
+        <View style={styles.timerDurationValue}><Text style={[styles.timerDurationNumber, { color: colors.text }]}>{value}</Text><Text style={[styles.timerDurationUnit, { color: colors.textMuted }]}>min</Text></View>
+        <Pressable accessibilityLabel={`Increase ${label.toLowerCase()} time`} onPress={() => onAdjust(step)} style={[styles.timerStepButton, { backgroundColor: colors.card }]}><Icon name="plus" size={17} color={colors.primary} /></Pressable>
+      </View>
+    </View>
   );
 }
 
@@ -282,4 +454,32 @@ const styles = StyleSheet.create({
   retentionOptionDetail: { fontSize: 8, fontWeight: '700' },
   retentionHint: { fontSize: 10, lineHeight: 15, marginTop: 11, paddingHorizontal: 2 },
   retentionEvidence: { fontSize: 9, lineHeight: 14, marginTop: 7, paddingHorizontal: 2 },
+  timerModalRoot: { flex: 1, justifyContent: 'flex-end' },
+  timerSheet: { width: '100%', maxWidth: 560, alignSelf: 'center', borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 18, paddingTop: 10, paddingBottom: 20, shadowOffset: { width: 0, height: -8 }, shadowOpacity: 0.16, shadowRadius: 24, elevation: 12 },
+  timerHandle: { width: 42, height: 4, borderRadius: 4, alignSelf: 'center', marginBottom: 15 },
+  timerHeading: { flexDirection: 'row', alignItems: 'center', gap: 11 },
+  timerHeadingIcon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  timerSheetTitle: { fontSize: 19, fontWeight: '900', letterSpacing: -0.4 },
+  timerSheetSubtitle: { fontSize: 10, marginTop: 2 },
+  timerClose: { width: 34, height: 34, alignItems: 'flex-end', justifyContent: 'center' },
+  timerSectionLabel: { fontSize: 9, fontWeight: '900', letterSpacing: 0.8, marginTop: 18, marginBottom: 8 },
+  timerPresetRow: { flexDirection: 'row', gap: 7 },
+  timerPreset: { flex: 1, minHeight: 82, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5, gap: 4 },
+  timerPresetTitle: { fontSize: 9, lineHeight: 12, fontWeight: '900', textAlign: 'center' },
+  timerPresetDetail: { fontSize: 8, fontWeight: '700' },
+  timerDurationRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  timerDuration: { flex: 1, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, padding: 10 },
+  timerDurationLabel: { fontSize: 8, fontWeight: '900', letterSpacing: 0.7, marginBottom: 7 },
+  timerStepper: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 },
+  timerStepButton: { width: 31, height: 31, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  timerDurationValue: { alignItems: 'center', minWidth: 38 },
+  timerDurationNumber: { fontSize: 17, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  timerDurationUnit: { fontSize: 8, fontWeight: '700' },
+  timerAlarmRow: { flexDirection: 'row', gap: 7 },
+  timerAlarm: { flex: 1, minHeight: 75, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5, gap: 3 },
+  timerAlarmTitle: { fontSize: 9, fontWeight: '900' },
+  timerAlarmDetail: { fontSize: 7, lineHeight: 10, textAlign: 'center' },
+  timerNote: { fontSize: 9, lineHeight: 13, marginTop: 11 },
+  timerError: { fontSize: 9, lineHeight: 13, fontWeight: '700', marginTop: 8 },
+  timerSave: { minHeight: 46, marginTop: 13 },
 });
