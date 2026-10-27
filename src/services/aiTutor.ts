@@ -7,6 +7,7 @@ import type {
   AiTutorResponse,
   AiVisualAnalysis,
   AiVisualAnalysisRequest,
+  AiVisualCardSuggestion,
   AiRequestChannel,
   NoteBlock,
   StudyPack,
@@ -27,6 +28,13 @@ export interface TutorCallResult {
 
 export interface VisualAnalysisCallResult {
   analysis?: AiVisualAnalysis;
+  quota?: AiTutorQuota;
+  error?: string;
+  code?: 'monthly_limit' | 'cloud_budget' | 'rate_limit';
+}
+
+export interface VisualCardCallResult {
+  suggestion?: AiVisualCardSuggestion;
   quota?: AiTutorQuota;
   error?: string;
   code?: 'monthly_limit' | 'cloud_budget' | 'rate_limit';
@@ -218,6 +226,31 @@ export async function analyzeVisualWithAi(request: AiVisualAnalysisRequest, acce
   }
 }
 
+export async function createVisualCardSuggestion(request: AiVisualAnalysisRequest, accessToken: string): Promise<VisualCardCallResult> {
+  if (!isAiTutorConfigured) return { error: 'Visual card suggestions need the secure StudyBolt backend connection.' };
+  try {
+    const response = await studyBoltAiRequest('', accessToken, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'visual-card', depth: 'quick', channel: 'text', visual: request }),
+    });
+    const payload = await readPayload(response);
+    const quota = isQuota(payload.quota) ? payload.quota : undefined;
+    if (!response.ok) {
+      return {
+        error: friendlyTutorError(response.status, payload),
+        ...(quota ? { quota } : {}),
+        ...(payload.code === 'monthly_limit' || payload.code === 'cloud_budget' || payload.code === 'rate_limit' ? { code: payload.code } : {}),
+      };
+    }
+    if (payload.kind !== 'visual-card' || !isVisualCardSuggestion(payload.suggestion) || !quota) {
+      return { error: 'StudyBolt returned an incomplete visual card suggestion.' };
+    }
+    return { suggestion: payload.suggestion, quota };
+  } catch {
+    return { error: 'StudyBolt could not suggest a visual card right now.' };
+  }
+}
+
 function isVisualAnalysis(value: unknown): value is AiVisualAnalysis {
   if (!value || typeof value !== 'object') return false;
   const candidate = value as Partial<AiVisualAnalysis>;
@@ -229,4 +262,18 @@ function isVisualAnalysis(value: unknown): value is AiVisualAnalysis {
     && Array.isArray(candidate.relationships)
     && typeof candidate.studyRelevance === 'string'
     && typeof candidate.confidence === 'number';
+}
+
+function isVisualCardSuggestion(value: unknown): value is AiVisualCardSuggestion {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<AiVisualCardSuggestion>;
+  return typeof candidate.question === 'string'
+    && candidate.question.trim().length > 0
+    && typeof candidate.answer === 'string'
+    && candidate.answer.trim().length > 0
+    && typeof candidate.concept === 'string'
+    && candidate.concept.trim().length > 0
+    && typeof candidate.confidence === 'number'
+    && candidate.confidence >= 0
+    && candidate.confidence <= 1;
 }

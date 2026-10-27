@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Card, FlagButton, Header, Icon, Pill, PrimaryButton, ProgressBar, Screen } from '../components/ui';
+import { SubjectIcon } from '../components/SubjectIcon';
 import type { IconName } from '../components/ui';
 import { useStudyBolt } from '../StudyBoltContext';
 import type { FlaggedItem, FlaggedItemKind, StudyTool } from '../models';
@@ -57,6 +58,7 @@ export function FlaggedReviewScreen({
       return {
         key,
         title: mode === 'powerpoint' ? first.deckTitle : first.courseName,
+        subject: first.courseName,
         subtitle: mode === 'powerpoint'
           ? `${first.courseName} · ${groupedItems.length} saved ${groupedItems.length === 1 ? 'item' : 'items'}`
           : `${new Set(groupedItems.map((item) => item.deckId)).size} PowerPoints · ${groupedItems.length} saved ${groupedItems.length === 1 ? 'item' : 'items'}`,
@@ -132,7 +134,7 @@ export function FlaggedReviewScreen({
           {groups.map((group) => (
             <View key={group.key} style={styles.group}>
               <View style={styles.groupHeader}>
-                <View style={[styles.groupIcon, { backgroundColor: `${group.color}20` }]}><Text style={styles.groupEmoji}>{group.emoji}</Text></View>
+                <SubjectIcon subject={group.subject} emoji={group.emoji} size={40} />
                 <View style={styles.groupCopy}>
                   <Text style={[styles.groupTitle, { color: colors.text }]}>{group.title}</Text>
                   <Text style={[styles.groupSubtitle, { color: colors.textMuted }]}>{group.subtitle}</Text>
@@ -357,8 +359,6 @@ const styles = StyleSheet.create({
   groupList: { gap: 25 },
   group: { gap: 11 },
   groupHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  groupIcon: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
-  groupEmoji: { fontSize: 21 },
   groupCopy: { flex: 1 },
   groupTitle: { fontSize: 16, fontWeight: '900' },
   groupSubtitle: { fontSize: 10, marginTop: 3 },

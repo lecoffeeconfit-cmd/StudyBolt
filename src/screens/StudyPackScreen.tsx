@@ -2,7 +2,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { setAudioModeAsync } from 'expo-audio';
 import * as Speech from 'expo-speech';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Animated, Image, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '../AuthContext';
@@ -10,7 +10,9 @@ import { AskStudyBoltSheet, SpeedPickerSheet, VoicePickerSheet } from '../compon
 import { Card, FlagButton, Header, Icon, Pill, PrimaryButton, ProgressBar, SectionHeader } from '../components/ui';
 import type { IconName } from '../components/ui';
 import { StudyPackShareSheet } from '../components/StudyPackShareSheet';
+import { SubjectIcon } from '../components/SubjectIcon';
 import { useStudyBolt } from '../StudyBoltContext';
+import { useNarrationPreferences } from '../hooks/useNarrationPreferences';
 import StudyCastBackgroundPlayback from '../../modules/studybolt-background-playback';
 import { getFlaggedItemId } from '../models';
 import type { AiRequestChannel, AiTutorAction, AiTutorContext, AiTutorConversation, AiTutorQuota, AiTutorResponse, AnswerConfidence, FlaggedItemInput, Flashcard, FlashcardConfidence, FlashcardReviewRating, NoteBlock, QuizAnswerRecord, QuizDifficulty, QuizQuestion, QuizQuestionCount, SharedStudyPackMetadata, StudyPack, StudyPackMaterial, StudyTool } from '../models';
@@ -23,6 +25,8 @@ import { calculateMastery } from '../services/mastery';
 import { pageLabel } from '../services/documentTypes';
 import type { SmartStudyMode } from '../services/adaptiveStudy';
 import { interactionStateLabel, parseVoiceCommand, startBrowserSpeechInput, type BrowserSpeechInput, type VoiceSessionState } from '../services/voiceInteraction';
+import { immediateFlashcardImageUri, resolveStoredVisualImageUri, usefulVisuals } from '../services/visuals';
+import { getNarrationSpeechOptions } from '../services/narration';
 
 const TABS: Array<{ id: StudyTool; label: string }> = [
   { id: 'overview', label: 'Overview' },
@@ -44,7 +48,7 @@ const AUDIO_MODES: Array<{ id: StudyCastMode; label: string; icon: IconName }> =
 ];
 
 type StudyCastSpeechChunk = { text: string; startWord: number; endWord: number };
-type PlaybackOverrides = { rate?: number; voiceIdentifier?: string | null };
+type PlaybackOverrides = { rate?: number };
 
 function splitStudyCastSpeech(words: string[], startWord: number): StudyCastSpeechChunk[] {
   const chunks: StudyCastSpeechChunk[] = [];
@@ -250,6 +254,7 @@ function Overview({ deck, onTool, onPlan, onStartStudy, onOpenSpeedReview, onOpe
   const { colors, state } = useStudyBolt();
   const materialReady = (material: StudyPackMaterial) => !deck.generation || deck.generation.materials[material].status === 'ready';
   const mastery = calculateMastery(deck);
+  const visualCount = usefulVisuals(deck.visuals).length;
   const reviewVisuals = deck.visuals?.filter((visual) => visual.needsUserReview && visual.status !== 'resolved_ai') ?? [];
   const activeVisualReviewCount = reviewVisuals.filter((visual) => visual.status !== 'skipped_by_user').length;
   const skippedVisualReviewCount = reviewVisuals.length - activeVisualReviewCount;
@@ -257,7 +262,7 @@ function Overview({ deck, onTool, onPlan, onStartStudy, onOpenSpeedReview, onOpe
   return (
     <>
       <View style={styles.deckHero}>
-        <View style={[styles.deckArt, { backgroundColor: `${deck.color}22` }]}><Text style={styles.deckEmoji}>{deck.emoji}</Text></View>
+        <SubjectIcon subject={deck.courseName} emoji={deck.emoji} size={73} />
         <View style={styles.deckHeroCopy}>
           <View style={styles.deckLabelRow}>
             <Pill label={deck.fileType === 'demo' ? 'INTERACTIVE SAMPLE' : 'STUDY PACK'} tone={deck.fileType === 'demo' ? 'purple' : 'blue'} />
@@ -265,6 +270,7 @@ function Overview({ deck, onTool, onPlan, onStartStudy, onOpenSpeedReview, onOpe
           </View>
           <Text style={[styles.deckTitle, { color: colors.text }]}>{deck.title}</Text>
           <Text style={[styles.deckSubtitle, { color: colors.textSecondary }]}>{deck.subtitle}</Text>
+          {deck.sourceFileNames?.length ? <Text numberOfLines={2} style={[styles.sourceFiles, { color: colors.textMuted }]}>Includes: {deck.sourceFileNames.join(' · ')}</Text> : null}
         </View>
       </View>
 
@@ -292,6 +298,7 @@ function Overview({ deck, onTool, onPlan, onStartStudy, onOpenSpeedReview, onOpe
         <ToolCard icon="cards-outline" title="Flashcards" detail={materialReady('flashcards') ? `${deck.flashcards.length} active recall cards` : 'Building flashcards…'} color={colors.purple} background={colors.purpleSoft} onPress={() => onTool('flashcards')} />
         <ToolCard icon="clipboard-text-outline" title="Quiz & Full Test" detail={materialReady('quiz') ? `${state.quizQuestionCount} practice questions + cumulative test` : 'Preparing your quiz…'} color={colors.mint} background={colors.mintSoft} onPress={() => onTool('quiz')} />
         <ToolCard icon="headphones" title="StudyCast" detail={materialReady('audio') ? 'Listen and ask about any section' : 'Creating audio summary…'} color="#A45FEB" background={colors.purpleSoft} onPress={() => onTool('audio')} />
+        {!shared && visualCount > 0 && onOpenVisualReview ? <ToolCard icon="image-multiple-outline" title="Visuals" detail={`${visualCount} saved study visual${visualCount === 1 ? '' : 's'} from your slides`} color={colors.purple} background={colors.purpleSoft} onPress={onOpenVisualReview} /> : null}
       </View>
 
       {!shared && onOpenSpeedReview ? (
@@ -627,6 +634,7 @@ function Flashcards({ deck, readOnly = false }: { deck: StudyPack; readOnly?: bo
   const [editBack, setEditBack] = useState('');
   const [editExplanation, setEditExplanation] = useState('');
   const [editTopic, setEditTopic] = useState('');
+  const [cardImageUri, setCardImageUri] = useState<string | undefined>();
   const cardShownAt = useRef(Date.now());
   const answerRevealedAt = useRef<number | null>(null);
   const speechGenerationRef = useRef(0);
@@ -678,14 +686,23 @@ function Flashcards({ deck, readOnly = false }: { deck: StudyPack; readOnly?: bo
   }), [deck.flashcards.length, index, screenWidth, swipeX]);
 
   useEffect(() => {
+    let mounted = true;
+    const fallback = card ? immediateFlashcardImageUri(card) : undefined;
+    setCardImageUri(fallback);
+    if (card) {
+      void resolveStoredVisualImageUri(card.imagePath, fallback).then((resolved) => {
+        if (mounted) setCardImageUri(resolved);
+      });
+    }
     cardShownAt.current = Date.now();
     answerRevealedAt.current = null;
     setSpeaking(false);
     return () => {
+      mounted = false;
       speechGenerationRef.current += 1;
       void Speech.stop();
     };
-  }, [deck.id, card?.id]);
+  }, [deck.id, card?.id, card?.imagePath, card?.imageUrl]);
 
   if (!card) return <EmptyTool icon="cards-outline" title="No flashcards yet" message="Regenerate this Study Pack after source processing is connected." />;
 
@@ -751,7 +768,7 @@ function Flashcards({ deck, readOnly = false }: { deck: StudyPack; readOnly?: bo
       .catch(() => undefined)
       .then(() => {
         if (generation !== speechGenerationRef.current) return;
-        Speech.speak(text, {
+        void getNarrationSpeechOptions({
           rate: 0.95,
           useApplicationAudioSession: true,
           onDone: () => {
@@ -763,6 +780,8 @@ function Flashcards({ deck, readOnly = false }: { deck: StudyPack; readOnly?: bo
           onError: () => {
             if (generation === speechGenerationRef.current) setSpeaking(false);
           },
+        }).then((options) => {
+          if (generation === speechGenerationRef.current) Speech.speak(text, options);
         });
       });
   };
@@ -814,9 +833,10 @@ function Flashcards({ deck, readOnly = false }: { deck: StudyPack; readOnly?: bo
           <Card style={[styles.flashcard, { borderColor: revealed ? colors.purple : colors.border, backgroundColor: revealed ? colors.purpleSoft : colors.card }]}>
             <View style={styles.flashcardTop}>
               <Pill label={revealed ? 'ANSWER' : 'QUESTION'} tone="purple" />
+              {card.sourceSlide ? <Pill label={`SLIDE ${card.sourceSlide}`} tone="blue" /> : null}
             </View>
             <View style={styles.flashcardCenter}>
-              <Icon name={revealed ? 'lightbulb-on' : 'brain'} size={35} color={colors.purple} />
+              {cardImageUri ? <View style={[styles.flashcardImageFrame, { backgroundColor: colors.cardStrong }]}><Image source={{ uri: cardImageUri }} accessibilityLabel={`Flashcard visual from slide ${card.sourceSlide ?? ''}`} resizeMode="contain" onError={() => setCardImageUri(undefined)} style={styles.flashcardImage} /></View> : <Icon name={revealed ? 'lightbulb-on' : 'brain'} size={35} color={colors.purple} />}
               <Text style={[styles.flashcardText, { color: colors.text }]}>{revealed ? card.back : card.front}</Text>
               {revealed && card.explanation ? <Text style={[styles.flashcardExplanation, { color: colors.textSecondary }]}>{card.explanation}</Text> : null}
             </View>
@@ -1487,13 +1507,12 @@ function SeekProgress({ progress, color, onSeek, currentPosition, total }: { pro
 function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPack; readOnly?: boolean; onRequireAuth?: () => void }) {
   const { colors, recordStudyEvent, updateDeck } = useStudyBolt();
   const { user, getAccessToken } = useAuth();
+  const { preferences: narrationPreferences, voices, updatePreferences: updateNarrationPreferences } = useNarrationPreferences();
   const [mode, setMode] = useState<StudyCastMode>('summary');
   const [playing, setPlaying] = useState(false);
   const [rate, setRate] = useState(0.9);
   const [position, setPosition] = useState(deck.audioPosition);
   const [flashcardPosition, setFlashcardPosition] = useState(0);
-  const [voices, setVoices] = useState<Speech.Voice[]>([]);
-  const [voiceIdentifier, setVoiceIdentifier] = useState<string>();
   const [speedSheetVisible, setSpeedSheetVisible] = useState(false);
   const [voiceSheetVisible, setVoiceSheetVisible] = useState(false);
   const [askVisible, setAskVisible] = useState(false);
@@ -1539,7 +1558,9 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
       ? (deck.audioSummary || deck.quickReview)
       : flashcardNarrations.join(' ');
   const words = useMemo(() => text.split(/\s+/).filter(Boolean), [text]);
+  const voiceIdentifier = narrationPreferences.voiceIdentifier ?? undefined;
   const voice = voices.find((item) => item.identifier === voiceIdentifier);
+  const pickerVoices = narrationPreferences.language ? voices.filter((item) => item.language === narrationPreferences.language) : voices;
   const contextAtPosition = (targetPosition: number): AiTutorContext => {
     const baseContext = tutorContextAtPosition(deck, targetPosition, words.length);
     if (mode !== 'flashcards' || !deck.flashcards.length) return baseContext;
@@ -1564,17 +1585,6 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
   const tutorContext = useMemo(() => contextAtPosition(position), [deck, mode, position, words.length, flashcardRanges]);
 
   useEffect(() => {
-    Speech.getAvailableVoicesAsync().then((available) => {
-      const english = available.filter((item) => item.language.toLowerCase().startsWith('en'));
-      const preferredPool = english.length ? english : available;
-      const sorted = [...preferredPool].sort((a, b) => {
-        const qualityOrder = Number(b.quality === Speech.VoiceQuality.Enhanced) - Number(a.quality === Speech.VoiceQuality.Enhanced);
-        return qualityOrder || a.name.localeCompare(b.name);
-      });
-      setVoices(sorted.slice(0, 60));
-      const enhancedVoice = english.find((item) => item.quality === Speech.VoiceQuality.Enhanced);
-      if (enhancedVoice) setVoiceIdentifier((current) => current ?? enhancedVoice.identifier);
-    }).catch(() => setVoices([]));
     return () => {
       driveModeActiveRef.current = false;
       voiceAutoListenRef.current = false;
@@ -1647,9 +1657,6 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
     if (!words.length) return;
     const start = requestedPosition >= words.length ? 0 : Math.max(0, requestedPosition);
     const playbackRate = overrides?.rate ?? rate;
-    const playbackVoiceIdentifier = overrides?.voiceIdentifier === null
-      ? undefined
-      : overrides?.voiceIdentifier ?? voiceIdentifier;
     const speechWords = words.map((word) => word.length > MAX_SPEECH_CHUNK_CHARS ? 'reference' : word);
     const chunks = splitStudyCastSpeech(speechWords, start);
     if (!chunks.length) return;
@@ -1664,13 +1671,16 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
       interruptionMode: 'duckOthers',
     }).catch(() => undefined).then(() => {
       if (generation !== playbackGenerationRef.current) return;
-      const beginSpeaking = () => {
+      const beginSpeaking = async () => {
+        if (generation !== playbackGenerationRef.current) return;
+        const speechOptions = await getNarrationSpeechOptions({
+          rate: playbackRate,
+          useApplicationAudioSession: true,
+        });
         if (generation !== playbackGenerationRef.current) return;
         chunks.forEach((chunk, index) => {
           Speech.speak(chunk.text, {
-            rate: playbackRate,
-            voice: playbackVoiceIdentifier,
-            useApplicationAudioSession: true,
+            ...speechOptions,
             onBoundary: ({ charIndex }: { charIndex: number }) => {
               if (generation !== playbackGenerationRef.current) return;
               const wordsBeforeBoundary = chunk.text.slice(0, Math.max(0, charIndex)).trim().split(/\s+/).filter(Boolean).length;
@@ -1769,14 +1779,24 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
   };
   const selectVoice = (nextVoice?: Speech.Voice) => {
     const nextVoiceIdentifier = nextVoice?.identifier;
-    setVoiceIdentifier(nextVoice?.identifier);
+    void updateNarrationPreferences({
+      language: nextVoice?.language ?? narrationPreferences.language,
+      voiceIdentifier: nextVoiceIdentifier ?? null,
+    }).catch(() => undefined);
     setVoiceSheetVisible(false);
     if (playing && nextVoiceIdentifier !== voiceIdentifier) {
-      void restartPlaybackWithSettings({ voiceIdentifier: nextVoiceIdentifier ?? null });
+      void restartPlaybackWithSettings({});
     }
   };
   const previewVoice = (nextVoice?: Speech.Voice) => {
-    void Speech.stop().then(() => Speech.speak('Hi, I’m ready to study with you.', { rate: 1, voice: nextVoice?.identifier }));
+    void Speech.stop().then(async () => {
+      const options = await getNarrationSpeechOptions({
+        rate: 1,
+        language: nextVoice?.language ?? narrationPreferences.language ?? undefined,
+        voice: nextVoice?.identifier,
+      });
+      Speech.speak('1, 2, 3.', options);
+    });
   };
   const seekToPosition = async (requestedPosition: number) => {
     const nextPosition = Math.max(0, Math.min(words.length, Math.round(requestedPosition)));
@@ -1928,20 +1948,22 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
     }
     const generation = ++voiceSpeechGenerationRef.current;
     setVoiceSessionState('speaking');
-    void Speech.stop().then(() => Speech.speak(clean, {
-      rate: 1,
-      voice: voice?.identifier,
-      onDone: () => {
-        if (generation !== voiceSpeechGenerationRef.current || !driveModeActiveRef.current) return;
-        if (voiceAutoListenRef.current) startVoiceInput();
-        else setVoiceSessionState('paused');
-      },
-      onError: () => {
-        if (generation !== voiceSpeechGenerationRef.current) return;
-        setVoiceError('The device voice could not speak this answer. You can still read it below.');
-        setVoiceSessionState('error');
-      },
-    }));
+    void Speech.stop().then(async () => {
+      const options = await getNarrationSpeechOptions({
+        rate: 1,
+        onDone: () => {
+          if (generation !== voiceSpeechGenerationRef.current || !driveModeActiveRef.current) return;
+          if (voiceAutoListenRef.current) startVoiceInput();
+          else setVoiceSessionState('paused');
+        },
+        onError: () => {
+          if (generation !== voiceSpeechGenerationRef.current) return;
+          setVoiceError('The device voice could not speak this answer. You can still read it below.');
+          setVoiceSessionState('error');
+        },
+      });
+      if (generation === voiceSpeechGenerationRef.current) Speech.speak(clean, options);
+    });
   };
 
   const quizOptionFromTranscript = (transcript: string, response: AiTutorResponse): number | null => {
@@ -2174,7 +2196,7 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
       {Platform.OS === 'web' ? <Text style={[styles.webAudio, { color: colors.textMuted }]}>Browser voice availability varies by operating system.</Text> : null}
 
       <SpeedPickerSheet visible={speedSheetVisible} rates={PLAYBACK_RATES} selected={rate} onSelect={selectRate} onClose={() => setSpeedSheetVisible(false)} />
-      <VoicePickerSheet visible={voiceSheetVisible} voices={voices} selectedIdentifier={voiceIdentifier} onSelect={selectVoice} onPreview={previewVoice} onClose={() => { void Speech.stop(); setVoiceSheetVisible(false); }} />
+      <VoicePickerSheet visible={voiceSheetVisible} voices={pickerVoices} selectedIdentifier={voiceIdentifier} selectedLanguage={narrationPreferences.language ?? undefined} onSelect={selectVoice} onPreview={previewVoice} onClose={() => { void Speech.stop(); setVoiceSheetVisible(false); }} />
       <AskStudyBoltSheet
         visible={askVisible}
         sectionTitle={tutorContext.currentChunk.title}
@@ -2188,7 +2210,7 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
         providerDetail={tutorProviderDetail}
         onAsk={(action, question) => void runTutor(action, question)}
         onRetry={() => void runTutor(lastTutorRequestRef.current.action, lastTutorRequestRef.current.question)}
-        onSpeak={(answer) => { void Speech.stop().then(() => Speech.speak(answer, { rate: 1, voice: voice?.identifier })); }}
+        onSpeak={(answer) => { void Speech.stop().then(async () => Speech.speak(answer, await getNarrationSpeechOptions({ rate: 1 }))); }}
         onResume={resumeStudy}
         onRequireAuth={onRequireAuth}
         onClose={closeAsk}
@@ -2280,13 +2302,12 @@ const styles = StyleSheet.create({
   missing: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, gap: 15 },
   missingTitle: { fontSize: 18, fontWeight: '800' },
   deckHero: { flexDirection: 'row', gap: 14, alignItems: 'center', marginBottom: 17 },
-  deckArt: { width: 73, height: 73, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
-  deckEmoji: { fontSize: 37 },
   deckHeroCopy: { flex: 1 },
   deckLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   slideCount: { fontSize: 10 },
   deckTitle: { fontSize: 21, lineHeight: 26, fontWeight: '900', letterSpacing: -0.6, marginTop: 7 },
   deckSubtitle: { fontSize: 12, marginTop: 2 },
+  sourceFiles: { fontSize: 10, lineHeight: 14, marginTop: 4 },
   previewHint: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 13, marginBottom: 12 },
   previewHintText: { flex: 1, fontSize: 11, lineHeight: 15 },
   masteryCard: { marginBottom: 12 },
@@ -2409,6 +2430,8 @@ const styles = StyleSheet.create({
   readAloudButton: { minHeight: 36, paddingHorizontal: 10, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   readAloudText: { fontSize: 10, fontWeight: '800' },
   flashcardCenter: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, gap: 17 },
+  flashcardImageFrame: { width: '100%', height: 170, borderRadius: 14, overflow: 'hidden' },
+  flashcardImage: { width: '100%', height: '100%' },
   flashcardText: { fontSize: 23, lineHeight: 31, textAlign: 'center', fontWeight: '800', letterSpacing: -0.5 },
   flashcardExplanation: { textAlign: 'center', fontSize: 12, lineHeight: 18 },
   tapHint: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 13, flexDirection: 'row', gap: 7, justifyContent: 'center', alignItems: 'center' },

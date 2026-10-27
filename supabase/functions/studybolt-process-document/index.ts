@@ -1,5 +1,13 @@
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { extractPptxLocally, type LocalVisualKnowledge, type PptxLocalExtraction } from './pptxVisuals.ts';
+import { providerIdentity } from '../_shared/providerIdentity.ts';
+import {
+  authenticateDocumentRequest,
+  estimateDocumentCost,
+  reconcileDocumentUsage,
+  releaseDocumentUsage,
+  reserveDocumentUsage,
+} from '../_shared/documentUsage.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -7,7 +15,11 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-const MAX_BYTES = 100 * 1024 * 1024;
+const MAX_BYTES = 20 * 1024 * 1024;
+const MAX_UPLOAD_BODY_BYTES = MAX_BYTES + 512 * 1024;
+const MAX_GENERATION_BODY_BYTES = 512 * 1024;
+const MAX_SINGLE_SOURCE_CHARS = 180_000;
+const MAX_MULTI_SOURCE_CHARS = 360_000;
 const MAX_COURSE_NAME = 120;
 const TEXT_NOTE_EXTENSIONS = new Set(['txt', 'md', 'markdown']);
 const POWERPOINT_MIME = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
@@ -19,16 +31,23 @@ Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
 
+  const auth = await authenticateDocumentRequest(request);
+  if ('response' in auth) return withCors(auth.response);
+  const usageContext = auth.context;
+
   const openAiKey = Deno.env.get('OPENAI_API_KEY');
   if (!openAiKey) return json({ error: 'Secure document processing is not configured yet.' }, 503);
 
   if (request.headers.get('content-type')?.toLowerCase().includes('application/json')) {
-    return handleMaterialGeneration(request, openAiKey);
+    return handleMaterialGeneration(request, openAiKey, usageContext);
   }
+
+  const boundedRequest = await boundedRequestBody(request, MAX_UPLOAD_BODY_BYTES, 'Choose a file smaller than 20 MB and try again.');
+  if (boundedRequest instanceof Response) return boundedRequest;
 
   let form: FormData;
   try {
-    form = await request.formData();
+    form = await boundedRequest.formData();
   } catch {
     return json({ error: 'The upload could not be read. Please choose the file again.' }, 400);
   }
@@ -36,7 +55,7 @@ Deno.serve(async (request) => {
   const fileValue = form.get('file');
   if (!(fileValue instanceof File)) return json({ error: 'Choose a PDF, PowerPoint, or notes file.' }, 400);
   if (fileValue.size <= 0) return json({ error: 'That file is empty. Choose a different file.' }, 400);
-  if (fileValue.size > MAX_BYTES) return json({ error: 'Choose a file smaller than 100 MB and try again.' }, 413);
+  if (fileValue.size > MAX_BYTES) return json({ error: 'Choose a file smaller than 20 MB and try again.' }, 413);
 
   const fileName = safeFileName(fileValue.name || 'study-material');
   const documentType = getDocumentType(fileName);
@@ -50,6 +69,21 @@ Deno.serve(async (request) => {
   let localPptx: PptxLocalExtraction | null = null;
   let uploadedFileId: string | null = null;
   let response: Response;
+  const extractionOutputEstimate = 28_000;
+  // PDFs and office files can expand substantially when the provider reads
+  // them. Reserve much more than the compressed upload size implies, up to the
+  // hard 20 MB upload cap. Plain notes are truncated before they reach the API.
+  const estimatedProviderBytes = TEXT_NOTE_EXTENSIONS.has(extension)
+    ? Math.min(fileValue.size, 720_000)
+    : fileValue.size;
+  const extractionInputEstimate = Math.max(1_000, Math.ceil(estimatedProviderBytes / 8));
+  const reservationResult = await reserveDocumentUsage(
+    usageContext,
+    estimateDocumentCost(usageContext, extractionInputEstimate, extractionOutputEstimate),
+  );
+  if ('response' in reservationResult) return withCors(reservationResult.response);
+  const reservation = reservationResult.reservation;
+  let modelRequestStarted = false;
   try {
     if (documentType === 'powerpoint') {
       bytes = new Uint8Array(await fileValue.arrayBuffer());
@@ -60,22 +94,25 @@ Deno.serve(async (request) => {
       }
     }
     const sourceParts = TEXT_NOTE_EXTENSIONS.has(extension)
-      ? sourceContent(bytes ?? new Uint8Array(await fileValue.arrayBuffer()), fileName)
-      : [{ type: 'input_file', file_id: await uploadProviderFile(fileValue, fileName, mimeType) }];
+      ? sourceContent(bytes ?? new Uint8Array(await fileValue.arrayBuffer()))
+      : [{ type: 'input_file', file_id: await uploadProviderFile(fileValue, providerFileName(extension), mimeType) }];
     if (sourceParts[0]?.file_id) uploadedFileId = sourceParts[0].file_id;
     if (localPptx?.sourceText) sourceParts.unshift({ type: 'input_text', text: `LOCAL POWERPOINT EXTRACTION (no external visual AI was used):\n${localPptx.sourceText}` });
+    const providerUserId = await providerIdentity(usageContext.user.id);
+    modelRequestStarted = true;
     response = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: { Authorization: `Bearer ${openAiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: Deno.env.get('STUDYBOLT_PROCESSOR_MODEL') || 'gpt-5.6-luna',
+        model: usageContext.config.model,
         store: false,
+        safety_identifier: providerUserId,
         reasoning: { effort: 'low' },
-        instructions: extractionOnly ? extractionInstructions(documentType, fileName) : processorInstructions(documentType, fileName),
+        instructions: extractionOnly ? extractionInstructions(documentType) : processorInstructions(documentType),
         input: [{
           role: 'user',
           content: [
-            { type: 'input_text', text: `Course name: ${courseName}\nSource file: ${fileName}\nSource type: ${documentType}` },
+            { type: 'input_text', text: `Course name: ${courseName}\nSource type: ${documentType}` },
             ...sourceParts,
           ],
         }],
@@ -90,6 +127,16 @@ Deno.serve(async (request) => {
   } catch (error) {
     console.error('studybolt-process-document: provider request failed', error);
     if (uploadedFileId) await deleteProviderFile(uploadedFileId, openAiKey);
+    if (modelRequestStarted) {
+      const reconciled = await reconcileDocumentUsage(usageContext, reservation, extractionOnly ? 'document_extract' : 'document_process', {}, {
+        sourceType: documentType,
+        sourceBytes: fileValue.size,
+        providerRequestFailed: true,
+      });
+      if (!reconciled) return json({ error: 'StudyBolt could not record AI usage. Please try again later.' }, 503);
+    } else {
+      await releaseDocumentUsage(usageContext, reservation);
+    }
     if (error instanceof Error && error.message === 'The notes file is empty.') {
       return json({ error: 'That notes file is empty. Choose a different file.' }, 400);
     }
@@ -99,6 +146,12 @@ Deno.serve(async (request) => {
   if (!response.ok) {
     const providerError = await responseError(response);
     if (uploadedFileId) await deleteProviderFile(uploadedFileId, openAiKey);
+    if (!(await reconcileDocumentUsage(usageContext, reservation, extractionOnly ? 'document_extract' : 'document_process', {}, {
+      sourceType: documentType,
+      sourceBytes: fileValue.size,
+      providerStatus: response.status,
+      providerRejected: true,
+    }))) return json({ error: 'StudyBolt could not record AI usage. Please try again later.' }, 503);
     return json({ error: providerError || 'The document processor could not read this file.' }, 502);
   }
 
@@ -107,13 +160,30 @@ Deno.serve(async (request) => {
     payload = await response.json();
   } catch {
     if (uploadedFileId) await deleteProviderFile(uploadedFileId, openAiKey);
+    const reconciled = await reconcileDocumentUsage(usageContext, reservation, extractionOnly ? 'document_extract' : 'document_process', {}, {
+      sourceType: documentType,
+      sourceBytes: fileValue.size,
+      responseUnreadable: true,
+    });
+    if (!reconciled) {
+      return json({ error: 'StudyBolt could not record AI usage. Please try again later.' }, 503);
+    }
     return json({ error: 'The document processor returned an unreadable response.' }, 502);
   }
   if (uploadedFileId) await deleteProviderFile(uploadedFileId, openAiKey);
 
+  const payloadRecord = isRecord(payload) ? payload : {};
+  if (!(await reconcileDocumentUsage(usageContext, reservation, extractionOnly ? 'document_extract' : 'document_process', payloadRecord, {
+    sourceType: documentType,
+    sourceBytes: fileValue.size,
+  }))) {
+    return json({ error: 'StudyBolt could not record AI usage. Please try again later.' }, 503);
+  }
+  if (!isRecord(payload)) return json({ error: 'The document processor returned an unreadable response.' }, 502);
+
   try {
     const content = JSON.parse(outputText(payload)) as Record<string, unknown>;
-    const owner = await resolveOwner(request);
+    const owner = { userId: usageContext.user.id, admin: usageContext.admin };
     if (owner && localPptx?.visuals.length) await persistVisualSession(owner, documentId, fileName, localPptx.visuals);
     return json(extractionOnly
       ? buildExtractedStudyPack(content, { courseName, fileName, documentType }, localPptx, documentId)
@@ -128,10 +198,62 @@ function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 }
 
-async function handleMaterialGeneration(request: Request, openAiKey: string): Promise<Response> {
+function withCors(response: Response): Response {
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: { ...corsHeaders, ...Object.fromEntries(response.headers.entries()) },
+  });
+}
+
+async function boundedRequestBody(request: Request, limit: number, tooLargeMessage: string): Promise<Request | Response> {
+  const bytes = await readBoundedBody(request, limit, tooLargeMessage);
+  if (bytes instanceof Response) return bytes;
+  const body = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(body).set(bytes);
+  return new Request(request.url, { method: request.method, headers: request.headers, body });
+}
+
+async function readBoundedBody(request: Request, limit: number, tooLargeMessage: string): Promise<Uint8Array | Response> {
+  const declaredLength = Number(request.headers.get('content-length'));
+  if (Number.isFinite(declaredLength) && declaredLength > limit) return json({ error: tooLargeMessage }, 413);
+  if (!request.body) return new Uint8Array();
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > limit) {
+        await reader.cancel();
+        return json({ error: tooLargeMessage }, 413);
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const body = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body;
+}
+
+async function handleMaterialGeneration(
+  request: Request,
+  openAiKey: string,
+  usageContext: import('../_shared/documentUsage.ts').DocumentUsageContext,
+): Promise<Response> {
   let input: Record<string, unknown>;
   try {
-    const value = await request.json();
+    const boundedBody = await readBoundedBody(request, MAX_GENERATION_BODY_BYTES, 'That study material is too large. Upload a smaller document and try again.');
+    if (boundedBody instanceof Response) return boundedBody;
+    const value = JSON.parse(new TextDecoder().decode(boundedBody));
     if (!isRecord(value)) throw new Error('Invalid body');
     input = value;
   } catch {
@@ -139,40 +261,100 @@ async function handleMaterialGeneration(request: Request, openAiKey: string): Pr
   }
   if (input.action !== 'generate' || !isStudyPackMaterial(input.material)) return json({ error: 'Choose a valid Study Pack material.' }, 400);
   const material = input.material;
+  const sourceCount = Number(input.sourceCount ?? 1);
+  if (!Number.isInteger(sourceCount) || sourceCount < 1 || sourceCount > 10) return json({ error: 'The study set has an invalid number of sources.' }, 400);
+  const multipleSources = sourceCount > 1;
   const source = stringValue(input.source);
   const title = stringValue(input.title).slice(0, 180) || 'Study Pack';
   const outline = normalizedOutline(input.outline);
-  if (!source || !outline.length) return json({ error: 'The processed document source is missing. Upload the document again.' }, 400);
+  const sourceLimit = multipleSources ? MAX_MULTI_SOURCE_CHARS : MAX_SINGLE_SOURCE_CHARS;
+  if (!source || source.length > sourceLimit || !outline.length || outline.length > 250) {
+    return json({ error: 'The processed document source is missing or too large. Upload a smaller document and try again.' }, 400);
+  }
+
+  const promptText = `Study Pack: ${title}\nOUTLINE:\n${JSON.stringify(outline)}\n\nNORMALIZED SOURCE (the only source of truth):\n${source}`;
+  const maxOutputTokens = material === 'detailedNotes'
+    ? (multipleSources ? Math.min(40_000, Math.max(24_000, outline.length * 220)) : 24_000)
+    : material === 'simpleNotes'
+      ? (multipleSources ? Math.min(40_000, Math.max(14_000, outline.length * 140)) : 14_000)
+      : 10_000;
+  const estimatedOutputTokens = maxOutputTokens;
+  const estimatedInputTokens = Math.min(180_000, Math.max(1_000, Math.ceil(promptText.length / 2)));
+  const reservationResult = await reserveDocumentUsage(
+    usageContext,
+    estimateDocumentCost(usageContext, estimatedInputTokens, estimatedOutputTokens),
+  );
+  if ('response' in reservationResult) return withCors(reservationResult.response);
+  const reservation = reservationResult.reservation;
 
   let response: Response;
+  let modelRequestStarted = false;
   try {
+    const providerUserId = await providerIdentity(usageContext.user.id);
+    modelRequestStarted = true;
     response = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: { Authorization: `Bearer ${openAiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: Deno.env.get('STUDYBOLT_PROCESSOR_MODEL') || 'gpt-5.6-luna',
+        model: usageContext.config.model,
         store: false,
+        safety_identifier: providerUserId,
         reasoning: { effort: 'low' },
-        instructions: materialInstructions(material),
+        instructions: materialInstructions(material, multipleSources),
         input: [{
           role: 'user',
-          content: [{ type: 'input_text', text: `Study Pack: ${title}\nOUTLINE:\n${JSON.stringify(outline)}\n\nNORMALIZED SOURCE (the only source of truth):\n${source.slice(0, 180_000)}` }],
+          content: [{ type: 'input_text', text: promptText }],
         }],
         text: { verbosity: 'low', format: { type: 'json_schema', name: `studybolt_${material}`, strict: true, schema: MATERIAL_SCHEMAS[material] } },
-        max_output_tokens: material === 'detailedNotes' ? 24_000 : material === 'simpleNotes' ? 14_000 : 10_000,
+        max_output_tokens: maxOutputTokens,
       }),
       signal: AbortSignal.timeout(120_000),
     });
   } catch (error) {
     console.error(`studybolt-process-document: ${material} request failed`, error);
+    if (!(await reconcileDocumentUsage(usageContext, reservation, `document_${material}`, {}, {
+      material,
+      sourceCount,
+      sourceChars: source.length,
+      providerRequestFailed: modelRequestStarted,
+    }))) return json({ error: 'StudyBolt could not record AI usage. Please try again later.' }, 503);
     return json({ error: `${materialLabel(material)} could not reach the secure processor. Retry just this item.` }, 502);
   }
   if (!response.ok) {
     const providerError = await responseError(response);
+    if (!(await reconcileDocumentUsage(usageContext, reservation, `document_${material}`, {}, {
+      material,
+      sourceCount,
+      sourceChars: source.length,
+      providerStatus: response.status,
+      providerRejected: true,
+    }))) return json({ error: 'StudyBolt could not record AI usage. Please try again later.' }, 503);
     return json({ error: providerError || `${materialLabel(material)} could not be created. Retry just this item.` }, 502);
   }
+  let payload: unknown;
   try {
-    const payload = await response.json();
+    payload = await response.json();
+  } catch {
+    if (!(await reconcileDocumentUsage(usageContext, reservation, `document_${material}`, {}, {
+      material,
+      sourceCount,
+      sourceChars: source.length,
+      responseUnreadable: true,
+    }))) {
+      return json({ error: 'StudyBolt could not record AI usage. Please try again later.' }, 503);
+    }
+    return json({ error: `${materialLabel(material)} returned an unreadable response. Retry just this item.` }, 502);
+  }
+  try {
+    const payloadRecord = isRecord(payload) ? payload : {};
+    if (!(await reconcileDocumentUsage(usageContext, reservation, `document_${material}`, payloadRecord, {
+      material,
+      sourceCount,
+      sourceChars: source.length,
+    }))) {
+      return json({ error: 'StudyBolt could not record AI usage. Please try again later.' }, 503);
+    }
+    if (!isRecord(payload)) throw new Error('Provider returned invalid JSON content');
     const content = JSON.parse(outputText(payload)) as Record<string, unknown>;
     return json(normalizeMaterial(content, material, outline));
   } catch (error) {
@@ -225,10 +407,14 @@ function contentType(fileType: string, documentType: ImportDocumentType, extensi
   return 'text/plain';
 }
 
-function sourceContent(bytes: Uint8Array, fileName: string): Array<Record<string, string>> {
+function sourceContent(bytes: Uint8Array): Array<Record<string, string>> {
   const text = new TextDecoder().decode(bytes).replace(/\u0000/g, '').trim();
   if (!text) throw new Error('The notes file is empty.');
-  return [{ type: 'input_text', text: `VERBATIM NOTES FROM ${fileName}\n${text.slice(0, 180_000)}` }];
+  return [{ type: 'input_text', text: `VERBATIM STUDY NOTES\n${text.slice(0, 180_000)}` }];
+}
+
+function providerFileName(extension: string): string {
+  return `study-material.${extension}`;
 }
 
 async function uploadProviderFile(source: Blob, fileName: string, mimeType: string): Promise<string> {
@@ -236,6 +422,11 @@ async function uploadProviderFile(source: Blob, fileName: string, mimeType: stri
   if (!openAiKey) throw new Error('Missing OpenAI key');
   const form = new FormData();
   form.append('purpose', 'user_data');
+  // Files API uploads otherwise persist until manually deleted. Keep a
+  // one-hour provider-side expiry as a fallback if this function is stopped
+  // before the immediate cleanup below can complete.
+  form.append('expires_after[anchor]', 'created_at');
+  form.append('expires_after[seconds]', '3600');
   form.append('file', source, fileName);
   const response = await fetch('https://api.openai.com/v1/files', {
     method: 'POST',
@@ -250,22 +441,33 @@ async function uploadProviderFile(source: Blob, fileName: string, mimeType: stri
 }
 
 async function deleteProviderFile(fileId: string, openAiKey: string): Promise<void> {
-  try {
-    await fetch(`https://api.openai.com/v1/files/${encodeURIComponent(fileId)}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${openAiKey}` },
-      signal: AbortSignal.timeout(15_000),
-    });
-  } catch {
-    console.error('studybolt-process-document: provider file cleanup failed');
+  const url = `https://api.openai.com/v1/files/${encodeURIComponent(fileId)}`;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${openAiKey}` },
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (response.ok || response.status === 404) return;
+      if (response.status < 500 && response.status !== 429) {
+        console.error('studybolt-process-document: provider file cleanup rejected', response.status);
+        return;
+      }
+    } catch {
+      // Retry transient network failures; the provider expiry remains the
+      // fallback if all immediate cleanup attempts fail.
+    }
+    if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
   }
+  console.error('studybolt-process-document: provider file cleanup retries exhausted; one-hour expiry remains active');
 }
 
-function processorInstructions(documentType: ImportDocumentType, fileName: string): string {
+function processorInstructions(documentType: ImportDocumentType): string {
   const sourceLabel = documentType === 'powerpoint' ? 'PowerPoint presentation' : documentType === 'pdf' ? 'PDF' : 'student notes';
   return [
     'You are StudyBolt document processor.',
-    `Read the attached ${sourceLabel} (${fileName}) as the only source of truth.`,
+    `Read the attached ${sourceLabel} as the only source of truth.`,
     'Extract the source in its original order before writing the study pack. Do not invent facts, fill gaps with general knowledge, or silently omit meaningful claims.',
     'Return the requested structured content only. Use section-1, section-2, and so on for outline IDs, and make exactly one simplified note and one detailed note for every outline section in the same order.',
     'The simplified layer should be concise: one summary, a short list of core ideas, one key idea, and retrieval prompts. The detailed layer should retain the meaningful source claims in hierarchical subsections, connections, grounded examples when present, and retrieval prompts. The two layers must not be duplicate copies.',
@@ -274,25 +476,28 @@ function processorInstructions(documentType: ImportDocumentType, fileName: strin
   ].join(' ');
 }
 
-function extractionInstructions(documentType: ImportDocumentType, fileName: string): string {
+function extractionInstructions(documentType: ImportDocumentType): string {
   const sourceLabel = documentType === 'powerpoint' ? 'PowerPoint presentation' : documentType === 'pdf' ? 'PDF' : 'student notes';
   return [
     'You are the secure StudyBolt source extractor.',
-    `Read the attached ${sourceLabel} (${fileName}) once and normalize it for reuse by independent study-material jobs.`,
+    `Read the attached ${sourceLabel} once and normalize it for reuse by independent study-material jobs.`,
     'Preserve all meaningful claims, definitions, examples, labels, and source order. Do not summarize away important content, invent facts, or use outside knowledge.',
     'Return a clear title, subtitle, page or slide count, a source-order outline, and normalized originalText. Use section-1, section-2, and so on for outline IDs.',
     'In originalText, keep section headings and source-location labels so later jobs can ground every item without receiving the original file again.',
   ].join(' ');
 }
 
-function materialInstructions(material: StudyPackMaterial): string {
+function materialInstructions(material: StudyPackMaterial, multipleSources = false): string {
   const common = 'Use only the supplied normalized source. Do not invent facts or fill gaps with general knowledge. Preserve the supplied section IDs in every source reference.';
-  if (material === 'simpleNotes') return `${common} Create exactly one concise simplified note for every outline section in source order: one organizing summary, a short set of core ideas, one key idea, and retrieval prompts. These are the fast first-pass notes.`;
-  if (material === 'detailedNotes') return `${common} Create exactly one detailed note for every outline section in source order. Preserve the meaningful source claims and wording in hierarchical subsections, connect related ideas, include examples only when grounded in the source, and add retrieval prompts. Do not merely repeat a short summary.`;
-  if (material === 'keyConcepts') return `${common} Create a source-grounded lecture overview and a concise quickReview containing the most important concepts in source order. Aim for a useful spoken/read review, not a list of unsupported claims.`;
-  if (material === 'flashcards') return `${common} Create active-recall flashcards from the most important source concepts. Every card must be answerable from the source and link to the matching outline section. Prefer fewer grounded cards over filler.`;
-  if (material === 'quiz') return `${common} Create a basic multiple-choice practice quiz across the important source concepts. Every question and explanation must be answerable from the source and link to the matching outline section.`;
-  return `${common} Write a concise audio summary script in natural spoken language, ordered by the source. This text will be read with device text-to-speech; do not add stage directions, music, or SSML.`;
+  const crossPresentationGuidance = multipleSources
+    ? ' The material contains several named presentations. Keep every item tied to its own presentation and section, spread review across all presentations, and connect or compare ideas only when the source supports the relationship.'
+    : '';
+  if (material === 'simpleNotes') return `${common} Create exactly one concise simplified note for every outline section in source order: one organizing summary, a short set of core ideas, one key idea, and retrieval prompts. These are the fast first-pass notes.${crossPresentationGuidance}`;
+  if (material === 'detailedNotes') return `${common} Create exactly one detailed note for every outline section in source order. Preserve the meaningful source claims and wording in hierarchical subsections, connect related ideas, include examples only when grounded in the source, and add retrieval prompts. Do not merely repeat a short summary.${crossPresentationGuidance}`;
+  if (material === 'keyConcepts') return `${common} Create a source-grounded lecture overview and a concise quickReview containing the most important concepts in source order. Aim for a useful spoken/read review, not a list of unsupported claims.${multipleSources ? ' Synthesize recurring themes across presentations while keeping distinct claims and vocabulary attributed to their own source.' : ''}`;
+  if (material === 'flashcards') return `${common} Create active-recall flashcards from the most important source concepts. Every card must be answerable from the source and link to the matching outline section. Prefer fewer grounded cards over filler.${multipleSources ? ' Interleave cards from the different presentations instead of grouping the full deck by presentation.' : ''}`;
+  if (material === 'quiz') return `${common} Create a basic multiple-choice practice quiz across the important source concepts. Every question and explanation must be answerable from the source and link to the matching outline section.${multipleSources ? ' Mix questions across the presentations; use comparison questions only when both sources explicitly support the comparison.' : ''}`;
+  return `${common} Write a concise audio summary script in natural spoken language, ordered by the source. This text will be read with device text-to-speech; do not add stage directions, music, or SSML.${crossPresentationGuidance}`;
 }
 
 function responseError(response: Response): Promise<string> {
@@ -343,7 +548,7 @@ function rawOutline(value: unknown): Array<{ title: string; range: string }> {
 
 function normalizedOutline(value: unknown): Array<{ id: string; title: string; range: string }> {
   if (!Array.isArray(value)) return [];
-  return value.slice(0, 80).flatMap((item, index) => {
+  return value.slice(0, 160).flatMap((item, index) => {
     if (!isRecord(item)) return [];
     return [{
       id: stringValue(item.id) || `section-${index + 1}`,
@@ -442,21 +647,7 @@ function normalizeMaterial(content: Record<string, unknown>, material: StudyPack
   return { audioSummary };
 }
 
-async function resolveOwner(request: Request): Promise<{ userId: string; admin: ReturnType<typeof createClient> } | null> {
-  const token = request.headers.get('Authorization')?.replace(/^Bearer\s+/i, '');
-  const supabaseUrl = Deno.env.get('SUPABASE_URL');
-  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  if (!token || !supabaseUrl || !serviceRoleKey) return null;
-  try {
-    const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
-    const { data: { user } } = await admin.auth.getUser(token);
-    return user ? { userId: user.id, admin } : null;
-  } catch {
-    return null;
-  }
-}
-
-async function persistVisualSession(owner: { userId: string; admin: ReturnType<typeof createClient> }, documentId: string, fileName: string, visuals: LocalVisualKnowledge[]): Promise<void> {
+async function persistVisualSession(owner: { userId: string; admin: SupabaseClient<any> }, documentId: string, fileName: string, visuals: LocalVisualKnowledge[]): Promise<void> {
   try {
     const { error: documentError } = await owner.admin.from('studybolt_visual_documents').insert({
       document_id: documentId,
@@ -464,6 +655,29 @@ async function persistVisualSession(owner: { userId: string; admin: ReturnType<t
       source_file_name: fileName,
     });
     if (documentError) throw documentError;
+    for (const visual of visuals) {
+      if (!visual.imageDataUrl || !isUsefulVisual(visual)) continue;
+      const decoded = decodeVisualDataUrl(visual.imageDataUrl);
+      if (!decoded) continue;
+      const imagePath = `${owner.userId}/${documentId}/${visual.id}-${visual.imageHash.slice(0, 12)}.${decoded.extension}`;
+      try {
+        const { error: uploadError } = await owner.admin.storage.from('studybolt-visuals').upload(imagePath, decoded.bytes, {
+          contentType: decoded.contentType,
+          upsert: false,
+        });
+        if (uploadError) throw uploadError;
+        const { data: signed } = await owner.admin.storage.from('studybolt-visuals').createSignedUrl(imagePath, 60 * 60);
+        visual.imagePath = imagePath;
+        if (signed?.signedUrl) visual.imageUrl = signed.signedUrl;
+        // Signed-in users can refresh the private URL from imagePath. Keeping
+        // base64 copies in app storage would quickly exhaust mobile storage.
+        visual.imageDataUrl = undefined;
+      } catch (error) {
+        // The inline fallback remains available and one failed asset never
+        // blocks the document or its other generated study materials.
+        console.error('studybolt-process-document: visual asset upload failed', visual.id, error);
+      }
+    }
     const rows = visuals.map((visual) => ({
       document_id: documentId,
       visual_id: visual.id,
@@ -477,6 +691,7 @@ async function persistVisualSession(owner: { userId: string; admin: ReturnType<t
       needs_user_review: visual.needsUserReview,
       status: visual.status,
       reason: visual.reason ?? null,
+      image_path: visual.imagePath ?? null,
     }));
     if (rows.length) {
       const { error } = await owner.admin.from('studybolt_visuals').insert(rows);
@@ -484,6 +699,30 @@ async function persistVisualSession(owner: { userId: string; admin: ReturnType<t
     }
   } catch (error) {
     console.error('studybolt-process-document: visual session persistence failed', error);
+  }
+}
+
+function isUsefulVisual(visual: LocalVisualKnowledge): boolean {
+  return visual.educationalImportance >= 0.35
+    && visual.visualType !== 'decorative'
+    && visual.visualType !== 'logo'
+    && visual.visualType !== 'background'
+    && visual.visualType !== 'icon';
+}
+
+function decodeVisualDataUrl(value: string): { bytes: Uint8Array; extension: string; contentType: string } | null {
+  const match = value.match(/^data:image\/(png|jpeg|jpg|webp|gif);base64,([A-Za-z0-9+/=]+)$/i);
+  if (!match) return null;
+  try {
+    const subtype = match[1]!.toLowerCase();
+    const contentType = subtype === 'jpg' ? 'image/jpeg' : `image/${subtype}`;
+    const extension = subtype === 'jpeg' ? 'jpg' : subtype;
+    const binary = atob(match[2]!);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+    return { bytes, extension, contentType };
+  } catch {
+    return null;
   }
 }
 
@@ -617,12 +856,12 @@ const EXTRACTED_SOURCE_SCHEMA = {
 const MATERIAL_SCHEMAS: Record<StudyPackMaterial, Record<string, unknown>> = {
   simpleNotes: {
     type: 'object', additionalProperties: false,
-    properties: { notes: { type: 'array', minItems: 1, maxItems: 80, items: NOTE_SCHEMA } },
+    properties: { notes: { type: 'array', minItems: 1, maxItems: 160, items: NOTE_SCHEMA } },
     required: ['notes'],
   },
   detailedNotes: {
     type: 'object', additionalProperties: false,
-    properties: { detailedNotes: { type: 'array', minItems: 1, maxItems: 80, items: NOTE_SCHEMA } },
+    properties: { detailedNotes: { type: 'array', minItems: 1, maxItems: 160, items: NOTE_SCHEMA } },
     required: ['detailedNotes'],
   },
   keyConcepts: {

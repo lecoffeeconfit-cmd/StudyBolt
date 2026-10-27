@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 
 import { useAuth } from '../AuthContext';
 import { CommunitySetCard } from '../components/CommunitySetCard';
+import { SubjectIcon } from '../components/SubjectIcon';
 import { Card, Header, Icon, Pill, PrimaryButton, Screen, SectionHeader } from '../components/ui';
 import type { CommunityClass, DiscoverStudySet } from '../models';
 import { useStudyBolt } from '../StudyBoltContext';
@@ -87,7 +88,7 @@ export function CommunityClassScreen({
     <Screen>
       <Header title={studyClass.courseCode} subtitle={studyClass.schoolName} onBack={onBack} right={studyClass.joined ? <Pill label="Joined" tone="mint" /> : undefined} />
       <Card style={[styles.hero, { backgroundColor: colors.primarySoft, borderColor: `${colors.primary}33` }]}>
-        <View style={[styles.heroIcon, { backgroundColor: colors.card }]}><Icon name="school-outline" size={30} color={colors.primary} /></View>
+        <SubjectIcon subject={`${studyClass.subject} ${studyClass.courseName} ${studyClass.courseCode}`} size={58} />
         <View style={styles.heroCopy}>
           <Text style={[styles.code, { color: colors.primary }]}>{studyClass.courseCode}</Text>
           <Text style={[styles.name, { color: colors.text }]}>{studyClass.courseName}</Text>
@@ -146,7 +147,6 @@ const styles = StyleSheet.create({
   errorText: { maxWidth: 300, fontSize: 11, lineHeight: 17, textAlign: 'center', marginTop: 5 },
   retry: { minWidth: 170, marginTop: 17 },
   hero: { flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 16, padding: 17 },
-  heroIcon: { width: 58, height: 58, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
   heroCopy: { flex: 1 },
   code: { fontSize: 10, fontWeight: '900', letterSpacing: 0.8 },
   name: { fontSize: 20, lineHeight: 25, fontWeight: '900', marginTop: 3 },

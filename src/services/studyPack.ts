@@ -1,4 +1,78 @@
 import type { StudyPack } from '../models';
+import { createQueuedStudyPackGeneration, StudyBoltProcessingError } from './documentProcessor';
+
+const MAX_INTEGRATED_SECTIONS = 160;
+const MAX_INTEGRATED_SOURCE_CHARACTERS = 360_000;
+
+export function combineImportedPowerPoints(decks: StudyPack[], courseId: string, courseName: string): StudyPack {
+  if (decks.length < 2 || decks.some((deck) => deck.fileType !== 'pptx')) {
+    throw new Error('Choose at least two PowerPoint Study Packs to combine.');
+  }
+
+  const stamp = Date.now().toString();
+  const sourceFileNames = decks.map((deck) => deck.fileName);
+  const outline = decks.flatMap((deck, deckIndex) => deck.outline.map((section) => ({
+    id: `source-${deckIndex + 1}-${section.id}`,
+    title: `${deck.title} · ${section.title}`,
+    range: `${deck.fileName} · ${section.range}`,
+  })));
+  const source = decks.map((deck, index) => {
+    const sectionMap = deck.outline.map((section) => `- source-${index + 1}-${section.id}: ${section.title} (${section.range})`).join('\n');
+    return [
+      `PRESENTATION ${index + 1}: ${deck.title}`,
+      `SOURCE FILE: ${deck.fileName}`,
+      `SECTION ID MAP:\n${sectionMap}`,
+      `NORMALIZED SOURCE:\n${deck.processedSource || deck.originalText}`,
+    ].join('\n');
+  }).join('\n\n');
+  if (outline.length > MAX_INTEGRATED_SECTIONS) {
+    throw new StudyBoltProcessingError(
+      'Integrated PowerPoint set has too many sections',
+      'These presentations cover too many topics for one Study Pack. Select fewer presentations and build smaller study sets.',
+    );
+  }
+  if (source.length > MAX_INTEGRATED_SOURCE_CHARACTERS) {
+    throw new StudyBoltProcessingError(
+      'Integrated PowerPoint source is too large',
+      'These presentations contain too much text for one Study Pack. Select fewer presentations and try again.',
+    );
+  }
+
+  return {
+    ...decks[0]!,
+    id: `integrated-powerpoints-${stamp}`,
+    courseId,
+    courseName,
+    title: `${decks.length}-PowerPoint Integrated Review`,
+    subtitle: `One connected study set from ${decks.length} presentations · ${decks.reduce((sum, deck) => sum + deck.pageCount, 0)} slides`,
+    fileName: `${decks.length}-powerpoint-study-set`,
+    sourceFileNames,
+    pageCount: decks.reduce((sum, deck) => sum + deck.pageCount, 0),
+    createdAt: new Date().toISOString(),
+    order: 0,
+    emoji: '⚡',
+    outline,
+    overview: '',
+    originalText: source,
+    processedSource: source,
+    quickReview: '',
+    notes: [],
+    detailedNotes: [],
+    flashcards: [],
+    quiz: [],
+    quizAttempts: [],
+    testAttempts: [],
+    reviewedNoteIds: [],
+    audioPosition: 0,
+    studyMinutes: 0,
+    visuals: decks.flatMap((deck) => (deck.visuals ?? []).map((visual) => ({
+      ...visual,
+      slideTitle: `${deck.title} · ${visual.slideTitle}`,
+    }))),
+    visualSummary: undefined,
+    generation: createQueuedStudyPackGeneration(),
+  };
+}
 
 export function combineStudyPacks(decks: StudyPack[]): StudyPack {
   const first = decks[0];
@@ -11,6 +85,7 @@ export function combineStudyPacks(decks: StudyPack[]): StudyPack {
     title,
     subtitle: `${decks.length} decks combined`,
     fileName: `${title.replaceAll(' ', '_')}.studybolt`,
+    sourceFileNames: decks.flatMap((deck) => deck.sourceFileNames?.length ? deck.sourceFileNames : [deck.fileName]),
     pageCount: decks.reduce((sum, deck) => sum + deck.pageCount, 0),
     createdAt: new Date().toISOString(),
     order: Math.max(...decks.map((deck) => deck.order)) + 1,

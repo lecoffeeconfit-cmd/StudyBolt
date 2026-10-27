@@ -4,6 +4,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import type { DiscoverStudySet } from '../models';
 import { useStudyBolt } from '../StudyBoltContext';
 import { Card, Icon, Pill } from './ui';
+import { SubjectIcon } from './SubjectIcon';
 
 function ageLabel(value: string): string {
   const time = new Date(value).getTime();
@@ -20,9 +21,7 @@ export function CommunitySetCard({ set, onPress }: { set: DiscoverStudySet; onPr
   const { colors } = useStudyBolt();
   return (
     <Card onPress={onPress} style={styles.card}>
-      <View style={[styles.icon, { backgroundColor: colors.purpleSoft }]}>
-        <Icon name="book-open-page-variant-outline" size={23} color={colors.purple} />
-      </View>
+      <SubjectIcon subject={`${set.subject} ${set.courseName}`} size={44} />
       <View style={styles.copy}>
         <View style={styles.titleRow}>
           <Text numberOfLines={1} style={[styles.title, { color: colors.text }]}>{set.title}</Text>
@@ -47,7 +46,6 @@ export function CommunitySetCard({ set, onPress }: { set: DiscoverStudySet; onPr
 
 const styles = StyleSheet.create({
   card: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, padding: 13, shadowOpacity: 0, elevation: 0 },
-  icon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   copy: { flex: 1, minWidth: 0 },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   title: { flex: 1, fontSize: 14, lineHeight: 18, fontWeight: '900' },

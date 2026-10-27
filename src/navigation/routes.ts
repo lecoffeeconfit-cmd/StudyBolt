@@ -7,6 +7,9 @@ export type Route =
   | { type: 'account-onboarding' }
   | { type: 'auth' }
   | { type: 'account' }
+  | { type: 'admin' }
+  | { type: 'feedback' }
+  | { type: 'premium' }
   | { type: 'widgets' }
   | { type: 'legal' }
   | { type: 'reset-password' }
@@ -19,4 +22,4 @@ export type Route =
   | { type: 'visual-review'; deckId: string }
   | { type: 'shared'; token: string }
   | { type: 'community-class'; classId: string }
-  | { type: 'processing'; asset: ImportAsset; courseId?: string; courseName?: string };
+  | { type: 'processing'; assets: ImportAsset[]; courseId?: string; courseName?: string };

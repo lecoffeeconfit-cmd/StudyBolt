@@ -11,6 +11,8 @@ export interface LocalVisualKnowledge {
   imageHash: string;
   imageReference: string;
   imageDataUrl?: string;
+  imagePath?: string;
+  imageUrl?: string;
   imageWidth?: number;
   imageHeight?: number;
   imageX?: number;
@@ -41,6 +43,7 @@ export interface PptxVisualSummary {
   totalNativeTables: number;
   totalNativeCharts: number;
   decorativeImagesIgnored: number;
+  duplicateImagesIgnored: number;
   nativeVisualsResolved: number;
   accessibilityVisualsResolved: number;
   ocrVisualsResolved: number;
@@ -81,6 +84,8 @@ interface SlideExtraction {
 
 const MAX_SOURCE_CONTEXT_CHARS = 220_000;
 const MAX_INLINE_VISUAL_BYTES = 2_000_000;
+const MAX_INLINE_VISUAL_TOTAL_BYTES = 6_000_000;
+const SUPPORTED_RASTER_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp']);
 const EMU_PER_INCH = 914_400;
 
 export async function extractPptxLocally(bytes: Uint8Array): Promise<PptxLocalExtraction> {
@@ -117,31 +122,18 @@ export async function extractPptxLocally(bytes: Uint8Array): Promise<PptxLocalEx
 
   const visuals: LocalVisualKnowledge[] = [];
   let decorativeImagesIgnored = 0;
+  let duplicateImagesIgnored = 0;
   let nativeVisualsResolved = 0;
   let accessibilityVisualsResolved = 0;
   let locallyResolved = 0;
+  let inlineVisualBytes = 0;
   for (const [index, slide] of slides.entries()) {
     const previous = slides[index - 1];
     const next = slides[index + 1];
     for (const [imageIndex, image] of slide.images.entries()) {
       const duplicate = knownVisuals.get(image.hash);
       if (duplicate) {
-        visuals.push({
-          ...duplicate,
-          id: `visual-${slide.number}-${imageIndex + 1}`,
-          slideNumber: slide.number,
-          slideTitle: slide.title,
-          imageReference: image.reference,
-          imageX: image.x,
-          imageY: image.y,
-          imageWidth: image.width,
-          imageHeight: image.height,
-          cacheHit: true,
-          needsUserReview: false,
-          status: 'resolved_local',
-          analysisAvoided: true,
-        });
-        locallyResolved += 1;
+        duplicateImagesIgnored += 1;
         continue;
       }
 
@@ -153,6 +145,16 @@ export async function extractPptxLocally(bytes: Uint8Array): Promise<PptxLocalEx
       if (classification.analysisSource === 'pptx_native') nativeVisualsResolved += 1;
       if (classification.analysisSource === 'accessibility') accessibilityVisualsResolved += 1;
       if (classification.analysisSource === 'local') locallyResolved += 1;
+      const isStudyVisual = classification.visualType !== 'decorative'
+        && classification.visualType !== 'logo'
+        && classification.visualType !== 'background'
+        && classification.visualType !== 'icon'
+        && classification.educationalImportance >= 0.35;
+      const canInline = isStudyVisual
+        && SUPPORTED_RASTER_EXTENSIONS.has(image.extension)
+        && image.data.byteLength <= MAX_INLINE_VISUAL_BYTES
+        && inlineVisualBytes + image.data.byteLength <= MAX_INLINE_VISUAL_TOTAL_BYTES;
+      if (canInline) inlineVisualBytes += image.data.byteLength;
 
       const visual: LocalVisualKnowledge = {
         id: `visual-${slide.number}-${imageIndex + 1}`,
@@ -160,7 +162,7 @@ export async function extractPptxLocally(bytes: Uint8Array): Promise<PptxLocalEx
         slideTitle: slide.title,
         imageHash: image.hash,
         imageReference: image.reference,
-        ...(classification.needsUserReview && image.data.byteLength <= MAX_INLINE_VISUAL_BYTES ? { imageDataUrl: dataUrl(image.data, image.extension) } : {}),
+        ...(canInline ? { imageDataUrl: dataUrl(image.data, image.extension) } : {}),
         ...(image.width !== undefined ? { imageWidth: image.width } : {}),
         ...(image.height !== undefined ? { imageHeight: image.height } : {}),
         ...(image.x !== undefined ? { imageX: image.x } : {}),
@@ -220,6 +222,7 @@ export async function extractPptxLocally(bytes: Uint8Array): Promise<PptxLocalEx
       totalNativeTables: slides.reduce((total, slide) => total + slide.tables.length, 0),
       totalNativeCharts: slides.reduce((total, slide) => total + slide.charts.length, 0),
       decorativeImagesIgnored,
+      duplicateImagesIgnored,
       nativeVisualsResolved,
       accessibilityVisualsResolved,
       ocrVisualsResolved: 0,
@@ -313,6 +316,9 @@ function classifyImage(image: SlideExtraction['images'][number], slideText: stri
   const slide = `${slideText} ${context}`.toLowerCase();
   const hasRichAccessibility = image.altText.trim().length >= 40;
   const isSmall = (image.width ?? 0) > 0 && (image.height ?? 0) > 0 && Math.min(image.width ?? 0, image.height ?? 0) < EMU_PER_INCH * 0.55;
+  const aspectRatio = (image.width ?? 0) > 0 && (image.height ?? 0) > 0 ? Math.max(image.width!, image.height!) / Math.min(image.width!, image.height!) : 1;
+  const isDecorative = /decorative|ornament|border|divider|header|footer/.test(alt) || aspectRatio >= 8;
+  const isBackground = /background|template|watermark/.test(alt);
   const isLogo = /logo|publisher|copyright|marieb|cover|front cover/.test(alt);
   const visualType = /micrograph|micrography|microscop|histolog|tissue image|stained/.test(alt) ? 'microscopy_image'
     : /flowchart|flow chart|stages|stage \d|process/.test(alt) ? 'flowchart'
@@ -324,8 +330,9 @@ function classifyImage(image: SlideExtraction['images'][number], slideText: stri
                 : isLogo ? 'logo'
                   : isSmall ? 'icon'
                     : hasRichAccessibility || /figure|tissue|cell|muscle|membrane|bone|blood|organ/.test(slide) ? 'photo_educational' : 'unknown';
-  if (isLogo || isSmall || repeatCount >= 4) {
-    return { visualType: isLogo ? 'logo' : isSmall ? 'icon' : 'decorative', educationalImportance: 0.05, localConfidence: 0.98, needsUserReview: false, analysisSource: 'local' };
+  if (isLogo || isSmall || isDecorative || isBackground || repeatCount >= 4) {
+    const junkType: LocalVisualType = isLogo ? 'logo' : isSmall ? 'icon' : isBackground ? 'background' : 'decorative';
+    return { visualType: junkType, educationalImportance: 0.05, localConfidence: 0.98, needsUserReview: false, analysisSource: 'local' };
   }
   if (hasRichAccessibility) {
     return { visualType, educationalImportance: 0.9, localConfidence: 0.94, needsUserReview: false, analysisSource: 'accessibility' };
@@ -433,6 +440,8 @@ function dataUrl(bytes: Uint8Array, extension: string): string {
 }
 
 async function sha256(bytes: Uint8Array): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  const stableBytes = new Uint8Array(bytes.byteLength);
+  stableBytes.set(bytes);
+  const digest = await crypto.subtle.digest('SHA-256', stableBytes.buffer);
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }

@@ -84,7 +84,7 @@ export function SpeedPickerSheet({ visible, rates, selected, onSelect, onClose }
   );
 }
 
-export function VoicePickerSheet({ visible, voices, selectedIdentifier, onSelect, onPreview, onClose }: { visible: boolean; voices: Voice[]; selectedIdentifier?: string; onSelect: (voice?: Voice) => void; onPreview: (voice?: Voice) => void; onClose: () => void }) {
+export function VoicePickerSheet({ visible, voices, selectedIdentifier, selectedLanguage, onSelect, onPreview, onClose }: { visible: boolean; voices: Voice[]; selectedIdentifier?: string; selectedLanguage?: string; onSelect: (voice?: Voice) => void; onPreview: (voice?: Voice) => void; onClose: () => void }) {
   const { colors } = useStudyBolt();
   const options: Array<Voice | undefined> = [undefined, ...voices];
   return (
@@ -97,7 +97,7 @@ export function VoicePickerSheet({ visible, voices, selectedIdentifier, onSelect
             <View key={key} style={[styles.voiceRow, index < options.length - 1 && { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }]}>
               <Pressable accessibilityRole="radio" accessibilityState={{ checked: active }} onPress={() => onSelect(voice)} style={styles.voiceSelect}>
                 <View style={[styles.radio, { borderColor: active ? colors.mint : colors.border }]}>{active ? <View style={[styles.radioDot, { backgroundColor: colors.mint }]} /> : null}</View>
-                <View style={styles.voiceCopy}><Text numberOfLines={1} style={[styles.voiceName, { color: colors.text }]}>{voice?.name ?? 'Device default'}</Text><Text style={[styles.voiceLanguage, { color: colors.textMuted }]}>{voice ? voice.language : 'Uses your system preference'}</Text></View>
+                <View style={styles.voiceCopy}><Text numberOfLines={1} style={[styles.voiceName, { color: colors.text }]}>{voice?.name ?? 'Device default'}</Text><Text style={[styles.voiceLanguage, { color: colors.textMuted }]}>{voice ? voice.language : selectedLanguage ? `Uses ${selectedLanguage}` : 'Uses your system preference'}</Text></View>
               </Pressable>
               <Pressable accessibilityLabel={`Preview ${voice?.name ?? 'device default voice'}`} onPress={() => onPreview(voice)} hitSlop={6} style={[styles.previewButton, { backgroundColor: colors.mintSoft }]}><Icon name="play" size={17} color={colors.mint} /></Pressable>
             </View>

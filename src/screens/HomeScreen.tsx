@@ -10,7 +10,7 @@ import type { ImportAsset, StudyPack } from '../models';
 import { calculateMastery } from '../services/mastery';
 import { buildMistakeNotebook, buildSmartStudyBrief } from '../services/adaptiveStudy';
 import type { SmartStudyMode } from '../services/adaptiveStudy';
-import { DOCUMENT_PICKER_TYPE, pageLabel } from '../services/documentTypes';
+import { DOCUMENT_PICKER_TYPE, getImportDocumentType, pageLabel } from '../services/documentTypes';
 import {
   DEFAULT_STUDY_TIMER_SETTINGS,
   loadStudyTimerSettings,
@@ -19,6 +19,7 @@ import {
   type StudyTimerSettings,
 } from '../services/studyTimer';
 import { BoltMark, Card, Header, Icon, Pill, ProgressBar, Screen, SectionHeader } from '../components/ui';
+import { SubjectIcon } from '../components/SubjectIcon';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import { useAuth } from '../AuthContext';
 
@@ -91,7 +92,7 @@ export function HomeScreen({
   onOpenPlanner,
 }: {
   onOpenDeck: (deck: StudyPack) => void;
-  onImport: (asset: ImportAsset) => void;
+  onImport: (assets: ImportAsset[]) => void;
   onStartStudy: (mode: SmartStudyMode) => void;
   onOpenMistakes: () => void;
   onOpenFlagged: () => void;
@@ -168,15 +169,19 @@ export function HomeScreen({
       const result = await DocumentPicker.getDocumentAsync({
         type: DOCUMENT_PICKER_TYPE,
         copyToCacheDirectory: true,
-        multiple: false,
+        multiple: true,
         // Keep the browser's File object instead of eagerly reading a second
         // base64 copy into memory before the multipart upload starts.
         base64: false,
       });
       if (result.canceled) return;
-      const asset = result.assets[0];
-      if (!asset) return;
-      onImport({ name: asset.name, uri: asset.uri, mimeType: asset.mimeType, size: asset.size, file: asset.file });
+      const assets = result.assets.map((asset) => ({ name: asset.name, uri: asset.uri, mimeType: asset.mimeType, size: asset.size, file: asset.file }));
+      if (!assets.length) return;
+      if (assets.length > 1 && assets.some((asset) => getImportDocumentType(asset.name, asset.mimeType) !== 'powerpoint')) {
+        Alert.alert('Choose PowerPoints together', 'To create one integrated Study Pack, select only PowerPoint files. Other file types can be imported one at a time.');
+        return;
+      }
+      onImport(assets);
     } catch {
       Alert.alert('Couldn’t open files', 'Check file permissions, then try again.');
     }
@@ -293,7 +298,7 @@ export function HomeScreen({
 
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Import study material"
+        accessibilityLabel="Import one or more study files"
         onPress={pickDocument}
         style={({ pressed }) => [
           styles.uploadCard,
@@ -303,9 +308,10 @@ export function HomeScreen({
         <View style={[styles.cloudCircle, { backgroundColor: colors.primarySoft }]}>
           <Icon name="cloud-upload-outline" size={34} color={colors.primary} />
         </View>
-        <Text style={[styles.uploadTitle, { color: colors.text }]}>Drop your files here</Text>
-        <Text style={[styles.uploadHint, { color: colors.textSecondary }]}>or tap to upload</Text>
+        <Text style={[styles.uploadTitle, { color: colors.text }]}>Upload study material</Text>
+        <Text style={[styles.uploadHint, { color: colors.textSecondary }]}>Tap to choose one file or multiple PowerPoints</Text>
         <Text style={[styles.formats, { color: colors.textMuted }]}>PPT, PPTX, PDF, or notes</Text>
+        <Text style={[styles.formats, { color: colors.textMuted }]}>Multiple PowerPoints become one integrated Study Pack</Text>
         <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.fileTypes}>
           <FileTypeIcon icon="microsoft-powerpoint" color="#D9472F" background="#FFF0EC" />
           <FileTypeIcon icon="file-pdf-box" color="#E5535D" background="#FFF0F2" />
@@ -554,9 +560,7 @@ function RecentDeck({ deck, onPress }: { deck: StudyPack; onPress: () => void })
   const mastery = calculateMastery(deck).overall;
   return (
     <Card onPress={onPress} style={[styles.deckCard, styles.flatCard]}>
-      <View style={[styles.deckThumb, { backgroundColor: `${deck.color}24` }]}>
-        <Text style={styles.deckEmoji}>{deck.emoji}</Text>
-      </View>
+      <SubjectIcon subject={deck.courseName} emoji={deck.emoji} size={52} />
       <View style={styles.deckCopy}>
         <View style={styles.deckTitleRow}>
           <Text numberOfLines={1} style={[styles.deckTitle, { color: colors.text }]}>{deck.courseName}</Text>
@@ -635,8 +639,6 @@ const styles = StyleSheet.create({
   deckList: { gap: 10 },
   deckCard: { flexDirection: 'row', alignItems: 'center', padding: 12, gap: 12 },
   flatCard: { shadowOpacity: 0, elevation: 0 },
-  deckThumb: { width: 52, height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  deckEmoji: { fontSize: 25 },
   deckCopy: { flex: 1, minWidth: 0 },
   deckTitleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
   deckTitle: { flex: 1, fontSize: 14, fontWeight: '800' },

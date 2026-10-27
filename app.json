@@ -28,7 +28,10 @@
               "displayName": "Study Focus",
               "description": "See what to study next and how long it may take.",
               "ios": {
-                "supportedFamilies": ["systemSmall", "systemMedium"],
+                "supportedFamilies": [
+                  "systemSmall",
+                  "systemMedium"
+                ],
                 "contentMarginsDisabled": true
               }
             },
@@ -37,7 +40,9 @@
               "displayName": "Today’s Study Plan",
               "description": "Keep today’s next study block in view.",
               "ios": {
-                "supportedFamilies": ["systemMedium"],
+                "supportedFamilies": [
+                  "systemMedium"
+                ],
                 "contentMarginsDisabled": true
               }
             },
@@ -46,7 +51,9 @@
               "displayName": "Study Pack Progress",
               "description": "See your current Study Pack and available tools.",
               "ios": {
-                "supportedFamilies": ["systemLarge"],
+                "supportedFamilies": [
+                  "systemLarge"
+                ],
                 "contentMarginsDisabled": true
               }
             }
@@ -61,12 +68,20 @@
           "microphonePermission": false
         }
       ],
-      "./plugins/withStudyCastBackgroundPlayback"
+      "./plugins/withStudyCastBackgroundPlayback",
+      [
+        "@sentry/react-native/expo",
+        {
+          "url": "https://sentry.io/",
+          "project": "studybolt",
+          "organization": "lecoffeeconfit"
+        }
+      ]
     ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.lecoffeeconfit.studybolt",
-      "buildNumber": "1",
+      "buildNumber": "15",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }

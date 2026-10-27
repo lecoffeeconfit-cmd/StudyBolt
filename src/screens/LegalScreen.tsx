@@ -82,7 +82,7 @@ export function LegalScreen({ onBack }: { onBack: () => void }) {
                   <Text style={[styles.documentTitle, { color: colors.text }]}>{document.title}</Text>
                   <Text style={[styles.documentDescription, { color: colors.textSecondary }]}>{document.description}</Text>
                   <View style={[styles.documentStatus, { backgroundColor: ready ? colors.primarySoft : colors.cardStrong }]}>
-                    <Text style={[styles.documentStatusText, { color: ready ? colors.primary : colors.textMuted }]}>{ready ? 'Read online' : 'URL coming soon'}</Text>
+                    <Text style={[styles.documentStatusText, { color: ready ? colors.primary : colors.textMuted }]}>{ready ? 'Read online' : 'Not published yet'}</Text>
                   </View>
                 </View>
                 <Icon name={ready ? 'open-in-new' : 'link-variant-off'} size={18} color={ready ? colors.primary : colors.textMuted} />
@@ -94,8 +94,8 @@ export function LegalScreen({ onBack }: { onBack: () => void }) {
         <Card style={[styles.noteCard, { backgroundColor: colors.primarySoft }]}>
           <View style={[styles.noteIcon, { backgroundColor: colors.card }]}><Icon name="link-variant" size={19} color={colors.primary} /></View>
           <View style={{ flex: 1 }}>
-            <Text style={[styles.noteTitle, { color: colors.text }]}>Add your URLs when ready</Text>
-            <Text style={[styles.noteCopy, { color: colors.textSecondary }]}>Update <Text style={styles.code}>src/config/legal.ts</Text> with your hosted policy links. The buttons will activate automatically.</Text>
+            <Text style={[styles.noteTitle, { color: colors.text }]}>Publication required</Text>
+            <Text style={[styles.noteCopy, { color: colors.textSecondary }]}>Privacy and terms links are required before new subscriptions can be purchased. They will appear here once published.</Text>
           </View>
         </Card>
       </Animated.View>

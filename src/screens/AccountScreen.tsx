@@ -133,7 +133,7 @@ export function AccountScreen({ onBack, onSignedOut, onDeleted }: { onBack: () =
           <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow }]}>
             <View style={[styles.modalIcon, { backgroundColor: `${colors.danger}16` }]}><Icon name="delete-alert-outline" size={30} color={colors.danger} /></View>
             <Text style={[styles.modalTitle, { color: colors.text }]}>Delete your account?</Text>
-            <Text style={[styles.modalCopy, { color: colors.textSecondary }]}>This permanently deletes {user?.email ?? 'your account'} and its synced data. StudyBolt cannot restore it later.</Text>
+            <Text style={[styles.modalCopy, { color: colors.textSecondary }]}>This permanently deletes {user?.email ?? 'your account'} and its synced data. StudyBolt cannot restore it later. If you have Premium, cancel it through your App Store account before continuing; deleting your StudyBolt account does not cancel store billing.</Text>
             <Pressable
               accessibilityRole="button"
               disabled={busy === 'delete'}

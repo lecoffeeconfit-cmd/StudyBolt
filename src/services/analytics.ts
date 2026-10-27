@@ -9,6 +9,7 @@ import type {
 } from '../models';
 import { calculateCourseMastery, calculateMastery } from './mastery';
 import { getRetentionCardSchedule } from './retentionScheduler';
+import { getStudyActivitySummary, getStudyEventMinutes } from './studyActivity';
 
 export type EvidenceLevel = 'early' | 'building' | 'strong';
 export type ConceptStatus = 'mastered' | 'learning' | 'weak' | 'unseen' | 'at-risk' | 'improving' | 'forgotten';
@@ -134,6 +135,9 @@ export interface AnalyticsSnapshot {
     total: number;
     averageDaily: number;
     averageSession: number;
+    previousWeek: number;
+    weekChangePercent: number | null;
+    goalDaysThisWeek: number;
     longestSession: number | null;
     sessions: number;
     daysThisWeek: number;
@@ -205,7 +209,7 @@ function hourLabel(hour: number): string {
 }
 
 function minutesFor(event: StudyEvent): number {
-  return Math.max(0, event.durationMinutes ?? 0);
+  return getStudyEventMinutes(event);
 }
 
 function packCompletion(deck: StudyPack, events: StudyEvent[]): number {
@@ -275,7 +279,7 @@ function scoresWithLegacy(state: StudyBoltState, quizEvents: StudyEvent[]): numb
 
 export function buildAnalytics(state: StudyBoltState, now = new Date()): AnalyticsSnapshot {
   const events = state.activityEvents
-    .filter((event) => Number.isFinite(+new Date(event.occurredAt)))
+    .filter((event) => Number.isFinite(+new Date(event.occurredAt)) && +new Date(event.occurredAt) <= +now)
     .sort((a, b) => +new Date(a.occurredAt) - +new Date(b.occurredAt));
   const quizEvents = events.filter((event) => event.type === 'quiz');
   const cardEvents = events.filter((event) => event.type === 'flashcard-review' && event.deckId && event.cardId);
@@ -498,22 +502,21 @@ export function buildAnalytics(state: StudyBoltState, now = new Date()): Analyti
   });
   const todayMinutes = events.filter((event) => dayKey(event.occurredAt) === todayKey).reduce((sum, event) => sum + minutesFor(event), 0);
   const weekMinutes = events.filter((event) => +new Date(event.occurredAt) >= +weekStart).reduce((sum, event) => sum + minutesFor(event), 0);
+  const previousWeekStart = daysAgo(now, 13);
+  const previousWeekMinutes = events.filter((event) => +new Date(event.occurredAt) >= +previousWeekStart && +new Date(event.occurredAt) < +weekStart).reduce((sum, event) => sum + minutesFor(event), 0);
+  const weekChangePercent = previousWeekMinutes > 0 ? Math.round(((weekMinutes - previousWeekMinutes) / previousWeekMinutes) * 100) : null;
+  const goalDaysThisWeek = sevenDays.filter((day) => day.minutes >= Math.max(1, state.dailyStudyGoalMinutes)).length;
   const monthMinutes = recentEvents.reduce((sum, event) => sum + minutesFor(event), 0);
   const legacyTotal = Math.max(state.focusMinutes, state.decks.reduce((sum, deck) => sum + deck.studyMinutes, 0));
   const totalMinutes = Math.max(legacyTotal, events.reduce((sum, event) => sum + minutesFor(event), 0));
   const sessions = sessionDurations(events);
   const daysThisWeek = sevenDays.filter((day) => day.minutes > 0).length;
-  let streakDays = 0;
-  for (let index = 0; index < 365; index += 1) {
-    if (events.some((event) => dayKey(event.occurredAt) === dayKey(daysAgo(now, index)) && minutesFor(event) > 0)) streakDays += 1;
-    else if (index === 0) continue;
-    else break;
-  }
-  if (!events.length) streakDays = state.streakDays;
+  const { streakDays } = getStudyActivitySummary(events, now);
 
   const weekdayTotals = new Map<string, number>();
   const timeTotals = new Map<string, number>();
   recentEvents.forEach((event) => {
+    if (minutesFor(event) <= 0) return;
     const date = new Date(event.occurredAt);
     const weekday = date.toLocaleDateString(undefined, { weekday: 'long' });
     const period = date.getHours() < 12 ? 'Morning' : date.getHours() < 17 ? 'Afternoon' : 'Evening';
@@ -915,6 +918,9 @@ export function buildAnalytics(state: StudyBoltState, now = new Date()): Analyti
       total: totalMinutes,
       averageDaily: activeDayKeys.length ? Math.round(monthMinutes / activeDayKeys.length) : 0,
       averageSession: sessions.length ? Math.round(average(sessions)) : 0,
+      previousWeek: previousWeekMinutes,
+      weekChangePercent,
+      goalDaysThisWeek,
       longestSession: sessions.length >= 3 ? Math.max(...sessions) : null,
       sessions: sessions.length,
       daysThisWeek,

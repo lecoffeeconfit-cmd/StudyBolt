@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { Card, Header, Icon, Pill, ProgressBar, Screen, SectionHeader } from '../components/ui';
+import { SubjectIcon } from '../components/SubjectIcon';
 import type { IconName } from '../components/ui';
 import { learningEvidence } from '../data/learningScience';
 import { makeStatDetail } from '../data/statExplanations';
@@ -187,6 +188,8 @@ function Overview({ analytics }: { analytics: AnalyticsSnapshot }) {
         <MetricCard icon="clipboard-check-outline" label="Recent quiz average" value={percent(analytics.recentQuizAverage)} detail="Most recent 5" tone="mint" />
         <MetricCard icon="timer-outline" label="Study time this week" value={formatMinutes(analytics.studyTimeThisWeek)} detail={`${analytics.activity.daysThisWeek} active days`} tone="blue" />
         <MetricCard icon="fire" label="Study streak" value={`${analytics.streakDays} days`} detail="Consecutive active days" tone="orange" />
+        <MetricCard icon="chart-timeline-variant" label="Daily average" value={formatMinutes(analytics.activity.averageDaily)} detail="On study days · last 30 days" tone="mint" />
+        <MetricCard icon="timer-sand" label="Average session" value={formatMinutes(analytics.activity.averageSession)} detail={`${analytics.activity.sessions} recorded sessions`} tone="blue" />
         <MetricCard icon="check-decagram-outline" label="Concepts mastered" value={`${analytics.masteredCount}`} detail="Observed mastery ≥ 80%" tone="mint" />
         <MetricCard icon="progress-clock" label="Still learning" value={`${analytics.learningCount}`} detail="Needs more retrieval" tone="orange" />
         <MetricCard icon="calendar-alert" label="Due today" value={`${analytics.dueTodayCount}`} detail="Based on last recall" tone="red" />
@@ -214,7 +217,7 @@ function Overview({ analytics }: { analytics: AnalyticsSnapshot }) {
             }))}
             style={styles.progressCard}
           >
-            <View style={[styles.courseIcon, { backgroundColor: `${course.color}20` }]}><Text style={styles.emoji}>{course.emoji}</Text></View>
+            <SubjectIcon subject={course.name} emoji={course.emoji} size={44} />
             <View style={{ flex: 1 }}>
               <View style={styles.progressHeading}>
                 <Text style={[styles.progressTitle, { color: colors.text }]}>{course.name}</Text>
@@ -246,6 +249,7 @@ function AdvancedInsights({ analytics }: { analytics: AnalyticsSnapshot }) {
   const fatigue = insight.sessionFatigue;
   const forecast = insight.readinessForecast;
   const efficiency = insight.efficiencyTrend;
+  const nextAdjustment = getNextStudyAdjustment(analytics);
   return (
     <>
       <Card
@@ -257,6 +261,14 @@ function AdvancedInsights({ analytics }: { analytics: AnalyticsSnapshot }) {
           <Text style={[styles.advancedHeroText, { color: colors.textSecondary }]}>Measured from your answers, retrieval ratings, timing, spacing, study sessions, and completed plan blocks. Estimates stay hidden until enough evidence exists.</Text>
           <Text style={[styles.advancedHeroMode, { color: advancedRetention ? colors.primary : colors.textMuted }]}>{advancedRetention ? `${retentionLabel} is on · review timing adapts per card.` : 'Standard is on · fixed time-based review intervals.'}</Text>
         </View>
+      </Card>
+
+      <SectionHeader title="Your next adjustment" action="Based on your study history" />
+      <Card
+        accessibilityLabel={`${nextAdjustment.value}. Tap for the evidence and suggested next step`}
+        onPress={() => showStatDetail(nextAdjustment)}
+      >
+        <MethodologyRow icon="compass-outline" title={nextAdjustment.value} detail={nextAdjustment.supporting} />
       </Card>
 
       <SectionHeader title="Memory & recall" action="What is likely to stick" />
@@ -572,8 +584,14 @@ function ActivityAnalytics({ analytics, goalMinutes }: { analytics: AnalyticsSna
         <MetricCard icon="calendar-week" label="This week" value={formatMinutes(activity.week)} detail={`${activity.daysThisWeek} days studied`} tone="mint" />
         <MetricCard icon="calendar-month-outline" label="This month" value={formatMinutes(activity.month)} detail={`${activity.activeDays} active days`} tone="purple" />
         <MetricCard icon="clock-outline" label="Total study time" value={formatMinutes(activity.total)} detail="Includes legacy totals" tone="orange" />
-        <MetricCard icon="chart-timeline-variant" label="Daily average" value={formatMinutes(activity.averageDaily)} detail="On active days" tone="mint" />
-        <MetricCard icon="timer-sand" label="Average session" value={formatMinutes(activity.averageSession)} detail={`${activity.sessions} tracked sessions`} tone="blue" />
+      </View>
+
+      <SectionHeader title="Your study rhythm" action="Time, routine & comparison" />
+      <View style={styles.metricGrid}>
+        <MetricCard icon="chart-timeline-variant" label="Daily average" value={formatMinutes(activity.averageDaily)} detail="On study days · last 30 days" tone="mint" />
+        <MetricCard icon="timer-sand" label="Average session" value={formatMinutes(activity.averageSession)} detail={`${activity.sessions} recorded sessions`} tone="blue" />
+        <MetricCard icon="chart-line-variant" label="Study time change" value={activity.weekChangePercent === null ? '—' : `${formatSigned(activity.weekChangePercent)}%`} detail={activity.weekChangePercent === null ? 'Needs study time in the previous 7 days' : `${formatMinutes(activity.week)} vs ${formatMinutes(activity.previousWeek)} · previous 7 days`} tone="blue" muted={activity.weekChangePercent === null} />
+        <MetricCard icon="calendar-check-outline" label="Days meeting your goal" value={`${activity.goalDaysThisWeek} / 7`} detail={`At your current ${formatMinutes(goalMinutes)} daily goal`} tone="purple" />
       </View>
 
       <SectionHeader title="7-day activity" action={`${formatMinutes(activity.week)} total`} />
@@ -1054,6 +1072,61 @@ function readinessLabel(value: number): string {
   return 'Early foundation. Increase coverage before relying on this estimate.';
 }
 
+function getNextStudyAdjustment(analytics: AnalyticsSnapshot): StatDetail {
+  const { advanced, activity } = analytics;
+  const fatigue = advanced.sessionFatigue;
+  let value = 'Keep strong concepts in rotation';
+  let supporting = 'Use a short recall check to confirm that familiar ideas still come back easily.';
+  let calculation = 'Your recorded study activity is reviewed for late-session accuracy drops, confident errors, clustered reviews, forgetting risk, and weak concepts, in that order.';
+  let nextStep = 'Mix a few previously strong concepts into your next review and check your answers before moving on.';
+
+  if (!activity.sessions) {
+    value = 'Build your study pattern';
+    supporting = 'Complete a few study activities to reveal a personal suggestion.';
+    calculation = 'A personal suggestion needs recorded study activity. No timing or learning pattern is assumed before you start.';
+    nextStep = 'Review a few cards or complete a quiz, then return to Insights as your history grows.';
+  } else if (fatigue && fatigue.drop >= 10) {
+    value = 'Try shorter study blocks';
+    supporting = `Accuracy was ${fatigue.earlyAccuracy}% early and ${fatigue.lateAccuracy}% later in longer quizzes. Try a shorter block and a break.`;
+    calculation = 'At least two quizzes with eight or more questions are available. Accuracy in their first and final thirds is compared; the observed decline is at least 10 percentage points.';
+    nextStep = 'Split your next longer session into smaller blocks. Compare accuracy again before deciding whether shorter sessions work better for you; question difficulty can also affect this pattern.';
+  } else if (advanced.confidenceCalibration.samples >= 5 && advanced.confidenceCalibration.confidentlyWrong >= 2) {
+    value = 'Revisit confident misses';
+    supporting = `${advanced.confidenceCalibration.confidentlyWrong} of ${advanced.confidenceCalibration.samples} confidence-rated answers were confidently wrong. Revisit their explanations before your next long quiz.`;
+    calculation = 'At least five confidence-rated answers are available, including two or more answers marked very sure that were incorrect.';
+    nextStep = 'Open your missed questions, explain the corrected idea in your own words, then answer again before revealing the solution.';
+  } else if (advanced.spacingQuality.score !== null && advanced.spacingQuality.score < 50) {
+    value = 'Check your review spacing';
+    supporting = `${advanced.spacingQuality.spaced} of ${advanced.spacingQuality.total} repeat reviews were spaced 20 hours to 14 days apart. Check whether repeats are too close together or too far apart.`;
+    calculation = 'At least three repeat-review intervals are available. Fewer than half fall in the app’s 20-hour to 14-day spacing window.';
+    nextStep = 'Use your due-review schedule to spread the next round of familiar cards across days. The best timing depends on the card and how well you recalled it.';
+  } else if (advanced.forgettingRisk.length) {
+    const concept = advanced.forgettingRisk[0]!;
+    value = 'Protect recent progress';
+    supporting = `Estimated recall is ${concept.recallProbability}% for “${concept.title}”. Start your next review there.`;
+    calculation = 'Concepts with dated recall evidence are ranked by estimated forgetting risk. This suggestion uses the highest-priority concept in that list.';
+    nextStep = `Answer “${concept.title}” before opening the explanation. This is a timing estimate, so use your actual answer to decide what needs more work.`;
+  } else if (activity.daysThisWeek <= 2 && activity.week > 0) {
+    value = 'Spread out your next study block';
+    supporting = `Your last seven days include ${activity.daysThisWeek} active study ${activity.daysThisWeek === 1 ? 'day' : 'days'}. Plan another short session on a different day.`;
+    calculation = 'Positive-duration study events in the last seven calendar days are grouped by local day. No more than two days contain recorded study time.';
+    nextStep = 'Choose one manageable review task for a different day instead of adding it all to your next longer session.';
+  } else if (analytics.weakConcepts.length) {
+    const concept = analytics.weakConcepts[0]!;
+    value = 'Give a weak concept a focused review';
+    supporting = `Observed mastery is ${concept.mastery}% for “${concept.title}”. Check your recall before adding more new material.`;
+    calculation = 'Your current weak-concept ranking provides the next topic after no higher-priority timing, confidence, spacing, or forgetting-risk adjustment is detected.';
+    nextStep = `Answer “${concept.title}” without the explanation, then check which part still needs work.`;
+  }
+
+  return makeStatDetail('Your next adjustment', value, supporting, {
+    description: 'A practical next step based on patterns in your recorded study activity.',
+    calculation,
+    insight: supporting,
+    whyItMatters: nextStep,
+  });
+}
+
 const styles = StyleSheet.create({
   screenShell: { flex: 1 },
   title: { fontSize: 29, lineHeight: 35, fontWeight: '900', letterSpacing: -1 },
@@ -1138,8 +1211,6 @@ const styles = StyleSheet.create({
   methodologyIcon: { width: 36, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   methodologyText: { fontSize: 9, lineHeight: 14, marginTop: 3 },
   progressCard: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  courseIcon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  emoji: { fontSize: 22 },
   progressHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8 },
   progressTitle: { fontSize: 12, fontWeight: '800' },
   progressValue: { fontSize: 12, fontWeight: '900' },

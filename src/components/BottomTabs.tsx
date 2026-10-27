@@ -14,7 +14,7 @@ const TABS: Array<{ id: MainTab; label: string; icon: IconName; activeIcon: Icon
   { id: 'planner', label: 'Planner', icon: 'calendar-blank-outline', activeIcon: 'calendar-check' },
   { id: 'stats', label: 'Stats', icon: 'chart-bar', activeIcon: 'chart-box' },
   { id: 'discover', label: 'Discover', icon: 'compass-outline', activeIcon: 'compass' },
-  { id: 'profile', label: 'Profile', icon: 'account-outline', activeIcon: 'account-circle' },
+  { id: 'profile', label: 'Settings', icon: 'cog-outline', activeIcon: 'cog' },
 ];
 
 export function BottomTabs({ active, onChange }: { active: MainTab; onChange: (tab: MainTab) => void }) {

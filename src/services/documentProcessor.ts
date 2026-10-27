@@ -12,7 +12,7 @@ import {
   SUPPORTED_DOCUMENT_EXTENSIONS,
 } from './documentTypes';
 
-export const MAX_IMPORT_BYTES = 100 * 1024 * 1024;
+export const MAX_IMPORT_BYTES = 20 * 1024 * 1024;
 const PROCESSOR_TIMEOUT_MS = 180_000;
 const BUILT_IN_PROCESSOR_URL = 'https://studybolt-api.duckdns.org/functions/v1/studybolt-process-document';
 const manifestProcessorUrl = typeof Constants.expoConfig?.extra?.studyboltProcessorUrl === 'string'
@@ -82,10 +82,23 @@ export function validateImport(asset: ImportAsset): void {
     );
   }
   if (typeof asset.size === 'number' && asset.size > MAX_IMPORT_BYTES) {
-    throw new StudyBoltProcessingError('Document exceeds 100 MB', 'Choose a file smaller than 100 MB and try again.');
+    throw new StudyBoltProcessingError('Document exceeds 20 MB', 'Choose a file smaller than 20 MB and try again.');
   }
   if (asset.size === 0) {
     throw new StudyBoltProcessingError('Document is empty', 'That file is empty. Choose a different file and try again.');
+  }
+}
+
+export function validateImportBatch(assets: ImportAsset[]): void {
+  if (assets.length === 0) {
+    throw new StudyBoltProcessingError('No documents were selected', 'Choose at least one file and try again.');
+  }
+  assets.forEach(validateImport);
+  if (assets.length > 1 && assets.some((asset) => getImportDocumentType(asset.name, asset.mimeType) !== 'powerpoint')) {
+    throw new StudyBoltProcessingError(
+      'Multi-file study sets currently require PowerPoint presentations',
+      'To build one integrated Study Pack, select only PowerPoint files. Other file types can still be imported one at a time.',
+    );
   }
 }
 
@@ -103,7 +116,7 @@ function processorHeaders(anonKey: string | undefined, accessToken?: string | nu
   return {
     Accept: 'application/json',
     ...(anonKey ? { apikey: anonKey } : {}),
-    ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : anonKey ? { Authorization: `Bearer ${anonKey}` } : {}),
+    ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
   };
 }
 
@@ -218,7 +231,7 @@ function isExtractedStudyPack(value: unknown): value is StudyPack {
     && candidate.outline.every(isOutlineItem);
 }
 
-function queuedGeneration(): NonNullable<StudyPack['generation']> {
+export function createQueuedStudyPackGeneration(): NonNullable<StudyPack['generation']> {
   const now = new Date().toISOString();
   return {
     materials: Object.fromEntries(AUTOMATIC_STUDY_PACK_MATERIALS.map((material) => [material, {
@@ -243,6 +256,9 @@ export async function processDocument(
   }
   const endpoint = resolveProcessorEndpoint();
   const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+  if (!accessToken?.trim()) {
+    throw new StudyBoltProcessingError('Document processing requires a signed-in account', 'Sign in to securely process and save this study material.');
+  }
   if (!endpoint) {
     throw new StudyBoltProcessingError(
       'EXPO_PUBLIC_STUDYBOLT_PROCESSOR_URL is not configured',
@@ -305,7 +321,7 @@ export async function processDocument(
           status: 'ready' as const,
           updatedAt: new Date().toISOString(),
         }])) as NonNullable<StudyPack['generation']>['materials'],
-      } : queuedGeneration(),
+      } : createQueuedStudyPackGeneration(),
     };
   } catch (error) {
     if (error instanceof StudyBoltProcessingError) throw error;
@@ -325,6 +341,9 @@ export async function generateStudyPackMaterial(
   material: StudyPackMaterial,
   accessToken?: string | null,
 ): Promise<GeneratedStudyPackMaterial> {
+  if (!accessToken?.trim()) {
+    throw new StudyBoltProcessingError('Material generation requires a signed-in account', 'Sign in to finish generating this Study Pack.');
+  }
   const endpoint = resolveProcessorEndpoint();
   const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
@@ -336,7 +355,7 @@ export async function generateStudyPackMaterial(
         Accept: 'application/json',
         'Content-Type': 'application/json',
         ...(anonKey ? { apikey: anonKey } : {}),
-        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : anonKey ? { Authorization: `Bearer ${anonKey}` } : {}),
+        Authorization: `Bearer ${accessToken}`,
       },
       body: JSON.stringify({
         action: 'generate',
@@ -347,6 +366,7 @@ export async function generateStudyPackMaterial(
         fileName: deck.fileName,
         source: deck.processedSource || deck.originalText,
         outline: deck.outline,
+        sourceCount: deck.sourceFileNames?.length ?? 1,
       }),
       ...(controller ? { signal: controller.signal } : {}),
     });

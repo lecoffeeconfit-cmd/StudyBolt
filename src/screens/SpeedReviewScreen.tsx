@@ -7,6 +7,7 @@ import { Card, Header, Icon, Pill, PrimaryButton, ProgressBar, Screen } from '..
 import type { IconName } from '../components/ui';
 import { useStudyBolt } from '../StudyBoltContext';
 import type { StudyPack } from '../models';
+import { getNarrationSpeechOptions } from '../services/narration';
 
 const SPEEDS = [1.25, 1.5, 1.75, 2];
 const DEFAULT_SPEED = 1.5;
@@ -94,9 +95,9 @@ export function SpeedReviewScreen({
     setIndex(targetIndex);
     setComplete(false);
     setPlaying(true);
-    void Speech.stop().then(() => {
+    void Speech.stop().then(async () => {
       if (generation !== speechGeneration.current) return;
-      Speech.speak(target.text, {
+      const options = await getNarrationSpeechOptions({
         rate,
         onDone: () => {
           if (generation !== speechGeneration.current) return;
@@ -118,6 +119,7 @@ export function SpeedReviewScreen({
           if (generation === speechGeneration.current) setPlaying(false);
         },
       });
+      if (generation === speechGeneration.current) Speech.speak(target.text, options);
     });
   };
 

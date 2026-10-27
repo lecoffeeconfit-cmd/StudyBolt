@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { ActivityIndicator, Linking, Platform, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Linking, Platform, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '../AuthContext';
 import { BottomTabs } from '../components/BottomTabs';
@@ -9,6 +9,11 @@ import type { MainTab } from '../components/BottomTabs';
 import { useStudyBolt } from '../StudyBoltContext';
 import { AccountScreen } from '../screens/AccountScreen';
 import { AccountOnboardingScreen } from '../screens/AccountOnboardingScreen';
+import { AdminScreen } from '../screens/AdminScreen';
+import { FeedbackScreen } from '../screens/FeedbackScreen';
+import { Card, Header, Screen } from '../components/ui';
+import { useAdminAccess } from '../hooks/useAdminAccess';
+import { useAdminScreenTime } from '../hooks/useAdminActivity';
 import { CommunityClassScreen } from '../screens/CommunityClassScreen';
 import { DiscoverScreen } from '../screens/DiscoverScreen';
 import { ExamModeScreen } from '../screens/ExamModeScreen';
@@ -20,6 +25,7 @@ import { MistakeNotebookScreen } from '../screens/MistakeNotebookScreen';
 import { FlaggedReviewScreen } from '../screens/FlaggedReviewScreen';
 import { OnboardingScreen } from '../screens/OnboardingScreen';
 import { PlannerScreen } from '../screens/PlannerScreen';
+import { PremiumScreen } from '../screens/PremiumScreen';
 import { ProcessingScreen } from '../screens/ProcessingScreen';
 import { ProfileScreen } from '../screens/ProfileScreen';
 import { ResetPasswordScreen } from '../screens/ResetPasswordScreen';
@@ -32,6 +38,7 @@ import { SpeedReviewScreen } from '../screens/SpeedReviewScreen';
 import { WidgetsScreen } from '../screens/WidgetsScreen';
 import { combineStudyPacks } from '../services/studyPack';
 import { parseShareToken } from '../services/sharing';
+import { syncRevenueCatUser } from '../services/subscriptions';
 import type { StudyPack, StudyTool, StudyType } from '../models';
 import type { Route } from './routes';
 
@@ -43,6 +50,14 @@ export function StudyBoltNavigator() {
   const [plannerFocusDeckId, setPlannerFocusDeckId] = useState<string>();
   const [pendingSharedToken, setPendingSharedToken] = useState<string | null>(null);
   const [pendingRoute, setPendingRoute] = useState<Route | null>(null);
+  const isAdmin = useAdminAccess(user?.id);
+  const trackedScreen = route.type === 'main' ? tab : route.type === 'deck' ? 'study-pack' : route.type === 'visual-review' ? 'visuals'
+    : ['exam', 'smart-study', 'speed-review', 'shared', 'community-class', 'processing', 'flagged', 'mistakes'].includes(route.type) ? route.type : null;
+  useAdminScreenTime(!authLoading && hydrated && !needsStudyOnboarding && !recoveryMode ? user?.id : undefined, trackedScreen);
+
+  useEffect(() => {
+    void syncRevenueCatUser(user?.id ?? null);
+  }, [user?.id]);
 
   const openDeck = useCallback((deck: StudyPack, tool?: StudyTool) => {
     setRoute({ type: 'deck', deckId: deck.id, tool });
@@ -140,7 +155,7 @@ export function StudyBoltNavigator() {
           onCreateReview={createReview}
           onOpenFlagged={openFlagged}
           onOpenSpeedReview={(courseId) => openSpeedReview({ courseId })}
-          onImport={(asset, studyClass) => setRoute({ type: 'processing', asset, courseId: studyClass.id, courseName: studyClass.name })}
+          onImport={(assets, studyClass) => setRoute({ type: 'processing', assets, courseId: studyClass.id, courseName: studyClass.name })}
         />
       );
     }
@@ -163,20 +178,24 @@ export function StudyBoltNavigator() {
           onManageAccount={() => setRoute({ type: 'account' })}
           onOpenWidgets={() => setRoute({ type: 'widgets' })}
           onOpenLegal={() => setRoute({ type: 'legal' })}
+          onOpenAdmin={() => setRoute({ type: 'admin' })}
+          onOpenSupport={() => setRoute({ type: 'feedback' })}
+          onOpenPremium={() => setRoute(user ? { type: 'premium' } : { type: 'auth' })}
+          isAdmin={isAdmin}
         />
       );
     }
     return (
       <HomeScreen
         onOpenDeck={openDeck}
-        onImport={(asset) => setRoute({ type: 'processing', asset })}
+        onImport={(assets) => setRoute({ type: 'processing', assets })}
         onStartStudy={(mode) => setRoute({ type: 'smart-study', mode })}
         onOpenMistakes={() => setRoute({ type: 'mistakes' })}
         onOpenFlagged={openFlagged}
         onOpenPlanner={() => setTab('planner')}
       />
     );
-  }, [createReview, openDeck, openFlagged, openSpeedReview, plannerFocusDeckId, tab]);
+  }, [createReview, isAdmin, openDeck, openFlagged, openSpeedReview, plannerFocusDeckId, tab, user]);
 
   if (!hydrated || authLoading) {
     return (
@@ -211,6 +230,12 @@ export function StudyBoltNavigator() {
         />
       ) : null}
       {!showOnboarding && !showAccountOnboarding && route.type === 'widgets' ? <WidgetsScreen onBack={() => setRoute({ type: 'main' })} /> : null}
+      {!showOnboarding && !showAccountOnboarding && route.type === 'admin' ? (
+        user && isAdmin ? <AdminScreen key={user.id} onBack={() => setRoute({ type: 'main' })} />
+          : <Screen><Header title="Admin Center" onBack={() => setRoute({ type: 'main' })} /><Card><Text style={{ color: colors.text }}>Admin access is required to open this workspace.</Text></Card></Screen>
+      ) : null}
+      {!showOnboarding && !showAccountOnboarding && route.type === 'feedback' ? <FeedbackScreen key={user?.id ?? 'guest'} onBack={() => setRoute({ type: 'main' })} onRequireAuth={() => { setPendingRoute({ type: 'feedback' }); setRoute({ type: 'auth' }); }} /> : null}
+      {!showOnboarding && !showAccountOnboarding && route.type === 'premium' ? <PremiumScreen key={user?.id ?? 'guest'} onBack={() => setRoute({ type: 'main' })} onOpenLegal={() => setRoute({ type: 'legal' })} onRequireAuth={() => setRoute({ type: 'auth' })} /> : null}
       {showOnboarding ? <OnboardingScreen onComplete={finishOnboarding} onTrySample={trySampleFromOnboarding} /> : null}
       {!showOnboarding && !showAccountOnboarding && route.type === 'legal' ? <LegalScreen onBack={() => setRoute({ type: 'main' })} /> : null}
       {!showOnboarding && !showAccountOnboarding && route.type === 'reset-password' ? <ResetPasswordScreen onComplete={() => setRoute({ type: 'main' })} /> : null}
@@ -308,12 +333,16 @@ export function StudyBoltNavigator() {
       ) : null}
       {!showOnboarding && !showAccountOnboarding && route.type === 'processing' ? (
         <ProcessingScreen
-          asset={route.asset}
+          assets={route.assets}
           courseId={route.courseId}
           courseName={route.courseName}
           onCancel={() => setRoute({ type: 'main' })}
           onSuccess={completeProcessing}
           onTrySample={openSample}
+          onRequireAuth={() => {
+            setPendingRoute(route);
+            setRoute({ type: 'auth' });
+          }}
         />
       ) : null}
       {!showOnboarding && !showAccountOnboarding && route.type !== 'processing' && route.type !== 'auth' && route.type !== 'widgets' ? <StudyPackGenerationProgress /> : null}

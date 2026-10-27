@@ -92,7 +92,14 @@ export function createShareableContent(deck: StudyPack): SharedStudyPackContent 
     notes: deck.notes.map(shareableNote),
     detailedNotes: detailedNotes.map(shareableNote),
     flashcards: deck.flashcards.map((card) => {
-      const { confidence: _privateProgress, ...studyCard } = card;
+      const {
+        confidence: _privateProgress,
+        imageUrl: _privateImageUrl,
+        imagePath: _privateImagePath,
+        sourceSlide: _privateSourceSlide,
+        visualId: _privateVisualId,
+        ...studyCard
+      } = card;
       return { ...studyCard, source: safeSource(card.source) };
     }),
     quiz: deck.quiz.map((question) => ({

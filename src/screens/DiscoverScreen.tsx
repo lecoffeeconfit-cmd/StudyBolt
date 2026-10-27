@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { CommunitySetCard } from '../components/CommunitySetCard';
+import { SubjectIcon } from '../components/SubjectIcon';
 import { Card, Header, Icon, Pill, Screen } from '../components/ui';
 import type { CommunityClass, DiscoverSort, DiscoverStudySet, StudyPack } from '../models';
 import { useStudyBolt } from '../StudyBoltContext';
@@ -195,7 +196,7 @@ function ClassCard({ studyClass, onPress }: { studyClass: CommunityClass; onPres
   const { colors } = useStudyBolt();
   return (
     <Card onPress={onPress} style={[styles.classCard, styles.flatCard]}>
-      <View style={[styles.classIcon, { backgroundColor: colors.mintSoft }]}><Icon name="school-outline" size={24} color={colors.mint} /></View>
+      <SubjectIcon subject={`${studyClass.subject} ${studyClass.courseName} ${studyClass.courseCode}`} size={47} />
       <View style={styles.classCopy}>
         <View style={styles.classTitleRow}><Text style={[styles.classCode, { color: colors.text }]}>{studyClass.courseCode}</Text>{studyClass.joined ? <Pill label="Joined" tone="mint" /> : null}</View>
         <Text style={[styles.className, { color: colors.textSecondary }]}>{studyClass.courseName}</Text>
@@ -215,7 +216,7 @@ function SharedList({ decks, query, onOpenDeck }: { decks: StudyPack[]; query: s
     <View style={styles.list}>
       {filtered.map((deck) => (
         <Card key={deck.id} onPress={() => onOpenDeck(deck)} style={[styles.sharedCard, styles.flatCard]}>
-          <View style={[styles.sharedIcon, { backgroundColor: colors.purpleSoft }]}><Text style={styles.sharedEmoji}>{deck.emoji}</Text></View>
+          <SubjectIcon subject={deck.courseName} emoji={deck.emoji} size={44} />
           <View style={styles.classCopy}><Text numberOfLines={1} style={[styles.classCode, { color: colors.text }]}>{deck.title}</Text><Text style={[styles.className, { color: colors.textSecondary }]}>{deck.courseName}</Text><Text style={[styles.classMeta, { color: colors.textMuted }]}>{deck.flashcards.length + deck.notes.length} items · Your own copy</Text></View>
           <Icon name="chevron-right" color={colors.textMuted} />
         </Card>
@@ -246,7 +247,6 @@ const styles = StyleSheet.create({
   retry: { minHeight: 38, borderRadius: 12, justifyContent: 'center', paddingHorizontal: 15, marginTop: 13 },
   retryText: { fontSize: 10, fontWeight: '900' },
   classCard: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12 },
-  classIcon: { width: 47, height: 47, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   classCopy: { flex: 1, minWidth: 0 },
   classTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   classCode: { flexShrink: 1, fontSize: 14, fontWeight: '900' },
@@ -260,7 +260,5 @@ const styles = StyleSheet.create({
   moreButton: { alignSelf: 'center', minHeight: 42, borderRadius: 14, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 17, marginTop: 15 },
   moreText: { fontSize: 11, fontWeight: '900' },
   sharedCard: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 13 },
-  sharedIcon: { width: 47, height: 47, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
-  sharedEmoji: { fontSize: 23 },
   flatCard: { shadowOpacity: 0, elevation: 0 },
 });

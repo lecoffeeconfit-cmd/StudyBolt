@@ -82,6 +82,11 @@ export interface Flashcard {
   explanation?: string;
   confidence: FlashcardConfidence;
   source: SourceReference;
+  /** Optional visual support. Text-only cards remain unchanged. */
+  imageUrl?: string;
+  imagePath?: string;
+  sourceSlide?: number;
+  visualId?: string;
 }
 
 export interface QuizQuestion {
@@ -230,6 +235,8 @@ export interface StudyPack {
   };
   /** Local-only source file reference. Never included in shared content. */
   originalUri?: string;
+  /** Original filenames when this Study Pack combines multiple presentations. */
+  sourceFileNames?: string[];
   visuals?: VisualKnowledge[];
   visualSummary?: VisualProcessingSummary;
   sharedFromToken?: string;
@@ -246,6 +253,9 @@ export interface VisualKnowledge {
   imageHash: string;
   imageReference?: string;
   imageDataUrl?: string;
+  /** Private Supabase Storage path and short-lived display URL when available. */
+  imagePath?: string;
+  imageUrl?: string;
   imageWidth?: number;
   imageHeight?: number;
   imageX?: number;
@@ -278,6 +288,7 @@ export interface VisualProcessingSummary {
   totalNativeTables?: number;
   totalNativeCharts?: number;
   decorativeImagesIgnored: number;
+  duplicateImagesIgnored?: number;
   nativeVisualsResolved: number;
   accessibilityVisualsResolved: number;
   ocrVisualsResolved: number;
@@ -305,7 +316,7 @@ export interface SharedStudyPackContent {
   quickReview: string;
   notes: NoteBlock[];
   detailedNotes: NoteBlock[];
-  flashcards: Array<Omit<Flashcard, 'confidence'>>;
+  flashcards: Array<Omit<Flashcard, 'confidence' | 'imageUrl' | 'imagePath' | 'sourceSlide' | 'visualId'>>;
   quiz: QuizQuestion[];
 }
 
@@ -419,7 +430,7 @@ export interface AiTutorResponse {
 export interface AiVisualAnalysisRequest {
   documentId: string;
   visualId: string;
-  imageDataUrl: string;
+  imageDataUrl?: string;
   slideNumber: number;
   slideTitle: string;
   slideText?: string;
@@ -438,6 +449,13 @@ export interface AiVisualAnalysis {
   concepts: string[];
   relationships: string[];
   studyRelevance: string;
+  confidence: number;
+}
+
+export interface AiVisualCardSuggestion {
+  question: string;
+  answer: string;
+  concept: string;
   confidence: number;
 }
 

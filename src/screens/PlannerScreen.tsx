@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Animated, Platform, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 
 import { Card, Header, Icon, Pill, PrimaryButton, ProgressBar, Screen, SectionHeader } from '../components/ui';
+import { SubjectIcon } from '../components/SubjectIcon';
 import type { IconName } from '../components/ui';
 import { useStudyBolt } from '../StudyBoltContext';
 import type { StudyModality, StudyPack, StudyPlan, StudyScope } from '../models';
@@ -250,7 +251,7 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
             const selected = state.plan.scope.id === id;
             return (
               <Pressable key={id} onPress={() => applyPlan({ type: state.plan.scope.type, id })} style={[styles.scopeChoice, { backgroundColor: selected ? colors.primarySoft : colors.card, borderColor: selected ? colors.primary : colors.border }]}>
-                <View style={[styles.scopeIcon, { backgroundColor: `${item.color}20` }]}><Text style={styles.scopeEmoji}>{item.emoji}</Text></View>
+                <SubjectIcon subject={'courseName' in item ? item.courseName : item.name} emoji={item.emoji} size={40} />
                 <View style={{ flex: 1 }}>
                   <Text numberOfLines={1} style={[styles.scopeTitle, { color: colors.text }]}>{label}</Text>
                   <Text style={[styles.scopeDetail, { color: colors.textMuted }]}>{detail}</Text>
@@ -476,8 +477,6 @@ const styles = StyleSheet.create({
   segmentText: { fontSize: 12, fontWeight: '800' },
   choiceList: { gap: 8, marginTop: 10 },
   scopeChoice: { minHeight: 62, borderRadius: 16, borderWidth: 1, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 11 },
-  scopeIcon: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  scopeEmoji: { fontSize: 21 },
   scopeTitle: { fontSize: 13, fontWeight: '800' },
   scopeDetail: { fontSize: 10, marginTop: 3 },
   examModeCard: { padding: 15 },

@@ -7,17 +7,23 @@ import { useReducedMotion } from '../hooks/useReducedMotion';
 import { useStudyBolt } from '../StudyBoltContext';
 import type { ImportAsset, StudyPack } from '../models';
 import { documentIcon, documentTypeLabel, getImportDocumentType } from '../services/documentTypes';
-import { processDocument, type DocumentProcessPhase, StudyBoltProcessingError, validateImport } from '../services/documentProcessor';
+import { processDocument, type DocumentProcessPhase, StudyBoltProcessingError, validateImport, validateImportBatch } from '../services/documentProcessor';
+import { combineImportedPowerPoints } from '../services/studyPack';
 import { useAuth } from '../AuthContext';
 
-export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSuccess, onTrySample }: { asset: ImportAsset; courseId?: string; courseName?: string; onCancel: () => void; onSuccess: (deck: StudyPack) => void; onTrySample: () => void }) {
+export function ProcessingScreen({ assets, courseId, courseName, onCancel, onSuccess, onTrySample, onRequireAuth }: { assets: ImportAsset[]; courseId?: string; courseName?: string; onCancel: () => void; onSuccess: (deck: StudyPack) => void; onTrySample: () => void; onRequireAuth: () => void }) {
   const { colors } = useStudyBolt();
   const { getAccessToken } = useAuth();
   const reducedMotion = useReducedMotion();
   const insets = useSafeAreaInsets();
+  const [processedPacks, setProcessedPacks] = useState<StudyPack[]>([]);
+  const processedPacksRef = useRef<StudyPack[]>([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const asset: ImportAsset = assets[currentIndex] ?? assets[0] ?? { name: 'study material', uri: '' };
   const importDocumentType = getImportDocumentType(asset.name, asset.mimeType);
   const importLabel = importDocumentType ? documentTypeLabel(importDocumentType) : 'document';
   const [error, setError] = useState<string | null>(null);
+  const [authRequired, setAuthRequired] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
   const [className, setClassName] = useState(courseName ?? '');
   const [started, setStarted] = useState(Boolean(courseName));
@@ -45,12 +51,16 @@ export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSucc
     setClassName(courseName ?? '');
     setStarted(Boolean(courseName));
     setError(null);
+    setAuthRequired(false);
     setNameError(null);
     setAttempt(0);
     startedAt.current = courseName ? Date.now() : null;
     setElapsedSeconds(0);
     setPhase('validating');
-  }, [asset, courseName]);
+    setProcessedPacks([]);
+    processedPacksRef.current = [];
+    setCurrentIndex(0);
+  }, [assets, courseName]);
 
   useEffect(() => {
     if (!started || error || !startedAt.current) return;
@@ -66,21 +76,44 @@ export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSucc
     if (!started) return;
     let mounted = true;
     try {
+      validateImportBatch(assets);
       validateImport(asset);
       void getAccessToken()
-        // Uploads are public guest-safe; a failed/expired auth refresh must not
-        // prevent the document request from reaching the processor.
-        .catch(() => null)
-        .then((accessToken) => processDocument(asset, className.trim(), accessToken, (nextPhase) => {
-          if (mounted) setPhase(nextPhase);
-        }))
+        .then((accessToken) => {
+          if (!accessToken) {
+            if (mounted) {
+              setAuthRequired(true);
+              setError('Sign in to securely process and save this study material.');
+            }
+            return undefined;
+          }
+          return processDocument(asset, className.trim(), accessToken, (nextPhase) => {
+            if (mounted) setPhase(nextPhase);
+          });
+        })
         .then((deck) => {
-          if (!mounted) return;
-          onSuccess({
+          if (!mounted || !deck) return;
+          const preparedDeck = {
             ...deck,
             ...(courseId ? { courseId } : {}),
             ...(className.trim() ? { courseName: className.trim() } : {}),
-          });
+          };
+          const completedPacks = [...processedPacksRef.current, preparedDeck];
+          processedPacksRef.current = completedPacks;
+          setProcessedPacks(completedPacks);
+          if (currentIndex + 1 < assets.length) {
+            setCurrentIndex(currentIndex + 1);
+            setPhase('validating');
+            return;
+          }
+          const finalDeck = completedPacks.length === 1
+            ? preparedDeck
+            : combineImportedPowerPoints(
+              completedPacks,
+              courseId ?? preparedDeck.courseId,
+              className.trim() || courseName || preparedDeck.courseName,
+            );
+          onSuccess(finalDeck);
         })
         .catch((reason: unknown) => {
           if (!mounted) return;
@@ -96,10 +129,11 @@ export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSucc
     return () => {
       mounted = false;
     };
-  }, [asset, attempt, className, courseId, getAccessToken, onSuccess, started]);
+  }, [assets, asset, attempt, className, courseId, courseName, currentIndex, getAccessToken, onRequireAuth, onSuccess, started]);
 
   const retryProcessing = () => {
     setError(null);
+    setAuthRequired(false);
     startedAt.current = Date.now();
     setElapsedSeconds(0);
     setPhase('validating');
@@ -113,6 +147,13 @@ export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSucc
       setNameError('Add a class name to continue.');
       return;
     }
+    try {
+      validateImportBatch(assets);
+    } catch (reason) {
+      const message = reason instanceof StudyBoltProcessingError ? reason.userMessage : 'Choose valid PowerPoint files and try again.';
+      setError(message);
+      return;
+    }
     setNameError(null);
     setError(null);
     startedAt.current = Date.now();
@@ -124,6 +165,7 @@ export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSucc
   const processingMessage = importDocumentType === 'powerpoint'
     ? 'Processing slides…'
     : importDocumentType === 'pdf' ? 'Processing your PDF…' : 'Processing your notes…';
+  const allSourcesProcessed = assets.length > 1 && processedPacks.length === assets.length;
   return (
     <KeyboardAvoidingView style={[styles.page, { backgroundColor: colors.background, paddingTop: insets.top + 8, paddingBottom: insets.bottom + 20 }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.topBar}>
@@ -147,13 +189,17 @@ export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSucc
         {error ? (
           <>
             <Text style={[styles.title, { color: colors.text }]}>We couldn’t build that Study Pack</Text>
-            <Text style={[styles.description, { color: colors.textSecondary }]}>{error}</Text>
+            <Text style={[styles.description, { color: colors.textSecondary }]}>{assets.length > 1 && processedPacks.length > 0 && !allSourcesProcessed ? `${error} ${processedPacks.length} of ${assets.length} PowerPoints are ready; retry continues with this presentation.` : error}</Text>
             <View style={[styles.fileCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <Icon name={importDocumentType ? documentIcon(importDocumentType) : 'file-document-outline'} color={colors.primary} />
               <Text numberOfLines={1} style={[styles.fileName, { color: colors.text }]}>{asset.name}</Text>
               <Icon name="shield-check-outline" color={colors.mint} />
             </View>
-            <PrimaryButton label="Try again" icon="refresh" onPress={retryProcessing} style={styles.action} />
+            {allSourcesProcessed
+              ? <PrimaryButton label="Choose fewer presentations" icon="layers-triple-outline" onPress={onCancel} style={styles.action} />
+              : authRequired
+                ? <PrimaryButton label="Sign in to continue" icon="account-outline" onPress={onRequireAuth} style={styles.action} />
+                : <PrimaryButton label={assets.length > 1 ? 'Retry this PowerPoint' : 'Try again'} icon="refresh" onPress={retryProcessing} style={styles.action} />}
             <Pressable onPress={onTrySample} style={styles.secondaryAction}>
               <Text style={[styles.secondaryText, { color: colors.primary }]}>Explore the sample Study Pack</Text>
             </Pressable>
@@ -164,12 +210,25 @@ export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSucc
         ) : !started ? (
           <>
             <Text style={[styles.title, { color: colors.text }]}>Name this class</Text>
-            <Text style={[styles.description, { color: colors.textSecondary }]}>Your {importLabel} will be turned into one organized Study Pack inside this class.</Text>
-            <View style={[styles.fileCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Icon name={importDocumentType ? documentIcon(importDocumentType) : 'file-document-outline'} color={colors.primary} />
-              <Text numberOfLines={1} style={[styles.fileName, { color: colors.text }]}>{asset.name}</Text>
-              <Icon name="shield-check-outline" color={colors.mint} />
-            </View>
+            <Text style={[styles.description, { color: colors.textSecondary }]}>{assets.length > 1 ? `${assets.length} PowerPoints will become one integrated Study Pack with connected notes, recall cards, and mixed practice.` : `Your ${importLabel} will be turned into one organized Study Pack inside this class.`}</Text>
+            {assets.length > 1 ? (
+              <View style={[styles.selectedFilesCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Text style={[styles.selectedFilesTitle, { color: colors.textSecondary }]}>PRESENTATIONS IN THIS STUDY SET</Text>
+                {assets.map((item, index) => (
+                  <View key={`${item.uri}-${index}`} style={styles.selectedFileRow}>
+                    <Icon name="microsoft-powerpoint" size={16} color={colors.primary} />
+                    <Text numberOfLines={1} style={[styles.selectedFileName, { color: colors.text }]}>{item.name}</Text>
+                    <Text style={[styles.selectedFileIndex, { color: colors.textMuted }]}>{index + 1}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <View style={[styles.fileCard, { backgroundColor: colors.card, borderColor: colors.border }] }>
+                <Icon name={importDocumentType ? documentIcon(importDocumentType) : 'file-document-outline'} color={colors.primary} />
+                <Text numberOfLines={1} style={[styles.fileName, { color: colors.text }]}>{asset.name}</Text>
+                <Icon name="shield-check-outline" color={colors.mint} />
+              </View>
+            )}
             <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Class name</Text>
             <View style={[styles.inputWrap, { backgroundColor: colors.card, borderColor: nameError ? colors.danger : colors.border }]}>
               <Icon name="school-outline" size={19} color={colors.textMuted} />
@@ -186,15 +245,15 @@ export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSucc
               />
             </View>
             {nameError ? <Text style={[styles.nameError, { color: colors.danger }]}>{nameError}</Text> : null}
-            <PrimaryButton label="Build my Study Pack" icon="creation" onPress={startProcessing} style={styles.action} />
+            <PrimaryButton label={assets.length > 1 ? 'Build integrated Study Pack' : 'Build my Study Pack'} icon="creation" onPress={startProcessing} style={styles.action} />
             <Pressable onPress={onCancel} style={styles.secondaryAction}>
               <Text style={[styles.secondaryText, { color: colors.textSecondary }]}>Choose another file</Text>
             </Pressable>
           </>
         ) : (
           <>
-            <Text style={[styles.title, { color: colors.text }]}>Building your Study Pack</Text>
-            <Text style={[styles.description, { color: colors.textSecondary }]}>We’re securely extracting your source once. Your Study Pack will open as soon as that source is ready.</Text>
+            <Text style={[styles.title, { color: colors.text }]}>{assets.length > 1 ? 'Building your integrated Study Pack' : 'Building your Study Pack'}</Text>
+            <Text style={[styles.description, { color: colors.textSecondary }]}>{assets.length > 1 ? `Processing presentation ${currentIndex + 1} of ${assets.length} in order. We’ll combine their topics into one source-linked set of notes, recall cards, and mixed practice.` : 'We’re securely extracting your source once. Your Study Pack will open as soon as that source is ready.'}</Text>
             <View accessibilityLiveRegion="polite" style={[styles.activityCard, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow }]}>
               <View style={styles.activityHeader}>
                 <View style={[styles.stageIcon, { backgroundColor: colors.goldSoft }]}><ActivityIndicator size="small" color={colors.goldText} /></View>
@@ -205,10 +264,27 @@ export function ProcessingScreen({ asset, courseId, courseName, onCancel, onSucc
                 <Text style={[styles.working, { color: colors.goldText }]}>Private</Text>
               </View>
               <View style={styles.activityRows}>
-                <ProcessingStepRow label="Check your source" detail="Format and size verified" state="done" colors={colors} />
+                <ProcessingStepRow label={assets.length > 1 ? 'Prepare the study set' : 'Check your source'} detail={assets.length > 1 ? `${assets.length} presentations selected · ${processedPacks.length} ready` : 'Format and size verified'} state="done" colors={colors} />
                 <ProcessingStepRow label={processingMessage} detail={phase === 'finalizing' ? 'Response received · finishing up' : 'Secure request in progress'} state={phase === 'finalizing' ? 'done' : 'active'} colors={colors} />
                 <ProcessingStepRow label="Build study materials" detail="Notes, cards, quiz, and audio follow next" state="queued" colors={colors} />
               </View>
+              {assets.length > 1 ? (
+                <View style={styles.sourceList}>
+                  {assets.map((item, index) => {
+                    const complete = index < processedPacks.length;
+                    const active = index === currentIndex;
+                    return (
+                      <View key={`${item.uri}-${index}`} style={styles.selectedFileRow}>
+                        <View style={[styles.sourceStatus, { backgroundColor: complete ? colors.mintSoft : active ? colors.goldSoft : colors.cardStrong }]}>
+                          {active && !complete ? <ActivityIndicator size="small" color={colors.goldText} /> : <Icon name={complete ? 'check' : 'clock-outline'} size={13} color={complete ? colors.mint : colors.textMuted} />}
+                        </View>
+                        <Text numberOfLines={1} style={[styles.selectedFileName, { color: colors.text }]}>{item.name}</Text>
+                        <Text style={[styles.selectedFileIndex, { color: complete ? colors.mint : colors.textMuted }]}>{complete ? 'Ready' : active ? 'Working' : 'Next'}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              ) : null}
             </View>
           </>
         )}
@@ -245,6 +321,13 @@ const styles = StyleSheet.create({
   activityRowDetail: { fontSize: 9, lineHeight: 12, marginTop: 1 },
   fileCard: { width: '100%', borderWidth: StyleSheet.hairlineWidth, borderRadius: 15, flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14, marginTop: 22 },
   fileName: { flex: 1, fontSize: 12, fontWeight: '700' },
+  selectedFilesCard: { width: '100%', borderWidth: StyleSheet.hairlineWidth, borderRadius: 15, gap: 8, padding: 14, marginTop: 22 },
+  selectedFilesTitle: { fontSize: 9, fontWeight: '900', letterSpacing: 0.7, marginBottom: 2 },
+  selectedFileRow: { minHeight: 24, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  selectedFileName: { flex: 1, minWidth: 0, fontSize: 11, fontWeight: '700' },
+  selectedFileIndex: { fontSize: 9, fontWeight: '800' },
+  sourceList: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(128, 145, 165, 0.24)', marginTop: 12, paddingTop: 10, gap: 7 },
+  sourceStatus: { width: 22, height: 22, borderRadius: 7, alignItems: 'center', justifyContent: 'center' },
   inputLabel: { alignSelf: 'flex-start', fontSize: 11, lineHeight: 14, fontWeight: '800', marginTop: 19, marginBottom: 7, marginLeft: 2 },
   inputWrap: { width: '100%', minHeight: 54, borderRadius: 15, borderWidth: 1, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 10 },
   input: { flex: 1, minWidth: 0, height: 52, fontSize: 14 },

@@ -6,6 +6,7 @@ import { initialState } from './data/mockStudyPacks';
 import type { ExamAttempt, FlaggedItemInput, LibrarySort, QuizQuestionCount, RetentionMode, StudyBoltState, StudyClass, StudyEventInput, StudyPack, StudyPackMaterial, StudyPlan, ThemePreference } from './models';
 import { getFlaggedItemId } from './models';
 import { useAuth } from './AuthContext';
+import { useAdminActivity } from './hooks/useAdminActivity';
 import { AUTOMATIC_STUDY_PACK_MATERIALS, generateStudyPackMaterial, STUDY_PACK_MATERIAL_LABELS, STUDY_PACK_MATERIAL_STAGES, StudyBoltProcessingError } from './services/documentProcessor';
 import { loadStudyBoltState, saveStudyBoltState } from './services/persistence';
 import { updateStudyBoltWidgets } from './services/widgets';
@@ -38,7 +39,7 @@ interface StudyBoltContextValue {
 const StudyBoltContext = createContext<StudyBoltContextValue | null>(null);
 
 export function StudyBoltProvider({ children }: { children: ReactNode }) {
-  const { getAccessToken } = useAuth();
+  const { getAccessToken, user } = useAuth();
   const systemScheme = useColorScheme();
   const [state, setState] = useState<StudyBoltState>(initialState);
   const [hydrated, setHydrated] = useState(false);
@@ -47,6 +48,7 @@ export function StudyBoltProvider({ children }: { children: ReactNode }) {
   const materialQueues = useRef(new Map<string, StudyPackMaterial[]>());
   const deckSnapshots = useRef(new Map<string, StudyPack>());
   const stateRef = useRef(state);
+  useAdminActivity(user?.id, state.activityEvents, hydrated);
 
   useEffect(() => {
     stateRef.current = state;

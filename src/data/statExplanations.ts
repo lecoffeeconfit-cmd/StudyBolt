@@ -259,6 +259,16 @@ const STAT_EXPLANATIONS: Record<string, StatExplanation> = {
     calculation: 'Events no more than 35 minutes apart are grouped into a session; session minutes are then averaged.',
     whyItMatters: 'Compare this with your ideal session length and fatigue signal to tune the size of study blocks.',
   },
+  'Study time change': {
+    description: 'How your recorded study time changed compared with the preceding seven-day window.',
+    calculation: 'Minutes in the last seven calendar days minus minutes in the previous seven days, divided by the previous total, then multiplied by 100. A comparison appears only when the previous window contains study time.',
+    whyItMatters: 'This describes workload, not learning quality. Compare it with quiz accuracy, recall, and your schedule before deciding whether to spend more time.',
+  },
+  'Days meeting your goal': {
+    description: 'How often your recorded study time reached your current daily goal during the last seven days.',
+    calculation: 'Each local calendar day is counted if its study minutes meet or exceed the daily goal you have set now. The same current goal is used for all seven days; today counts as soon as you reach it.',
+    whyItMatters: 'Use the pattern to set a manageable routine. If your goal recently changed, read this as a comparison against your new target rather than a record of the targets you had at the time.',
+  },
   'Longest session': {
     description: 'Your longest grouped study session.',
     calculation: 'Tracked events no more than 35 minutes apart are grouped, and the largest total duration is shown after at least three sessions.',
@@ -341,6 +351,10 @@ function insightFor(label: string, value: string, supporting: string): string {
     return `This insight is still building. ${supporting || 'Keep studying normally and it will appear when enough evidence is available.'}`;
   }
   const numeric = numericValue(value);
+  if (label === 'Study time change' && numeric !== null) {
+    const change = numeric > 0 ? `${Math.abs(numeric)}% more` : numeric < 0 ? `${Math.abs(numeric)}% less` : 'about the same amount of';
+    return `You recorded ${change} study time compared with the preceding seven days. More time is not automatically better; check your recall and quiz results alongside it.`;
+  }
   if (label === 'Material remaining' && numeric !== null) {
     return `You have about ${value} of weighted Study Pack activity left. ${asSentence(supporting)}`;
   }

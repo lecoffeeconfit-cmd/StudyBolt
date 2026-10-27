@@ -1,4 +1,7 @@
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2';
+import { effectiveStudyBoltPlan } from '../_shared/adminPolicy.ts';
+import { studyBoltLegalDocumentsApproved, studyBoltPrivacyPolicyUrl } from '../_shared/legal.ts';
+import { providerIdentity } from '../_shared/providerIdentity.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -8,12 +11,12 @@ const corsHeaders = {
 
 type PlanTier = 'free' | 'premium';
 type TutorDepth = 'quick' | 'normal' | 'deep';
-type TutorAction = 'explain' | 'teach' | 'quick-answer' | 'deep-dive' | 'simplify' | 'example' | 'quiz' | 'socratic' | 'ask' | 'teach-back' | 'important' | 'confuse' | 'visual-analysis' | 'grade-exam';
+type TutorAction = 'explain' | 'teach' | 'quick-answer' | 'deep-dive' | 'simplify' | 'example' | 'quiz' | 'socratic' | 'ask' | 'teach-back' | 'important' | 'confuse' | 'visual-analysis' | 'visual-card' | 'grade-exam';
 
 interface TutorChunk { id: string; title: string; text: string; }
 interface ConversationTurn { role: 'user' | 'assistant'; content: string; }
 interface GradingItem { questionId: string; prompt: string; studentAnswer: string; expectedAnswer: string; explanation: string; concept: string; source: string; localPartialCredit: number; }
-interface VisualRequest { documentId: string; visualId: string; imageDataUrl: string; slideNumber: number; slideTitle: string; slideText?: string; previousSlideContext?: string; nextSlideContext?: string; accessibilityDescription?: string; ocrText?: string; subject?: string; }
+interface VisualRequest { documentId: string; visualId: string; imageDataUrl?: string; slideNumber: number; slideTitle: string; slideText?: string; previousSlideContext?: string; nextSlideContext?: string; accessibilityDescription?: string; ocrText?: string; subject?: string; }
 interface TutorRequest {
   action: TutorAction;
   question?: string;
@@ -37,11 +40,12 @@ interface AiConfig {
   soft_warning_ratio: number;
 }
 
-const ACTIONS = new Set<TutorAction>(['explain', 'teach', 'quick-answer', 'deep-dive', 'simplify', 'example', 'quiz', 'socratic', 'ask', 'teach-back', 'important', 'confuse', 'visual-analysis', 'grade-exam']);
+const ACTIONS = new Set<TutorAction>(['explain', 'teach', 'quick-answer', 'deep-dive', 'simplify', 'example', 'quiz', 'socratic', 'ask', 'teach-back', 'important', 'confuse', 'visual-analysis', 'visual-card', 'grade-exam']);
 const DEPTHS = new Set<TutorDepth>(['quick', 'normal', 'deep']);
 const MAX_CONTEXT_CHARS = 9_500;
 const MAX_QUESTION_CHARS = 600;
 const MAX_CONVERSATION_CHARS = 3_000;
+const MAX_TUTOR_BODY_BYTES = 4 * 1024 * 1024;
 const DEPTH_CAPS: Record<TutorDepth, number> = { quick: 300, normal: 600, deep: 1_000 };
 
 Deno.serve(async (request) => {
@@ -64,35 +68,47 @@ Deno.serve(async (request) => {
   if (configError || !configRow) return json({ error: 'StudyBolt AI configuration is unavailable.' }, 503);
   const config = normalizeConfig(configRow as Record<string, unknown>);
 
-  const plan: PlanTier = user.app_metadata?.subscription_tier === 'premium' ? 'premium' : 'free';
+  const plan: PlanTier = effectiveStudyBoltPlan(user.app_metadata);
   const period = monthlyPeriod(user, new Date());
   const monthlyLimit = plan === 'premium' ? config.premium_interaction_limit : config.free_interaction_limit;
   if (request.method === 'GET') return json({ quota: await currentQuota(admin, user.id, period, plan, monthlyLimit, config.soft_warning_ratio) });
 
+  if (!studyBoltPrivacyPolicyUrl() || !studyBoltLegalDocumentsApproved()) {
+    return json({ error: 'Secure AI answers are paused until the StudyBolt privacy policy is complete and approved.' }, 503);
+  }
+
   let body: TutorRequest;
-  try { body = await request.json() as TutorRequest; } catch { return json({ error: 'That question could not be read. Please try again.' }, 400); }
+  let bodyBytes: Uint8Array | null;
+  try { bodyBytes = await readBoundedBody(request, MAX_TUTOR_BODY_BYTES); } catch { return json({ error: 'That question could not be read. Please try again.' }, 400); }
+  if (!bodyBytes) return json({ error: 'That Tutor request is too large.' }, 413);
+  try { body = JSON.parse(new TextDecoder().decode(bodyBytes)) as TutorRequest; } catch { return json({ error: 'That question could not be read. Please try again.' }, 400); }
   const validationError = validateTutorRequest(body);
   if (validationError) return json({ error: validationError }, 400);
   const depth: TutorDepth = DEPTHS.has(body.depth ?? 'normal') ? body.depth ?? 'normal' : 'normal';
-  const maxOutputTokens = body.action === 'grade-exam' ? 1_800 : body.action === 'visual-analysis' ? 900 : DEPTH_CAPS[depth];
+  const maxOutputTokens = body.action === 'grade-exam' ? 1_800 : body.action === 'visual-analysis' ? 900 : body.action === 'visual-card' ? 450 : DEPTH_CAPS[depth];
   const requestId = crypto.randomUUID();
-  if (body.action === 'visual-analysis') {
+  if (body.action === 'visual-analysis' || body.action === 'visual-card') {
     const { data: ownedVisual, error: ownedVisualError } = await admin.from('studybolt_visuals')
-      .select('image_hash, analysis_json')
+      .select('image_hash, image_path, analysis_json')
       .eq('document_id', body.visual!.documentId)
       .eq('visual_id', body.visual!.visualId)
       .eq('owner_user_id', user.id)
       .maybeSingle();
     if (ownedVisualError || !ownedVisual) return json({ error: 'This visual is no longer available for analysis.' }, 403);
-    const submittedHash = await hashDataUrl(body.visual!.imageDataUrl);
+    const submittedHash = body.visual!.imageDataUrl ? await hashDataUrl(body.visual!.imageDataUrl) : String(ownedVisual.image_hash ?? '');
     if (!submittedHash || submittedHash !== ownedVisual.image_hash) return json({ error: 'The selected visual could not be verified.' }, 403);
-    const { data: cachedRows } = await admin.from('studybolt_visuals')
+    if (!body.visual!.imageDataUrl && typeof ownedVisual.image_path === 'string' && ownedVisual.image_path) {
+      const { data: signed } = await admin.storage.from('studybolt-visuals').createSignedUrl(ownedVisual.image_path, 60);
+      if (signed?.signedUrl) body.visual!.imageDataUrl = signed.signedUrl;
+    }
+    if (!body.visual!.imageDataUrl) return json({ error: 'This visual preview is no longer available.' }, 410);
+    const { data: cachedRows } = body.action === 'visual-analysis' ? await admin.from('studybolt_visuals')
       .select('analysis_json')
       .eq('owner_user_id', user.id)
       .eq('image_hash', submittedHash)
       .eq('status', 'resolved_ai')
       .not('analysis_json', 'is', null)
-      .limit(1);
+      .limit(1) : { data: null };
     const cachedAnalysis = Array.isArray(cachedRows) && cachedRows[0] && typeof cachedRows[0].analysis_json === 'object'
       ? normalizeVisualResponse(cachedRows[0].analysis_json as Record<string, unknown>)
       : null;
@@ -100,12 +116,14 @@ Deno.serve(async (request) => {
       return json({ kind: 'visual-analysis', analysis: cachedAnalysis, cached: true, quota: await currentQuota(admin, user.id, period, plan, monthlyLimit, config.soft_warning_ratio) });
     }
   }
-  const aiInput = body.action === 'visual-analysis' ? buildVisualInput(body.visual!) : buildTutorInput(body);
-  const estimatedInputTokens = Math.min(body.action === 'visual-analysis' ? 6_000 : 4_200, Math.max(160, Math.ceil(aiInput.length / 4)));
+  const isVisualAction = body.action === 'visual-analysis' || body.action === 'visual-card';
+  const aiInput = isVisualAction ? buildVisualInput(body.visual!) : buildTutorInput(body);
+  const estimatedInputTokens = Math.min(isVisualAction ? 6_000 : 4_200, Math.max(160, Math.ceil(aiInput.length / 4)));
   const estimatedCost = estimateCost(config, estimatedInputTokens, maxOutputTokens);
   // Reclaim reservations from interrupted/terminated requests before enforcing
   // concurrency and budget limits. The database function is service-role only.
-  await admin.rpc('release_stale_ai_reservations', { p_user_id: user.id });
+  const { error: staleReservationError } = await admin.rpc('release_stale_ai_reservations', { p_user_id: null });
+  if (staleReservationError) return json({ error: 'StudyBolt could not check AI access right now.' }, 503);
   const { data: reservation, error: reservationError } = await admin.rpc('reserve_ai_cloud_usage', {
     p_user_id: user.id, p_request_id: requestId, p_period_start: period.start, p_period_end: period.end,
     p_plan_tier: plan, p_estimated_cost_usd: estimatedCost,
@@ -114,31 +132,49 @@ Deno.serve(async (request) => {
   if (!reservation.allowed) return budgetError(reservation, plan, monthlyLimit);
 
   const reservationId = String(reservation.reservationId ?? '');
+  if (!reservationId) return json({ error: 'StudyBolt could not secure this AI request.' }, 503);
   const release = async () => { if (reservationId) await admin.rpc('release_ai_cloud_usage', { p_reservation_id: reservationId, p_request_id: requestId }); };
-  try {
-    const response = await fetch('https://api.openai.com/v1/responses', {
-      method: 'POST', headers: { Authorization: `Bearer ${openAiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: config.model || 'gpt-5.6-luna', store: false, safety_identifier: user.id,
-        prompt_cache_key: user.id,
-        reasoning: { effort: depth === 'quick' ? 'none' : (config.default_reasoning || 'low') },
-        max_output_tokens: maxOutputTokens, instructions: tutorInstructions(body.action, depth), input: body.action === 'visual-analysis' ? visualInput(body.visual!) : aiInput,
-        text: { verbosity: depth === 'deep' ? 'medium' : 'low', format: responseFormat(body.action) },
-      }),
-      signal: AbortSignal.timeout(25_000),
-    });
-    if (!response.ok) { await release(); return json({ error: 'StudyBolt couldn’t answer that right now.' }, 502); }
-
-    const payload = await response.json() as Record<string, unknown>;
+  const recordUsage = async (payload: Record<string, unknown>, metadata: Record<string, unknown>) => {
     const usage = readUsage(payload);
     const actualCost = usage.inputTokens || usage.outputTokens ? calculateActualCost(config, usage) : estimatedCost;
-    await admin.rpc('reconcile_ai_cloud_usage', {
+    const { data, error } = await admin.rpc('reconcile_ai_cloud_usage', {
       p_reservation_id: reservationId, p_request_id: requestId, p_action: body.action, p_route_used: 'cloud',
       p_model: config.model || 'gpt-5.6-luna', p_depth: depth, p_input_tokens: usage.inputTokens,
       p_cached_input_tokens: usage.cachedInputTokens, p_output_tokens: usage.outputTokens,
       p_reasoning_tokens: usage.reasoningTokens, p_estimated_cost_usd: estimatedCost,
-      p_actual_cost_usd: actualCost, p_metadata: { source: 'studybolt-ai-tutor', channel: body.channel ?? 'text', contextChars: aiInput.length, ...(body.action === 'visual-analysis' ? { documentId: body.visual?.documentId, visualId: body.visual?.visualId, slideNumber: body.visual?.slideNumber } : {}) },
+      p_actual_cost_usd: actualCost, p_metadata: metadata,
     });
+    return !error && data === true;
+  };
+  let providerRequestStarted = false;
+  let usageReconciled = false;
+  try {
+    const providerUserId = await providerIdentity(user.id);
+    providerRequestStarted = true;
+    const response = await fetch('https://api.openai.com/v1/responses', {
+      method: 'POST', headers: { Authorization: `Bearer ${openAiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: config.model || 'gpt-5.6-luna', store: false, safety_identifier: providerUserId,
+        prompt_cache_key: providerUserId,
+        reasoning: { effort: depth === 'quick' ? 'none' : (config.default_reasoning || 'low') },
+        max_output_tokens: maxOutputTokens, instructions: tutorInstructions(body.action, depth), input: isVisualAction ? visualInput(body.visual!) : aiInput,
+        text: { verbosity: depth === 'deep' ? 'medium' : 'low', format: responseFormat(body.action) },
+      }),
+      signal: AbortSignal.timeout(25_000),
+    });
+    if (!response.ok) {
+      const reconciled = await recordUsage({}, { source: 'studybolt-ai-tutor', providerStatus: response.status, providerRejected: true });
+      if (!reconciled) return json({ error: 'StudyBolt could not record AI usage. Please try again later.' }, 503);
+      usageReconciled = true;
+      return json({ error: 'StudyBolt couldn’t answer that right now.' }, 502);
+    }
+
+    const payload = await response.json() as Record<string, unknown>;
+    const usage = readUsage(payload);
+    if (!(await recordUsage(payload, { source: 'studybolt-ai-tutor', channel: body.channel ?? 'text', contextChars: aiInput.length, ...(isVisualAction ? { documentId: body.visual?.documentId, visualId: body.visual?.visualId, slideNumber: body.visual?.slideNumber } : {}) }))) {
+      return json({ error: 'StudyBolt could not record AI usage. Please try again later.' }, 503);
+    }
+    usageReconciled = true;
     const outputText = extractOutputText(payload);
     const parsed = JSON.parse(outputText) as Record<string, unknown>;
     if (body.action === 'grade-exam') {
@@ -153,11 +189,22 @@ Deno.serve(async (request) => {
         .eq('document_id', body.visual!.documentId).eq('visual_id', body.visual!.visualId).eq('owner_user_id', user.id);
       return json({ kind: 'visual-analysis', analysis: visualAnalysis, quota: await currentQuota(admin, user.id, period, plan, monthlyLimit, config.soft_warning_ratio) });
     }
+    if (body.action === 'visual-card') {
+      const suggestion = normalizeVisualCardResponse(parsed);
+      if (!suggestion) throw new Error('Invalid visual card response');
+      return json({ kind: 'visual-card', suggestion, quota: await currentQuota(admin, user.id, period, plan, monthlyLimit, config.soft_warning_ratio) });
+    }
     const tutorResponse = normalizeTutorResponse(parsed as { kind?: string; answer?: string; quiz?: { question?: string; options?: string[]; correctIndex?: number; explanation?: string } }, body.action);
     if (!tutorResponse) throw new Error('Invalid tutor response');
     return json({ ...tutorResponse, quota: await currentQuota(admin, user.id, period, plan, monthlyLimit, config.soft_warning_ratio) });
   } catch {
-    await release();
+    if (providerRequestStarted && !usageReconciled) {
+      if (!(await recordUsage({}, { source: 'studybolt-ai-tutor', providerRequestFailed: true }))) {
+        return json({ error: 'StudyBolt could not record AI usage. Please try again later.' }, 503);
+      }
+    } else if (!providerRequestStarted) {
+      await release();
+    }
     return json({ error: 'StudyBolt couldn’t answer that right now.' }, 502);
   }
 });
@@ -172,7 +219,7 @@ function validateTutorRequest(body: TutorRequest): string | null {
     if (!body.gradingItems.every(validGradingItem)) return 'One or more open answers could not be graded.';
     return null;
   }
-  if (body.action === 'visual-analysis') return validateVisualRequest(body.visual);
+  if (body.action === 'visual-analysis' || body.action === 'visual-card') return validateVisualRequest(body.visual);
   if (!body.context || typeof body.context !== 'object') return 'The current study context is missing.';
   if (!cleanString(body.context.studySetTitle, 180) || !cleanString(body.context.subject, 120)) return 'The Study Pack context is incomplete.';
   if (!validChunk(body.context.currentChunk)) return 'StudyBolt could not identify the current section.';
@@ -189,7 +236,7 @@ function validGradingItem(value: GradingItem): boolean {
 function validateVisualRequest(value: VisualRequest | undefined): string | null {
   if (!value || typeof value !== 'object') return 'The visual context is missing.';
   if (!cleanString(value.documentId, 80) || !cleanString(value.visualId, 120)) return 'The selected visual is missing its document reference.';
-  if (!/^data:image\/(jpeg|jpg|png|webp|gif);base64,[A-Za-z0-9+/=]+$/i.test(value.imageDataUrl) || value.imageDataUrl.length > 3_200_000) return 'The selected visual could not be read.';
+  if (value.imageDataUrl && (!/^data:image\/(jpeg|jpg|png|webp|gif);base64,[A-Za-z0-9+/=]+$/i.test(value.imageDataUrl) || value.imageDataUrl.length > 3_200_000)) return 'The selected visual could not be read.';
   if (!Number.isInteger(value.slideNumber) || value.slideNumber < 1) return 'The selected slide is invalid.';
   if (!cleanString(value.slideTitle, 240)) return 'The selected slide title is missing.';
   return null;
@@ -207,6 +254,11 @@ function tutorInstructions(action: TutorAction, depth: TutorDepth): string {
     'You are StudyBolt’s optional visual-study analyzer.',
     'Use the supplied image and limited slide context only. Do not invent labels or facts that are not visible or supported by the context.',
     'Describe only educationally useful information. If a label is unreadable, say so. Keep the structured result concise.',
+  ].join(' ');
+  if (action === 'visual-card') return [
+    'You create one concise, source-grounded visual flashcard for StudyBolt.',
+    'Use the supplied image and slide context only. The question should require looking at the image, and the answer must be supported by visible details or supplied text.',
+    'If the evidence is weak or the image is decorative, return low confidence. Never invent labels, relationships, or facts.',
   ].join(' ');
   return [
     'You are StudyBolt, a concise, encouraging tutor.',
@@ -237,7 +289,7 @@ function buildTutorInput(body: TutorRequest): string {
     example: 'Give one concrete example grounded in the supplied material.', quiz: 'Quiz the student on the current idea.',
     socratic: cleanString(body.question, MAX_QUESTION_CHARS) || 'Ask one guiding question that helps the student reason to the next step.',
     ask: cleanString(body.question, MAX_QUESTION_CHARS), 'teach-back': 'Evaluate the student explanation and name missing ideas or misconceptions.',
-    important: 'Identify the five most important ideas in this material.', confuse: 'Name the most likely confusion or contrast with nearby ideas.', 'visual-analysis': '', 'grade-exam': '',
+    important: 'Identify the five most important ideas in this material.', confuse: 'Name the most likely confusion or contrast with nearby ideas.', 'visual-analysis': '', 'visual-card': '', 'grade-exam': '',
   };
   const nearby = context.nearbyChunks.map((chunk) => `NEARBY — ${cleanString(chunk.title, 180)}\n${cleanString(chunk.text, 2_800)}`).join('\n\n');
   const examQuestion = context.currentQuestion
@@ -272,7 +324,7 @@ function visualInput(visual: VisualRequest) {
     role: 'user',
     content: [
       { type: 'input_text', text: buildVisualInput(visual) },
-      { type: 'input_image', image_url: visual.imageDataUrl, detail: 'low' },
+      { type: 'input_image', image_url: visual.imageDataUrl!, detail: 'low' },
     ],
   }];
 }
@@ -311,6 +363,19 @@ function responseFormat(action: TutorAction) {
         labels: { type: 'array', items: { type: 'string' }, maxItems: 30 }, concepts: { type: 'array', items: { type: 'string' }, maxItems: 20 },
         relationships: { type: 'array', items: { type: 'string' }, maxItems: 20 }, studyRelevance: { type: 'string' }, confidence: { type: 'number', minimum: 0, maximum: 1 },
       }, required: ['visualType', 'description', 'extractedText', 'labels', 'concepts', 'relationships', 'studyRelevance', 'confidence'] },
+  };
+  if (action === 'visual-card') return {
+    type: 'json_schema', name: 'studybolt_visual_card', strict: true,
+    schema: {
+      type: 'object', additionalProperties: false,
+      properties: {
+        question: { type: 'string' },
+        answer: { type: 'string' },
+        concept: { type: 'string' },
+        confidence: { type: 'number', minimum: 0, maximum: 1 },
+      },
+      required: ['question', 'answer', 'concept', 'confidence'],
+    },
   };
   return {
     type: 'json_schema', name: 'studybolt_tutor_response', strict: true,
@@ -386,6 +451,14 @@ function normalizeVisualResponse(value: Record<string, unknown>) {
   };
 }
 
+function normalizeVisualCardResponse(value: Record<string, unknown>) {
+  const question = cleanString(value.question, 500);
+  const answer = cleanString(value.answer, 900);
+  const concept = cleanString(value.concept, 180);
+  const confidence = Math.max(0, Math.min(1, decimalValue(value.confidence, 0)));
+  return question && answer && concept ? { question, answer, concept, confidence } : null;
+}
+
 function decodeImageDataUrl(value: string): Uint8Array | null {
   const match = value.match(/^data:image\/(?:jpeg|jpg|png|webp|gif);base64,([A-Za-z0-9+/=]+)$/i);
   if (!match) return null;
@@ -400,7 +473,9 @@ function decodeImageDataUrl(value: string): Uint8Array | null {
 async function hashDataUrl(value: string): Promise<string> {
   const bytes = decodeImageDataUrl(value);
   if (!bytes) return '';
-  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  const stableBytes = new Uint8Array(bytes.byteLength);
+  stableBytes.set(bytes);
+  const digest = await crypto.subtle.digest('SHA-256', stableBytes.buffer);
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
@@ -435,15 +510,44 @@ function monthlyPeriod(user: { created_at: string; app_metadata?: Record<string,
   const start = new Date(Date.UTC(year, month, anchorDay)); const end = new Date(Date.UTC(year, month + 1, anchorDay));
   return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
 }
-async function currentQuota(admin: ReturnType<typeof createClient>, userId: string, period: { start: string; end: string }, plan: PlanTier, limit: number, softWarningRatio: number) {
+async function currentQuota(admin: SupabaseClient<any>, userId: string, period: { start: string; end: string }, plan: PlanTier, limit: number, softWarningRatio: number) {
   const { data } = await admin.from('ai_usage_periods').select('interaction_count').eq('user_id', userId).eq('period_start', period.start).maybeSingle();
   const used = typeof data?.interaction_count === 'number' ? data.interaction_count : 0;
   return { used, limit, remaining: Math.max(limit - used, 0), periodStart: period.start, periodEnd: period.end, plan, softWarning: used / Math.max(1, limit) >= softWarningRatio };
 }
 function budgetError(reservation: Record<string, unknown>, plan: PlanTier, limit: number): Response {
   const reason = String(reservation.reason ?? 'limit');
-  const message = reason === 'cloud_budget' ? 'StudyBolt AI is taking a short budget break. Your saved StudyCast, device AI, and deterministic study plan still work.' : reason === 'monthly_limit' ? `You’ve used this month’s ${limit} StudyBolt AI interactions. Your saved StudyCast and study tools still work.` : reason === 'daily_limit' || reason === 'rolling_limit' ? 'StudyBolt AI needs a short pause before another request. Try again soon.' : reason === 'concurrency_limit' ? 'StudyBolt is finishing another AI request. Try again in a moment.' : 'StudyBolt AI is temporarily unavailable.';
-  const code = reason === 'monthly_limit' || reason === 'cloud_budget' ? reason : 'rate_limit';
+  const message = reason === 'cloud_budget' || reason === 'global_daily_budget' ? 'StudyBolt AI is taking a short budget break. Your saved StudyCast, device AI, and deterministic study plan still work.' : reason === 'monthly_limit' ? `You’ve used this month’s ${limit} StudyBolt AI interactions. Your saved StudyCast and study tools still work.` : reason === 'daily_limit' || reason === 'rolling_limit' || reason === 'global_daily_limit' || reason === 'global_concurrency_limit' ? 'StudyBolt AI needs a short pause before another request. Try again soon.' : reason === 'concurrency_limit' ? 'StudyBolt is finishing another AI request. Try again in a moment.' : 'StudyBolt AI is temporarily unavailable.';
+  const code = reason === 'monthly_limit' ? reason : reason === 'cloud_budget' || reason === 'global_daily_budget' ? 'cloud_budget' : 'rate_limit';
   return json({ error: message, code, quota: { used: Number(reservation.used ?? 0), limit: Number(reservation.limit ?? limit), remaining: Number(reservation.remaining ?? 0), periodStart: String(reservation.periodStart ?? ''), periodEnd: String(reservation.periodEnd ?? ''), plan } }, 429);
 }
 function json(payload: Record<string, unknown>, status = 200): Response { return new Response(JSON.stringify(payload), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }); }
+async function readBoundedBody(request: Request, limit: number): Promise<Uint8Array | null> {
+  const declaredLength = Number(request.headers.get('content-length'));
+  if (Number.isFinite(declaredLength) && declaredLength > limit) return null;
+  if (!request.body) return new Uint8Array();
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > limit) {
+        await reader.cancel();
+        return null;
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const body = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body;
+}

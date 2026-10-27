@@ -1,5 +1,25 @@
-# Uploads are available to guest users in the app. The processor does not
-# persist source files; add an edge rate limit or require a user JWT before
-# exposing it publicly in a production deployment.
+# The processor checks each bearer token with Supabase Auth itself, then
+# applies the same atomic per-user AI ledger as the tutor. Gateway JWT checks
+# stay disabled so current asymmetric signing keys work consistently.
 [functions.studybolt-process-document]
+verify_jwt = false
+
+# This function verifies the bearer token with Auth and checks live admin
+# membership itself, including projects using current asymmetric JWT keys.
+[functions.studybolt-admin]
+verify_jwt = false
+
+# This function verifies the user's bearer token with Auth before deleting
+# their account, including projects using asymmetric JWT signing keys.
+[functions.delete-account]
+verify_jwt = false
+
+# RevenueCat authenticates this endpoint with its request HMAC signature;
+# individual subscribers are resolved from the signed app_user_id in the body.
+[functions.revenuecat-webhook]
+verify_jwt = false
+
+# This endpoint validates the Supabase bearer token manually, then fetches the
+# matching user's current store entitlement through RevenueCat's secret API.
+[functions.studybolt-sync-subscription]
 verify_jwt = false

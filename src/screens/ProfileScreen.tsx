@@ -8,6 +8,8 @@ import { useStudyBolt } from '../StudyBoltContext';
 import type { RetentionMode, StudyType, ThemePreference } from '../models';
 import { learningEvidence } from '../data/learningScience';
 import { useAuth } from '../AuthContext';
+import { NarrationSettingsSheet, narrationLanguageLabel } from '../components/NarrationSettingsSheet';
+import { useNarrationPreferences } from '../hooks/useNarrationPreferences';
 import {
   DEFAULT_STUDY_TIMER_SETTINGS,
   loadStudyTimerSettings,
@@ -42,9 +44,10 @@ function retentionLabel(mode: RetentionMode): string {
   return mode === 'standard' ? 'Standard' : mode === 'fsrs' ? 'FSRS' : 'SM-2';
 }
 
-export function ProfileScreen({ onOpenOnboarding, onOpenAuth, onManageAccount, onOpenWidgets, onOpenLegal }: { onOpenOnboarding: () => void; onOpenAuth: () => void; onManageAccount: () => void; onOpenWidgets: () => void; onOpenLegal: () => void }) {
+export function ProfileScreen({ onOpenOnboarding, onOpenAuth, onManageAccount, onOpenWidgets, onOpenLegal, onOpenAdmin, onOpenSupport, onOpenPremium, isAdmin = false }: { onOpenOnboarding: () => void; onOpenAuth: () => void; onManageAccount: () => void; onOpenWidgets: () => void; onOpenLegal: () => void; onOpenAdmin: () => void; onOpenSupport: () => void; onOpenPremium: () => void; isAdmin?: boolean }) {
   const { colors, state, setRetentionMode, setTheme } = useStudyBolt();
   const { user, profile, updateProfile } = useAuth();
+  const { preferences: narrationPreferences, voices: narrationVoices, loading: narrationLoading, updatePreferences: saveNarrationPreferences } = useNarrationPreferences();
   const [studyTypeBusy, setStudyTypeBusy] = useState(false);
   const [studyTypeNotice, setStudyTypeNotice] = useState<string | null>(null);
   const [timerSettings, setTimerSettings] = useState(DEFAULT_STUDY_TIMER_SETTINGS);
@@ -52,7 +55,10 @@ export function ProfileScreen({ onOpenOnboarding, onOpenAuth, onManageAccount, o
   const [timerSettingsVisible, setTimerSettingsVisible] = useState(false);
   const [timerSaving, setTimerSaving] = useState(false);
   const [timerError, setTimerError] = useState<string | null>(null);
+  const [narrationSettingsVisible, setNarrationSettingsVisible] = useState(false);
+  const [narrationError, setNarrationError] = useState<string | null>(null);
   const initial = (profile?.displayName?.[0] ?? user?.email?.[0] ?? 'H').toUpperCase();
+  const narrationVoice = narrationVoices.find((voice) => voice.identifier === narrationPreferences.voiceIdentifier);
 
   useEffect(() => {
     let mounted = true;
@@ -90,7 +96,7 @@ export function ProfileScreen({ onOpenOnboarding, onOpenAuth, onManageAccount, o
 
   return (
     <Screen>
-      <Header title="Profile" right={<Pill label={user ? 'Signed in' : 'Guest'} tone={user ? 'mint' : 'neutral'} />} />
+      <Header title="Settings" right={<Pill label={user ? 'Signed in' : 'Guest'} tone={user ? 'mint' : 'neutral'} />} />
       <View style={styles.profileTop}>
         <View style={[styles.avatar, { backgroundColor: colors.primarySoft }]}><Text style={[styles.avatarText, { color: colors.primary }]}>{initial}</Text></View>
         <Text style={[styles.title, { color: colors.text }]}>{user ? profile?.displayName || 'Account ready' : 'Your StudyBolt'}</Text>
@@ -107,6 +113,18 @@ export function ProfileScreen({ onOpenOnboarding, onOpenAuth, onManageAccount, o
         </View>
         <PrimaryButton label={user ? 'Manage account' : 'Sign in or create account'} icon={user ? 'shield-account-outline' : 'login'} onPress={user ? onManageAccount : onOpenAuth} style={styles.syncButton} />
       </Card>
+
+      <SectionHeader title="Membership" />
+      <Card style={styles.settingsCard}>
+        <Setting icon="star-circle-outline" title="Premium & AI usage" detail={user ? 'View your allowance, subscribe, or restore a purchase' : 'Sign in to view or manage a subscription'} onPress={onOpenPremium} last />
+      </Card>
+
+      {user && isAdmin ? <>
+        <SectionHeader title="Administration" action="Private operations" />
+        <Card style={styles.settingsCard}>
+          <Setting icon="shield-account-outline" title="Admin Center" detail="Learner activity, feedback, and account controls" onPress={onOpenAdmin} last />
+        </Card>
+      </> : null}
 
       {user ? (
         <>
@@ -169,6 +187,35 @@ export function ProfileScreen({ onOpenOnboarding, onOpenAuth, onManageAccount, o
           })}
         </View>
         <Text style={[styles.themeHint, { color: colors.textMuted }]}>System · Matches your device’s Light or Dark setting. Night mode lowers large bright areas and keeps text readable in dim rooms. Match your device brightness to the room; dark mode improves comfort but is not eye or sleep protection.</Text>
+      </Card>
+
+      <SectionHeader title="Listening" />
+      <Card style={styles.narrationCard}>
+        <View style={styles.narrationTop}>
+          <View style={[styles.narrationIcon, { backgroundColor: colors.purpleSoft }]}><Icon name="waveform" size={22} color={colors.purple} /></View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.narrationTitle, { color: colors.text }]}>Narration & language</Text>
+            <Text style={[styles.narrationSubtitle, { color: colors.textSecondary }]}>Choose a voice from your phone and set its spoken language.</Text>
+          </View>
+        </View>
+        <Pressable accessibilityRole="button" accessibilityLabel="Change narration voice and language" onPress={() => { setNarrationError(null); setNarrationSettingsVisible(true); }} style={[styles.narrationSummary, { backgroundColor: colors.cardStrong }]}>
+          <View style={styles.narrationSummaryCopy}>
+            <Text style={[styles.narrationSummaryLabel, { color: colors.textMuted }]}>CURRENT VOICE</Text>
+            <Text numberOfLines={1} style={[styles.narrationSummaryValue, { color: colors.text }]}>{narrationVoice?.name ?? 'Phone default voice'}</Text>
+          </View>
+          <View style={[styles.narrationSummaryDivider, { backgroundColor: colors.border }]} />
+          <View style={styles.narrationSummaryCopy}>
+            <Text style={[styles.narrationSummaryLabel, { color: colors.textMuted }]}>LANGUAGE</Text>
+            <Text numberOfLines={1} style={[styles.narrationSummaryValue, { color: colors.text }]}>{narrationLanguageLabel(narrationPreferences.language)}</Text>
+          </View>
+          <Icon name="chevron-right" size={20} color={colors.textMuted} />
+        </Pressable>
+        {narrationError ? <Text style={[styles.narrationError, { color: colors.danger }]}>{narrationError}</Text> : null}
+        <Pressable accessibilityRole="button" onPress={() => { setNarrationError(null); setNarrationSettingsVisible(true); }} style={({ pressed }) => [styles.narrationButton, { backgroundColor: colors.purple, opacity: pressed ? 0.78 : 1 }]}>
+          <Icon name="tune-variant" size={17} color={colors.primaryText} />
+          <Text style={[styles.narrationButtonText, { color: colors.primaryText }]}>Customize narration</Text>
+          <Icon name="arrow-top-right" size={16} color={colors.primaryText} />
+        </Pressable>
       </Card>
 
       <SectionHeader title="Study preferences" />
@@ -239,7 +286,7 @@ export function ProfileScreen({ onOpenOnboarding, onOpenAuth, onManageAccount, o
           <Icon name="chevron-right" color={colors.textMuted} />
         </Pressable>
         <Setting icon="shield-lock-outline" title="Privacy & terms" detail="Review your legal documents" onPress={onOpenLegal} />
-        <Setting icon="lifebuoy" title="Help & support" detail="Setup documentation included" />
+        <Setting icon="lifebuoy" title="Help & support" detail="Send feedback and view support replies" onPress={onOpenSupport} />
         <Setting icon="information-outline" title="StudyBolt" detail="Version 1.0.0" last />
       </Card>
 
@@ -274,6 +321,17 @@ export function ProfileScreen({ onOpenOnboarding, onOpenAuth, onManageAccount, o
         onChange={setTimerDraft}
         onSave={() => void saveTimerSettings()}
         onClose={() => setTimerSettingsVisible(false)}
+      />
+      <NarrationSettingsSheet
+        visible={narrationSettingsVisible}
+        voices={narrationVoices}
+        preferences={narrationPreferences}
+        loading={narrationLoading}
+        onChange={(next) => {
+          setNarrationError(null);
+          void saveNarrationPreferences(next).catch(() => setNarrationError('StudyBolt could not save your narration preferences. Please try again.'));
+        }}
+        onClose={() => setNarrationSettingsVisible(false)}
       />
     </Screen>
   );
@@ -431,6 +489,19 @@ const styles = StyleSheet.create({
   themeOption: { flex: 1, borderRadius: 13, borderWidth: 1, alignItems: 'center', paddingVertical: 13, gap: 5 },
   themeLabel: { fontSize: 11, fontWeight: '800' },
   themeHint: { fontSize: 10, lineHeight: 15, marginTop: 12, paddingHorizontal: 3 },
+  narrationCard: { padding: 13 },
+  narrationTop: { flexDirection: 'row', alignItems: 'center', gap: 11 },
+  narrationIcon: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  narrationTitle: { fontSize: 13, fontWeight: '900' },
+  narrationSubtitle: { fontSize: 10, lineHeight: 15, marginTop: 3 },
+  narrationSummary: { minHeight: 59, flexDirection: 'row', alignItems: 'center', borderRadius: 14, paddingHorizontal: 11, gap: 10, marginTop: 13 },
+  narrationSummaryCopy: { flex: 1, minWidth: 0, paddingVertical: 9 },
+  narrationSummaryLabel: { fontSize: 7, fontWeight: '900', letterSpacing: 0.7 },
+  narrationSummaryValue: { fontSize: 10, fontWeight: '800', marginTop: 3 },
+  narrationSummaryDivider: { width: StyleSheet.hairlineWidth, height: 31 },
+  narrationButton: { minHeight: 42, borderRadius: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 10 },
+  narrationButtonText: { fontSize: 11, fontWeight: '900', flex: 1, textAlign: 'center' },
+  narrationError: { fontSize: 10, lineHeight: 14, marginTop: 9 },
   settingsCard: { paddingVertical: 1 },
   setting: { minHeight: 67, flexDirection: 'row', alignItems: 'center', gap: 12 },
   settingIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },

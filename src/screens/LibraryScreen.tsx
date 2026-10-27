@@ -1,17 +1,18 @@
 import * as DocumentPicker from 'expo-document-picker';
 import React, { useMemo, useState } from 'react';
-import { Alert, Animated, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Animated, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Card, Header, Icon, type IconName, Pill, PrimaryButton, Screen } from '../components/ui';
+import { SubjectIcon } from '../components/SubjectIcon';
+import { getSubjectIcon, SUBJECT_ICONS } from '../data/subjectIcons';
 import { useStudyBolt } from '../StudyBoltContext';
 import type { ImportAsset, LibrarySort, StudyClass, StudyPack } from '../models';
 import { calculateCourseMastery, calculateMastery } from '../services/mastery';
-import { DOCUMENT_PICKER_TYPE, pageLabel } from '../services/documentTypes';
+import { DOCUMENT_PICKER_TYPE, getImportDocumentType, pageLabel } from '../services/documentTypes';
 import { radius } from '../theme';
 
 const CLASS_COLORS = ['#39BFA3', '#F26D8B', '#418DFF', '#F3A633', '#7D5CFF', '#11A7A2'];
-const CLASS_EMOJIS = ['📚', '🧠', '🧪', '🎨', '💻', '🌿'];
 
 type CourseGroup = { course: StudyClass; decks: StudyPack[] };
 
@@ -45,6 +46,13 @@ function timestamp(value: string): number {
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
+function formatClassAddedDate(value: string): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
 function sortDecks(decks: StudyPack[], sort: LibrarySort): StudyPack[] {
   return [...decks].sort((a, b) => {
     if (sort === 'recent') return timestamp(b.createdAt) - timestamp(a.createdAt) || a.order - b.order;
@@ -65,7 +73,7 @@ export function LibraryScreen({
   onCreateReview: (deckIds: string[]) => void;
   onOpenFlagged: () => void;
   onOpenSpeedReview: (courseId: string) => void;
-  onImport: (asset: ImportAsset, course: StudyClass) => void;
+  onImport: (assets: ImportAsset[], course: StudyClass) => void;
 }) {
   const { colors, state, addClass, setLibrarySort } = useStudyBolt();
   const insets = useSafeAreaInsets();
@@ -77,8 +85,10 @@ export function LibraryScreen({
   const [creatingClass, setCreatingClass] = useState(false);
   const [newClassName, setNewClassName] = useState('');
   const [selectedColor, setSelectedColor] = useState(CLASS_COLORS[0] ?? '#39BFA3');
-  const [selectedEmoji, setSelectedEmoji] = useState(CLASS_EMOJIS[0] ?? '📚');
+  const [selectedEmoji, setSelectedEmoji] = useState<string | null>(null);
   const [classError, setClassError] = useState<string | null>(null);
+  const suggestedIcon = getSubjectIcon(newClassName);
+  const classEmoji = selectedEmoji ?? suggestedIcon.emoji;
 
   const courses = useMemo<CourseGroup[]>(() => {
     const deckMap = new Map<string, StudyPack[]>();
@@ -127,6 +137,7 @@ export function LibraryScreen({
   const closeClassModal = () => {
     setCreatingClass(false);
     setNewClassName('');
+    setSelectedEmoji(null);
     setClassError(null);
   };
 
@@ -143,7 +154,7 @@ export function LibraryScreen({
     addClass({
       id: `class-${Date.now()}`,
       name,
-      emoji: selectedEmoji,
+      emoji: classEmoji,
       color: selectedColor,
       createdAt: new Date().toISOString(),
     });
@@ -155,15 +166,19 @@ export function LibraryScreen({
       const result = await DocumentPicker.getDocumentAsync({
         type: DOCUMENT_PICKER_TYPE,
         copyToCacheDirectory: true,
-        multiple: false,
+        multiple: true,
         // Keep the browser's File object instead of eagerly reading a second
         // base64 copy into memory before the multipart upload starts.
         base64: false,
       });
       if (result.canceled) return;
-      const asset = result.assets[0];
-      if (!asset) return;
-      onImport({ name: asset.name, uri: asset.uri, mimeType: asset.mimeType, size: asset.size, file: asset.file }, course);
+      const assets = result.assets.map((asset) => ({ name: asset.name, uri: asset.uri, mimeType: asset.mimeType, size: asset.size, file: asset.file }));
+      if (!assets.length) return;
+      if (assets.length > 1 && assets.some((asset) => getImportDocumentType(asset.name, asset.mimeType) !== 'powerpoint')) {
+        Alert.alert('Choose PowerPoints together', 'To create one integrated Study Pack, select only PowerPoint files. Other file types can be imported one at a time.');
+        return;
+      }
+      onImport(assets, course);
     } catch {
       Alert.alert('Couldn’t open files', 'Check file permissions, then try again.');
     }
@@ -259,21 +274,21 @@ export function LibraryScreen({
             {visibleCourses.map(({ course, decks, visibleDecks }) => {
               const courseMastery = decks.length ? calculateCourseMastery(decks) : 0;
               const collapsed = normalizedSearch ? false : collapsedCourseIds.includes(course.id);
+              const addedDate = formatClassAddedDate(course.createdAt);
               return (
                 <View key={course.id} style={[styles.classGroup, { backgroundColor: colors.cardStrong, borderColor: `${course.color}38` }]}>
                   <View style={[styles.classAccent, { backgroundColor: course.color }]} />
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel={`${collapsed ? 'Expand' : 'Collapse'} ${course.name}`}
+                    accessibilityHint={addedDate ? `Class added ${addedDate}` : undefined}
                     accessibilityState={{ expanded: !collapsed }}
                     disabled={Boolean(normalizedSearch)}
                     onPress={() => toggleCourse(course.id)}
                     style={({ pressed }) => [styles.courseHeader, pressed && !normalizedSearch && styles.courseHeaderPressed]}
                   >
                     <View style={styles.courseHeaderMain}>
-                      <View style={[styles.courseIcon, { backgroundColor: `${course.color}20` }]}>
-                        <Text style={styles.courseEmoji}>{course.emoji}</Text>
-                      </View>
+                      <SubjectIcon subject={course.name} emoji={course.emoji} size={50} />
                       <View style={styles.courseHeaderCopy}>
                         <View style={styles.classLabelRow}>
                           <Icon name="folder-outline" size={12} color={course.color} />
@@ -283,6 +298,12 @@ export function LibraryScreen({
                         <Text style={[styles.courseMeta, { color: colors.textMuted }]}>
                           {decks.length ? `${courseMastery}% estimated mastery` : 'Ready for your first study pack'}
                         </Text>
+                        {addedDate ? (
+                          <View style={styles.classAddedRow}>
+                            <Icon name="calendar-outline" size={11} color={colors.textSecondary} />
+                            <Text style={[styles.classAddedText, { color: colors.textSecondary }]}>Added {addedDate}</Text>
+                          </View>
+                        ) : null}
                       </View>
                       <View style={styles.courseHeaderTail}>
                         <View style={[styles.classCount, { backgroundColor: colors.card, borderColor: `${course.color}2E` }]}>
@@ -322,7 +343,7 @@ export function LibraryScreen({
                           </View>
                           <View style={styles.emptyClassCopy}>
                             <Text style={[styles.emptyClassTitle, { color: colors.text }]}>Add your first study pack</Text>
-                            <Text style={[styles.emptyClassSubtitle, { color: colors.textSecondary }]}>Upload slides, a PDF, or notes for {course.name}.</Text>
+                            <Text style={[styles.emptyClassSubtitle, { color: colors.textSecondary }]}>Upload slides, a PDF, or notes. Select multiple PowerPoints to study them together.</Text>
                           </View>
                           <Pressable accessibilityRole="button" accessibilityLabel={`Add study pack to ${course.name}`} onPress={() => void pickDocument(course)} style={[styles.addSlidesButton, { backgroundColor: course.color }]}>
                             <Icon name="plus" size={18} color="#FFFFFF" />
@@ -456,60 +477,77 @@ export function LibraryScreen({
       <Modal visible={creatingClass} transparent animationType="slide" onRequestClose={closeClassModal}>
         <KeyboardAvoidingView style={[styles.modalRoot, { backgroundColor: colors.mode === 'dark' ? 'rgba(0,0,0,0.68)' : 'rgba(17,28,78,0.32)' }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <Pressable accessibilityLabel="Close new class dialog" onPress={closeClassModal} style={StyleSheet.absoluteFill} />
-          <View style={[styles.sheet, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow }]}>
+          <View style={[styles.sheet, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow, paddingBottom: Math.max(insets.bottom, 16) }]}>
             <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
-            <View style={styles.sheetHeadingRow}>
-              <View style={[styles.sheetIcon, { backgroundColor: colors.primarySoft }]}><Icon name="school-outline" size={24} color={colors.primary} /></View>
-              <View style={styles.sheetHeadingCopy}>
-                <Text style={[styles.sheetTitle, { color: colors.text }]}>Create a class</Text>
-                <Text style={[styles.sheetSubtitle, { color: colors.textSecondary }]}>Give your next set of notes a home.</Text>
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} bounces={false}>
+              <View style={styles.sheetHeadingRow}>
+                <View style={[styles.sheetIcon, { backgroundColor: colors.primarySoft }]}><Icon name="school-outline" size={24} color={colors.primary} /></View>
+                <View style={styles.sheetHeadingCopy}>
+                  <Text style={[styles.sheetTitle, { color: colors.text }]}>Create a class</Text>
+                  <Text style={[styles.sheetSubtitle, { color: colors.textSecondary }]}>Give your next set of notes a home.</Text>
+                </View>
+                <Pressable accessibilityLabel="Close" onPress={closeClassModal} hitSlop={10}><Icon name="close" size={22} color={colors.textMuted} /></Pressable>
               </View>
-              <Pressable accessibilityLabel="Close" onPress={closeClassModal} hitSlop={10}><Icon name="close" size={22} color={colors.textMuted} /></Pressable>
-            </View>
 
-            <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Class name</Text>
-            <View style={[styles.inputWrap, { backgroundColor: colors.backgroundRaised, borderColor: classError ? colors.danger : colors.border }]}>
-              <Icon name="pencil-outline" size={19} color={colors.textMuted} />
-              <TextInput
-                accessibilityLabel="Class name"
-                autoFocus
-                value={newClassName}
-                onChangeText={(value) => { setNewClassName(value); setClassError(null); }}
-                onSubmitEditing={createClass}
-                placeholder="e.g. Anatomy & Physiology"
-                placeholderTextColor={colors.textMuted}
-                returnKeyType="done"
-                style={[styles.input, { color: colors.text }]}
-              />
-            </View>
-            {classError ? <Text style={[styles.errorText, { color: colors.danger }]}>{classError}</Text> : null}
-
-            <Text style={[styles.inputLabel, styles.optionLabel, { color: colors.textSecondary }]}>Choose an icon</Text>
-            <View style={styles.optionRow}>
-              {CLASS_EMOJIS.map((emoji) => {
-                const active = selectedEmoji === emoji;
-                return <Pressable key={emoji} accessibilityRole="button" accessibilityLabel={`Use ${emoji} icon`} onPress={() => setSelectedEmoji(emoji)} style={[styles.emojiOption, { backgroundColor: active ? colors.primarySoft : colors.backgroundRaised, borderColor: active ? colors.primary : colors.border }]}><Text style={styles.emojiOptionText}>{emoji}</Text></Pressable>;
-              })}
-            </View>
-
-            <Text style={[styles.inputLabel, styles.optionLabel, { color: colors.textSecondary }]}>Choose a color</Text>
-            <View style={styles.optionRow}>
-              {CLASS_COLORS.map((color) => {
-                const active = selectedColor === color;
-                return <Pressable key={color} accessibilityRole="button" accessibilityLabel="Choose class color" onPress={() => setSelectedColor(color)} style={[styles.colorOption, { backgroundColor: color, borderColor: colors.card }, active && { borderColor: colors.text, borderWidth: 3 }]} />;
-              })}
-            </View>
-
-            <View style={[styles.previewCard, { backgroundColor: `${selectedColor}16`, borderColor: `${selectedColor}44` }]}>
-              <View style={[styles.previewIcon, { backgroundColor: `${selectedColor}28` }]}><Text style={styles.previewEmoji}>{selectedEmoji}</Text></View>
-              <View style={{ flex: 1 }}>
-                <Text numberOfLines={1} style={[styles.previewTitle, { color: colors.text }]}>{newClassName.trim() || 'Your new class'}</Text>
-                <Text style={[styles.previewMeta, { color: colors.textSecondary }]}>0 study packs · Ready to learn</Text>
+              <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Class name</Text>
+              <View style={[styles.inputWrap, { backgroundColor: colors.backgroundRaised, borderColor: classError ? colors.danger : colors.border }]}>
+                <Icon name="pencil-outline" size={19} color={colors.textMuted} />
+                <TextInput
+                  accessibilityLabel="Class name"
+                  autoFocus
+                  value={newClassName}
+                  onChangeText={(value) => { setNewClassName(value); setClassError(null); }}
+                  onSubmitEditing={createClass}
+                  placeholder="e.g. Anatomy & Physiology"
+                  placeholderTextColor={colors.textMuted}
+                  returnKeyType="done"
+                  style={[styles.input, { color: colors.text }]}
+                />
               </View>
-            </View>
+              {classError ? <Text style={[styles.errorText, { color: colors.danger }]}>{classError}</Text> : null}
 
-            <PrimaryButton label="Create class" icon="plus" onPress={createClass} style={styles.createButton} />
-            <Pressable accessibilityRole="button" onPress={closeClassModal} style={styles.cancelButton}><Text style={[styles.cancelText, { color: colors.textSecondary }]}>Maybe later</Text></Pressable>
+              <Text style={[styles.inputLabel, styles.optionLabel, { color: colors.textSecondary }]}>Choose a subject icon</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.iconOptions}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Automatically choose an icon from class name, currently ${suggestedIcon.label}`}
+                  accessibilityState={{ selected: selectedEmoji === null }}
+                  onPress={() => setSelectedEmoji(null)}
+                  style={[styles.iconOption, { backgroundColor: selectedEmoji === null ? colors.primarySoft : colors.backgroundRaised, borderColor: selectedEmoji === null ? colors.primary : colors.border }]}
+                >
+                  <SubjectIcon subject={newClassName} size={40} animated={false} />
+                  <Text style={[styles.iconOptionLabel, { color: selectedEmoji === null ? colors.primary : colors.textSecondary }]}>Auto</Text>
+                </Pressable>
+                {SUBJECT_ICONS.map((icon) => {
+                  const active = selectedEmoji === icon.emoji;
+                  return (
+                    <Pressable key={icon.id} accessibilityRole="button" accessibilityLabel={`Use ${icon.label} icon`} accessibilityState={{ selected: active }} onPress={() => setSelectedEmoji(icon.emoji)} style={[styles.iconOption, { backgroundColor: active ? colors.primarySoft : colors.backgroundRaised, borderColor: active ? colors.primary : colors.border }]}>
+                      <SubjectIcon emoji={icon.emoji} size={40} animated={false} />
+                      <Text numberOfLines={1} style={[styles.iconOptionLabel, { color: active ? colors.primary : colors.textSecondary }]}>{icon.label}</Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+
+              <Text style={[styles.inputLabel, styles.optionLabel, { color: colors.textSecondary }]}>Choose a color</Text>
+              <View style={styles.optionRow}>
+                {CLASS_COLORS.map((color) => {
+                  const active = selectedColor === color;
+                  return <Pressable key={color} accessibilityRole="button" accessibilityLabel="Choose class color" onPress={() => setSelectedColor(color)} style={[styles.colorOption, { backgroundColor: color, borderColor: colors.card }, active && { borderColor: colors.text, borderWidth: 3 }]} />;
+                })}
+              </View>
+
+              <View style={[styles.previewCard, { backgroundColor: `${selectedColor}16`, borderColor: `${selectedColor}44` }]}>
+                <SubjectIcon subject={newClassName} emoji={classEmoji} size={44} />
+                <View style={{ flex: 1 }}>
+                  <Text numberOfLines={1} style={[styles.previewTitle, { color: colors.text }]}>{newClassName.trim() || 'Your new class'}</Text>
+                  <Text style={[styles.previewMeta, { color: colors.textSecondary }]}>0 study packs · Ready to learn</Text>
+                </View>
+              </View>
+
+              <PrimaryButton label="Create class" icon="plus" onPress={createClass} style={styles.createButton} />
+              <Pressable accessibilityRole="button" onPress={closeClassModal} style={styles.cancelButton}><Text style={[styles.cancelText, { color: colors.textSecondary }]}>Maybe later</Text></Pressable>
+            </ScrollView>
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -545,7 +583,7 @@ const styles = StyleSheet.create({
   courseHeader: { paddingHorizontal: 14, paddingTop: 13, paddingBottom: 12, paddingLeft: 17 },
   courseHeaderPressed: { opacity: 0.86 },
   courseHeaderMain: { flexDirection: 'row', alignItems: 'center', gap: 11 },
-  courseHeaderCopy: { flex: 1 },
+  courseHeaderCopy: { flex: 1, minWidth: 0 },
   courseHeaderTail: { alignItems: 'flex-end', justifyContent: 'center', gap: 7 },
   classLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 3 },
   classLabel: { fontSize: 8, lineHeight: 10, fontWeight: '900', letterSpacing: 1.1 },
@@ -553,9 +591,9 @@ const styles = StyleSheet.create({
   classCountText: { fontSize: 8, fontWeight: '900', letterSpacing: 0.45 },
   courseName: { fontSize: 17, fontWeight: '800' },
   courseMeta: { fontSize: 11, marginTop: 3 },
-  courseIcon: { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
-  courseEmoji: { fontSize: 21 },
-  masteryTrack: { height: 3, borderRadius: 2, overflow: 'hidden', marginTop: 10, marginLeft: 53 },
+  classAddedRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 5 },
+  classAddedText: { flexShrink: 1, fontSize: 10, lineHeight: 14 },
+  masteryTrack: { height: 3, borderRadius: 2, overflow: 'hidden', marginTop: 10, marginLeft: 61 },
   masteryFill: { height: 3, borderRadius: 2 },
   classBody: { borderTopWidth: StyleSheet.hairlineWidth, paddingHorizontal: 10, paddingTop: 10, paddingBottom: 9 },
   speedReviewRow: { minHeight: 62, borderRadius: 15, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 11, marginBottom: 10 },
@@ -600,7 +638,7 @@ const styles = StyleSheet.create({
   sortOptionTitle: { fontSize: 13, lineHeight: 17, fontWeight: '900' },
   sortOptionDescription: { fontSize: 10, lineHeight: 14, marginTop: 2 },
   radio: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
-  sheet: { width: '100%', maxWidth: 560, alignSelf: 'center', borderTopLeftRadius: 27, borderTopRightRadius: 27, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 22, paddingTop: 10, paddingBottom: 16, shadowOffset: { width: 0, height: -8 }, shadowOpacity: 0.18, shadowRadius: 24, elevation: 16 },
+  sheet: { width: '100%', maxWidth: 560, maxHeight: '94%', alignSelf: 'center', borderTopLeftRadius: 27, borderTopRightRadius: 27, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 22, paddingTop: 10, paddingBottom: 16, shadowOffset: { width: 0, height: -8 }, shadowOpacity: 0.18, shadowRadius: 24, elevation: 16 },
   sheetHandle: { width: 42, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 18 },
   sheetHeadingRow: { flexDirection: 'row', alignItems: 'center', gap: 11 },
   sheetIcon: { width: 46, height: 46, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
@@ -613,12 +651,11 @@ const styles = StyleSheet.create({
   errorText: { fontSize: 11, marginTop: 6, marginLeft: 2 },
   optionLabel: { marginTop: 16 },
   optionRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
-  emojiOption: { width: 42, height: 42, borderRadius: 13, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  emojiOptionText: { fontSize: 21 },
+  iconOptions: { gap: 8, paddingVertical: 3 },
+  iconOption: { width: 70, minHeight: 72, borderRadius: 15, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', gap: 4, padding: 5 },
+  iconOptionLabel: { fontSize: 9, fontWeight: '700' },
   colorOption: { width: 31, height: 31, borderRadius: 16, borderWidth: 1 },
   previewCard: { minHeight: 65, borderRadius: 16, borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 12, marginTop: 19 },
-  previewIcon: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
-  previewEmoji: { fontSize: 21 },
   previewTitle: { fontSize: 13, fontWeight: '900' },
   previewMeta: { fontSize: 10, marginTop: 3 },
   createButton: { minHeight: 52, marginTop: 15 },
