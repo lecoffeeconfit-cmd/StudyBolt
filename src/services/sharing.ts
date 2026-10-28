@@ -14,9 +14,10 @@ import type {
   SharedStudyPackVisibility,
 } from '../models';
 import { ensureDistinctNoteLayers } from './noteLayers';
+import { resolveBackendUrl } from '../config/backend';
 
 const LOCAL_LINKS_KEY = '@studybolt/shared-links/v1';
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL?.replace(/\/$/, '') ?? '';
+const supabaseUrl = resolveBackendUrl(process.env.EXPO_PUBLIC_SUPABASE_URL);
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
 const configuredShareBase = process.env.EXPO_PUBLIC_STUDYBOLT_SHARE_BASE_URL?.replace(/\/$/, '') ?? '';
 

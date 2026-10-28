@@ -12,8 +12,9 @@ import type {
   NoteBlock,
   StudyPack,
 } from '../models';
+import { resolveBackendUrl } from '../config/backend';
 
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL?.replace(/\/$/, '') ?? '';
+const supabaseUrl = resolveBackendUrl(process.env.EXPO_PUBLIC_SUPABASE_URL);
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
 const hasPlaceholderAnonKey = supabaseAnonKey === 'PASTE_ANON_KEY_HERE';
 

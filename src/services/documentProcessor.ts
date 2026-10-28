@@ -1,7 +1,7 @@
 import type { DeckOutlineItem, ImportAsset, NoteBlock, StudyPack, StudyPackMaterial } from '../models';
-import Constants from 'expo-constants';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Platform } from 'react-native';
+import { resolveProcessorUrl } from '../config/backend';
 import { ensureDistinctNoteLayers } from './noteLayers';
 import {
   getFileExtension,
@@ -14,21 +14,14 @@ import {
 
 export const MAX_IMPORT_BYTES = 20 * 1024 * 1024;
 const PROCESSOR_TIMEOUT_MS = 180_000;
-const BUILT_IN_PROCESSOR_URL = 'https://studybolt-api.duckdns.org/functions/v1/studybolt-process-document';
-const manifestProcessorUrl = typeof Constants.expoConfig?.extra?.studyboltProcessorUrl === 'string'
-  ? Constants.expoConfig.extra.studyboltProcessorUrl.trim()
-  : '';
 
 /**
- * Resolve the self-hosted VPS route from the build environment or manifest.
- * The built-in fallback intentionally points at the VPS so a missing EAS
- * environment variable cannot silently route document uploads to hosted Supabase.
+ * Resolve the environment-specific processor route from the build environment.
+ * No production fallback is allowed: a missing TestFlight setting must not send
+ * test documents to production.
  */
 export function resolveProcessorEndpoint(): string {
-  const customProcessorUrl = process.env.EXPO_PUBLIC_STUDYBOLT_PROCESSOR_URL?.trim();
-  if (customProcessorUrl) return customProcessorUrl;
-  if (manifestProcessorUrl) return manifestProcessorUrl;
-  return BUILT_IN_PROCESSOR_URL;
+  return resolveProcessorUrl(process.env.EXPO_PUBLIC_STUDYBOLT_PROCESSOR_URL);
 }
 
 export class StudyBoltProcessingError extends Error {
@@ -345,6 +338,12 @@ export async function generateStudyPackMaterial(
     throw new StudyBoltProcessingError('Material generation requires a signed-in account', 'Sign in to finish generating this Study Pack.');
   }
   const endpoint = resolveProcessorEndpoint();
+  if (!endpoint) {
+    throw new StudyBoltProcessingError(
+      'EXPO_PUBLIC_STUDYBOLT_PROCESSOR_URL is not configured',
+      'Secure document processing has not been connected for this build yet. Please try again later.',
+    );
+  }
   const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
   const timeout = controller ? setTimeout(() => controller.abort(), PROCESSOR_TIMEOUT_MS) : null;

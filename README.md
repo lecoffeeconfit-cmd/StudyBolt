@@ -9,7 +9,29 @@ npm install
 npm start
 ```
 
+Run the JavaScript regression tests with `npm test` and the TypeScript check with `npm run typecheck`.
+
 Then press `i` for the iOS Simulator, `a` for Android, or `w` for web. You can also run `npm run ios`, `npm run android`, or `npm run web` directly.
+
+## Sentry crash reporting
+
+The app is wired to the `lecoffeeconfit/studybolt` Sentry project through the Expo config plugin and Sentry-aware Metro config. [EAS Build uploads source maps automatically](https://docs.expo.dev/guides/using-sentry/#usage-with-eas-build), and the iOS build script uploads debug symbols when `SENTRY_AUTH_TOKEN` is available.
+
+Configure these values in the [EAS environments](https://docs.expo.dev/eas/environment-variables/manage/) used by your builds (`production` for release builds and `preview` for the `testflight-staging` profile):
+
+- `EXPO_PUBLIC_SENTRY_DSN`: optional override for the project's public client DSN. A working project DSN is already bundled as a public fallback.
+- `SENTRY_AUTH_TOKEN`: a Sentry organization auth token for CI/source-map uploads. Store it with **Sensitive** visibility; never add it to an `EXPO_PUBLIC_*` variable or commit it.
+- `EXPO_PUBLIC_LEGAL_DOCUMENTS_APPROVED=true`: set only after the published privacy policy and terms have been completed and approved. Sentry reporting remains disabled until this explicit gate is enabled.
+
+Local `.env.local` values are not copied into EAS cloud build environments. Keep the Sentry DSN configured for each environment, and keep the upload token out of the client bundle. Sentry events omit user identity, request bodies, request headers, cookies, and breadcrumb text/data by default.
+
+## Backend environments
+
+The `testflight-staging` EAS profile uses the `preview` EAS environment and marks the app as staging. The `production` profile uses the production EAS environment. Put a distinct staging Supabase URL, anon key, and document processor URL in `preview`; use the production values only in `production`. The staging Supabase project must have its own database, Auth, Storage, Edge Functions, and processor. Use synthetic accounts and documents there.
+
+Staging builds refuse to configure the known production hosts `studybolt-api.duckdns.org` and `kbyeyobbhhnafscygiel.supabase.co`. The EAS pre-install check also rejects a profile/environment marker mismatch, missing backend values, non-HTTPS URLs, or either known production host before the build continues. Do not define `EXPO_PUBLIC_APP_ENV` in the EAS dashboard: EAS environment values can override the profile's marker in `eas.json`. The repository does not contain EAS environment values, and the production server must not be copied into `preview`. Before building, verify the `preview` and `production` values in the EAS dashboard or with `eas env:list`; do not include secret values in review notes.
+
+Use `testflight-staging` for TestFlight builds and `production` only for release builds. Both profiles point to the current App Store Connect app, so the build profile and EAS environment must be checked before each store submission.
 
 ## Project structure
 
@@ -49,7 +71,7 @@ The additional Psychology and Chemistry cards are visual development content; Bi
 
 ## Secure processor contract
 
-Real PDF and PowerPoint extraction/generation requires a server because model credentials must never ship in the app and robust PPTX extraction is not reliably portable on-device. The app uses this Supabase Edge Function by default when `EXPO_PUBLIC_SUPABASE_URL` is set; a custom processor can still be supplied with:
+Real PDF and PowerPoint extraction/generation requires a server because model credentials must never ship in the app and robust PPTX extraction is not reliably portable on-device. Set the environment-specific processor URL in EAS:
 
 ```bash
 EXPO_PUBLIC_STUDYBOLT_PROCESSOR_URL=https://your-private-endpoint.example/process
@@ -62,7 +84,7 @@ supabase functions deploy studybolt-process-document
 supabase secrets set OPENAI_API_KEY=your_server_key
 ```
 
-The mobile build carries the self-hosted VPS processor route in `app.json` and in the client as a final built-in fallback, so an EAS build does not silently route uploads to a hosted Supabase project when the `EXPO_PUBLIC_*` values were not copied into its environment. `EXPO_PUBLIC_STUDYBOLT_PROCESSOR_URL` takes precedence, followed by the manifest route and then the same VPS route.
+The mobile client has no processor URL fallback in source or `app.json`. An absent or production URL in a staging build disables uploads instead of sending documents to production.
 
 The function does not retain uploaded source files, deletes temporary provider files after processing, and uses `store: false` for every model response. Each extraction and generated material reserves an interaction in the same atomic per-user ledger as AI Tutor, then records actual provider token usage and cost. Per-user monthly, daily, rolling-window, concurrency, and budget checks apply. The shared ledger also has project-wide daily request, concurrency, and spend limits. Set those limits in `ai_cloud_config` for the launch plan and set an OpenAI project spend ceiling as a separate provider-side safeguard. The normalized source and per-material status live in the existing local AsyncStorage Study Pack record. A custom endpoint must keep uploads private and implement both the extraction and per-material JSON contracts. Both `notes` and `detailedNotes` must cover every source-outline section and retain a source reference for every chunk. Simplified notes are the fast layer: a condensed, one-sentence organizing summary, a short set of core ideas, one key relationship, and retrieval prompts. Detailed notes preserve meaningful source claims and wording in hierarchical subsections, connect related ideas, include grounded examples when present, and end with retrieval prompts. Content must remain source-grounded. StudyBolt uses generated notes and flashcards to build a cumulative test. Malformed or incomplete responses are rejected, and legacy/shared packs are normalized into distinct layers on load.
 
@@ -81,7 +103,7 @@ EXPO_PUBLIC_STUDYBOLT_SHARE_BASE_URL=https://your-domain.example/share
 
 Enable Email, Google, and Apple in Supabase Auth, and add the app callback URLs (`studybolt://auth/callback` for native and the deployed web origin) to the Auth redirect allow list. Password-reset links return to the app and open the new-password screen automatically.
 
-Account deletion is intentionally server-authorized. Deploy [`supabase/functions/delete-account/index.ts`](supabase/functions/delete-account/index.ts) as the `delete-account` Edge Function; Supabase supplies `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to deployed functions. Any user-owned database rows should reference `auth.users` with `ON DELETE CASCADE` so deletion also removes synced study data.
+Account deletion is intentionally server-authorized. Deploy [`supabase/functions/delete-account/index.ts`](supabase/functions/delete-account/index.ts) as the `delete-account` Edge Function; Supabase supplies `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to deployed functions. Any user-owned database rows should reference `auth.users` with `ON DELETE CASCADE` so deletion also removes synced study data. Before deployment, put `REVENUECAT_PROJECT_ID` and `REVENUECAT_CUSTOMER_DELETE_API_KEY` in the server's secret store. Create a RevenueCat REST API v2 secret key with only `customer_information:customers:read_write`; this function uses it only to delete the authenticated user's RevenueCat customer. A RevenueCat `200` queues deletion and `404` is treated as an already-completed deletion for retries. The app tells Premium subscribers to cancel billing in the store; deleting the RevenueCat customer does not cancel Apple or Google subscriptions. [RevenueCat API v2 deletion](https://www.revenuecat.com/docs/api-v2/customer) · [RevenueCat API key permissions](https://www.revenuecat.com/docs/projects/authentication).
 
 ## Study Pack sharing
 
@@ -117,22 +139,24 @@ The self-hosted Supabase VPS must provide `OPENAI_API_KEY` and `SUPABASE_SERVICE
 
 Paid subscriptions use RevenueCat for App Store / Google Play purchase validation and lifecycle delivery. StudyBolt configures RevenueCat only after sign-in and uses the Supabase user UUID as the store customer ID. The client never writes Premium status: a timestamp-checked HMAC webhook triggers a server-side lookup of RevenueCat's current subscriber record, then updates only StudyBolt-specific fields in trusted Auth `app_metadata`. Duplicate and out-of-order events are idempotent; account transfers reconcile both sides; AI endpoints enforce the resulting plan from server-side metadata. Renewal, cancellation, grace period, refunds, and expiration follow the current store entitlement. Anonymous RevenueCat IDs are ignored.
 
+The intended offer set is one `premium` entitlement and one current offering named `default`, with products `studybolt_premium_monthly` at **$2.99/month** and `studybolt_premium_annual` at **$19.99/year**. Google Play uses base plans `monthly` and `annual`, so their RevenueCat identifiers are `studybolt_premium_monthly:monthly` and `studybolt_premium_annual:annual`. Attach both products to the entitlement and add monthly and annual packages (`$rc_monthly` and `$rc_annual`). Set the 7-day free trial on the annual product in App Store Connect and Google Play; the annual plan then renews at its store price for each one-year period. The app displays the localized store price and period and only offers monthly and annual products. Store prices and introductory offers are configured in the stores, not in the SDK or app source.
+
 Before enabling checkout in a release:
 
-1. Create the Premium entitlement in RevenueCat, add the iOS and Android store products, and publish an offering. Build a native iOS/Android app with the matching public SDK keys in EAS environment variables `EXPO_PUBLIC_REVENUECAT_IOS_API_KEY` and `EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY`.
-2. Complete every placeholder in the privacy policy and terms and review the published wording. Set `EXPO_PUBLIC_PRIVACY_POLICY_URL` and `EXPO_PUBLIC_TERMS_OF_SERVICE_URL` for each app build. The legal links are prefilled with the current GitHub Pages URLs; checkout stays disabled until `EXPO_PUBLIC_LEGAL_DOCUMENTS_APPROVED=true` is set after the documents are complete.
+1. In App Store Connect and Google Play Console, create the monthly and annual auto-renewing products using the IDs above, set the US prices to $2.99/month and $19.99/year, and add the annual 7-day free-trial introductory offer. Then connect both stores in RevenueCat, create the `premium` entitlement, attach both products, and publish the `default` offering with monthly and annual packages. Set the iOS and Android public SDK keys in the EAS preview and production environments as `EXPO_PUBLIC_REVENUECAT_IOS_API_KEY` and `EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY`.
+2. Complete every placeholder in the privacy policy and terms and review the published wording. Set `EXPO_PUBLIC_PRIVACY_POLICY_URL` and `EXPO_PUBLIC_TERMS_OF_SERVICE_URL` for each app build. The legal links are prefilled with the current GitHub Pages URLs; checkout stays disabled until `EXPO_PUBLIC_LEGAL_DOCUMENTS_APPROVED=true` is set after the documents are complete and explicitly approved.
 3. Set the matching `STUDYBOLT_PRIVACY_POLICY_URL` and `STUDYBOLT_TERMS_OF_SERVICE_URL` Supabase secrets. Cloud AI answers, document processing, and subscription status sync stay paused until `STUDYBOLT_LEGAL_DOCUMENTS_APPROVED=true` is set after the policy text is complete.
-4. Apply the subscription migrations and deploy the webhook and authenticated status-sync function. In RevenueCat, configure the HTTPS endpoint `https://<supabase-project-host>/functions/v1/revenuecat-webhook`, enable HMAC signing, and use the entitlement identifier exactly as configured in RevenueCat.
+4. Apply the subscription migrations and deploy the webhook and authenticated status-sync function. In RevenueCat, configure the HTTPS endpoint `https://<supabase-project-host>/functions/v1/revenuecat-webhook`, enable HMAC signing, and set `REVENUECAT_PREMIUM_ENTITLEMENT=premium` in Supabase.
 
 ```bash
 supabase db push
 supabase functions deploy revenuecat-webhook
 supabase functions deploy studybolt-sync-subscription
-supabase secrets set REVENUECAT_WEBHOOK_SECRET=<signing-secret> REVENUECAT_SECRET_API_KEY=<secret-api-key> REVENUECAT_PREMIUM_ENTITLEMENT=<entitlement-id>
+supabase secrets set REVENUECAT_WEBHOOK_SECRET=<signing-secret> REVENUECAT_API_KEY=<public-sdk-api-key> REVENUECAT_PREMIUM_ENTITLEMENT=premium
 supabase secrets set STUDYBOLT_PRIVACY_POLICY_URL=https://lecoffeeconfit-cmd.github.io/studybolt-legal/privacypolicy STUDYBOLT_TERMS_OF_SERVICE_URL=https://lecoffeeconfit-cmd.github.io/studybolt-legal/termsofservice STUDYBOLT_LEGAL_DOCUMENTS_APPROVED=false
 ```
 
-The HMAC signing secret, RevenueCat Secret API key, and entitlement ID are server-only Supabase secrets. Verify sandbox purchase, renewal, cancellation, grace-period, refund, restore, account transfer, and webhook retry behavior before enabling store products for production. Web checkout is not included; RevenueCat Web Billing requires its own product setup and server integration. The app displays the current allowance from the authenticated AI endpoint and does not treat the store SDK's client response as an entitlement grant.
+The HMAC signing secret and the API v2 customer-deletion key are private and belong only on the server. API v1 subscriber reads accept the app's public SDK key, so subscription status lookup does not need a privileged key; account deletion uses the separately scoped API v2 secret. Verify sandbox purchase, renewal, cancellation, grace-period, refund, restore, account transfer, and webhook retry behavior before enabling store products for production. After a trial expires without an active subscription, members keep their existing Study Packs and can import one new PowerPoint per UTC calendar month. The monthly import cap is enforced by the document-processing service; paid and active trial members are not capped. Web checkout is not included; RevenueCat Web Billing requires its own product setup and server integration. The app displays the current allowance from the authenticated AI endpoint and does not treat the store SDK's client response as an entitlement grant.
 
 StudyCast playback remains device TTS and makes no AI request. Only Explain, Simplify, Example, Quiz me, or an explicitly submitted question starts tutoring. The client sends the current note chunk and at most two neighboring chunks rather than the complete Study Pack. Expo Speech does not expose portable word-boundary callbacks, so the saved position is the app’s existing word/time estimate; it is preserved when the Tutor opens and used to resume the same study chunk.
 

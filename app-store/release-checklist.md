@@ -7,7 +7,7 @@
 - A 1024 × 1024 iOS app icon exists; the app supports iPhone and iPad.
 - Account creation is optional for the local Biology sample, and the app has an in-app account deletion flow.
 - Subscription checkout is gated until HTTPS Privacy Policy and Terms links are configured. The purchase screen shows store price/period, restore, legal links, and subscription management.
-- The account-deletion confirmation now tells Premium subscribers to cancel store billing before proceeding. The delete-account function now removes private slide-image objects before deleting the auth account; deploy this updated function before release.
+- The account-deletion confirmation tells Premium subscribers to cancel store billing before proceeding. The updated delete-account function first queues RevenueCat customer deletion, then removes private slide-image objects and the Auth account. Configure the scoped API v2 key in the server secret store and exercise retries with a disposable test account before deployment.
 - The app declares `ITSAppUsesNonExemptEncryption=false`; confirm the export-compliance answer for the final binary.
 
 ## Must resolve before App Review
@@ -24,16 +24,21 @@ StudyBolt lets learners publish study sets and course/class information through 
 4. Enter the Privacy Policy URL in App Store Connect App Privacy. Enter the Support URL and actual support contact details on the product page.
 5. Check the app’s Legal screen and Premium screen in the release build to confirm the links open and checkout no longer shows the legal publication gate.
 
+The current published policy source still contains unresolved placeholders. Keep both client and server legal approval flags false until the owner reviews and approves completed policy text.
+
 ### 3. Complete privacy disclosures
 
 Use [`privacy-label-worksheet.md`](privacy-label-worksheet.md), inspect each production SDK’s privacy manifest and settings, and submit App Privacy answers in App Store Connect. Confirm OpenAI, Supabase, RevenueCat, Sentry, and sign-in provider flows against the deployed environment; do not mark data as unlinked or not collected solely because it is not stored in a local table.
 
 ### 4. Configure and exercise Premium products
 
-- Create the App Store subscription group and at least one auto-renewing product with localized display name/description, duration, price, and review screenshot.
-- Configure the matching RevenueCat entitlement and offering, iOS public SDK key in the EAS production environment, webhook signing secret, entitlement identifier, and deployed status-sync/webhook functions.
+See [`revenuecat-setup-status.md`](revenuecat-setup-status.md) for installed keys, verified server checks, and the remaining store/policy steps.
+
+- Create the App Store monthly ($2.99/month) and annual ($19.99/year) auto-renewing products and put a 7-day free-trial introductory offer on the annual product. Create matching Google Play subscription products/base plans and annual free-trial offer.
+- Configure RevenueCat's `premium` entitlement and current `default` offering with monthly and annual packages. Set the public iOS and Android SDK keys in EAS, the webhook signing secret and entitlement ID in Supabase, and deploy the status-sync/webhook functions.
 - Complete required App Store tax/banking agreements and subscription metadata.
 - Confirm the production UI displays the real store price and period, and exercise sandbox purchase, restore, cancellation, expiration, and account deletion behavior.
+- Create a RevenueCat API v2 secret key scoped only to `customer_information:customers:read_write`, and store it server-side as `REVENUECAT_CUSTOMER_DELETE_API_KEY` with `REVENUECAT_PROJECT_ID`. Never add it to EAS or the app bundle.
 
 ### 5. Fill App Store Connect fields
 

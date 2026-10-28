@@ -6,6 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 import type { Session, User } from '@supabase/supabase-js';
 
 import type { StudyType } from '../models';
+import { resolveBackendUrl } from '../config/backend';
 
 const AUTH_REDIRECT_URL = 'studybolt://auth/callback';
 const OAUTH_STARTED_AT_KEY = '@studybolt/auth/oauth-started-at';
@@ -38,7 +39,7 @@ export interface AuthResult {
   recovery?: boolean;
 }
 
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL?.replace(/\/$/, '') ?? '';
+const supabaseUrl = resolveBackendUrl(process.env.EXPO_PUBLIC_SUPABASE_URL);
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
 
 const hasPlaceholderAnonKey = supabaseAnonKey === 'PASTE_ANON_KEY_HERE';
@@ -48,7 +49,7 @@ export const isAuthConfigured = Boolean(supabaseUrl && supabaseAnonKey && !hasPl
 // is public by design; service-role credentials never belong in this bundle.
 export const supabase = isAuthConfigured
   ? createClient(
-      process.env.EXPO_PUBLIC_SUPABASE_URL!,
+      supabaseUrl,
       process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
       {
         auth: {

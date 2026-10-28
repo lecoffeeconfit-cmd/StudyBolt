@@ -3,6 +3,7 @@ import Purchases from 'react-native-purchases';
 import type { PurchasesPackage } from 'react-native-purchases';
 
 import { hasApprovedLegalDocuments } from '../config/legal';
+import { resolveBackendUrl } from '../config/backend';
 
 let lastRevenueCatUserId: string | null | undefined;
 let sdkQueue: Promise<unknown> = Promise.resolve();
@@ -18,9 +19,12 @@ export function syncRevenueCatUser(userId: string | null): Promise<void> {
 
 export async function loadRevenueCatPackages(userId: string): Promise<PurchasesPackage[]> {
   const offerings = await withRevenueCatUser(userId, () => Purchases.getOfferings());
-  // This integration sells auto-renewing subscriptions only, so a misconfigured
-  // one-time product cannot accidentally be offered as a Premium subscription.
-  return (offerings.current?.availablePackages ?? []).filter((item) => Boolean(item.product.subscriptionPeriod));
+  // Keep the paywall limited to the two plans StudyBolt supports. This prevents
+  // an accidental lifetime, weekly, or custom package from appearing here.
+  return (offerings.current?.availablePackages ?? [])
+    .filter((item) => subscriptionPeriodMonths(item.product.subscriptionPeriod) === 1
+      || subscriptionPeriodMonths(item.product.subscriptionPeriod) === 12)
+    .sort((left, right) => subscriptionPeriodMonths(left.product.subscriptionPeriod)! - subscriptionPeriodMonths(right.product.subscriptionPeriod)!);
 }
 
 export async function buyRevenueCatPackage(userId: string, aPackage: PurchasesPackage): Promise<void> {
@@ -39,7 +43,7 @@ export async function openRevenueCatSubscriptionManagement(userId: string): Prom
 }
 
 export async function syncRevenueCatEntitlement(accessToken: string): Promise<{ status?: string; error?: string }> {
-  const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL?.replace(/\/$/, '') ?? '';
+  const supabaseUrl = resolveBackendUrl(process.env.EXPO_PUBLIC_SUPABASE_URL);
   const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
   if (!supabaseUrl || !supabaseAnonKey || supabaseAnonKey === 'PASTE_ANON_KEY_HERE') {
     return { error: 'Subscription status service is not connected yet.' };
@@ -95,6 +99,14 @@ function publicApiKey(): string {
 function usableKey(value: string | undefined): string {
   const key = value?.trim() ?? '';
   return key && !key.startsWith('PASTE_') ? key : '';
+}
+
+function subscriptionPeriodMonths(period: string | null): number | null {
+  if (!period) return null;
+  const match = /^P(?:(\d+)Y)?(?:(\d+)M)?$/.exec(period);
+  if (!match) return null;
+  const months = (Number(match[1] ?? 0) * 12) + Number(match[2] ?? 0);
+  return months > 0 ? months : null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
