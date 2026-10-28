@@ -66,8 +66,18 @@ Deno.serve(async (request) => {
   const mimeType = contentType(fileValue.type, documentType, extension);
   const documentId = crypto.randomUUID();
   let bytes: Uint8Array | null = null;
+  if (documentType === 'powerpoint') {
+    try {
+      bytes = new Uint8Array(await fileValue.arrayBuffer());
+    } catch {
+      return json({ error: 'StudyBolt could not read this PowerPoint. Choose the file again and try again.' }, 400);
+    }
+  }
   let localPptx: PptxLocalExtraction | null = null;
   let uploadedFileId: string | null = null;
+  let powerPointSourceHash: string | null = null;
+  let powerPointImportPeriodStart: string | null = null;
+  let limitedPowerPointImport = false;
   let response: Response;
   const extractionOutputEstimate = 28_000;
   // PDFs and office files can expand substantially when the provider reads
@@ -77,18 +87,38 @@ Deno.serve(async (request) => {
     ? Math.min(fileValue.size, 720_000)
     : fileValue.size;
   const extractionInputEstimate = Math.max(1_000, Math.ceil(estimatedProviderBytes / 8));
+
+  if (documentType === 'powerpoint') {
+    powerPointSourceHash = await sha256Hex(bytes ?? new Uint8Array(await fileValue.arrayBuffer()));
+    const { data: claim, error: claimError } = await usageContext.admin.rpc('claim_studybolt_powerpoint_import', {
+      p_user_id: usageContext.user.id,
+      p_source_hash: powerPointSourceHash,
+    });
+    if (claimError || !isRecord(claim)) return json({ error: 'StudyBolt could not check your monthly PowerPoint import allowance. Please try again.' }, 503);
+    if (claim.allowed !== true) return powerPointLimitResponse(claim);
+    limitedPowerPointImport = claim.limited === true;
+    if (limitedPowerPointImport) {
+      powerPointImportPeriodStart = typeof claim.periodStart === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(claim.periodStart)
+        ? claim.periodStart
+        : null;
+      if (!powerPointImportPeriodStart) return json({ error: 'StudyBolt could not reserve your monthly PowerPoint import. Please try again.' }, 503);
+    }
+  }
+
   const reservationResult = await reserveDocumentUsage(
     usageContext,
     estimateDocumentCost(usageContext, extractionInputEstimate, extractionOutputEstimate),
   );
-  if ('response' in reservationResult) return withCors(reservationResult.response);
+  if ('response' in reservationResult) {
+    await releasePowerPointImport(usageContext, limitedPowerPointImport, powerPointImportPeriodStart, powerPointSourceHash);
+    return withCors(reservationResult.response);
+  }
   const reservation = reservationResult.reservation;
   let modelRequestStarted = false;
   try {
     if (documentType === 'powerpoint') {
-      bytes = new Uint8Array(await fileValue.arrayBuffer());
       try {
-        localPptx = await extractPptxLocally(bytes);
+        localPptx = await extractPptxLocally(bytes ?? new Uint8Array());
       } catch (error) {
         console.error('studybolt-process-document: local PPTX extraction failed', error);
       }
@@ -133,10 +163,14 @@ Deno.serve(async (request) => {
         sourceBytes: fileValue.size,
         providerRequestFailed: true,
       });
-      if (!reconciled) return json({ error: 'StudyBolt could not record AI usage. Please try again later.' }, 503);
+      if (!reconciled) {
+        await releasePowerPointImport(usageContext, limitedPowerPointImport, powerPointImportPeriodStart, powerPointSourceHash);
+        return json({ error: 'StudyBolt could not record AI usage. Please try again later.' }, 503);
+      }
     } else {
       await releaseDocumentUsage(usageContext, reservation);
     }
+    await releasePowerPointImport(usageContext, limitedPowerPointImport, powerPointImportPeriodStart, powerPointSourceHash);
     if (error instanceof Error && error.message === 'The notes file is empty.') {
       return json({ error: 'That notes file is empty. Choose a different file.' }, 400);
     }
@@ -151,7 +185,11 @@ Deno.serve(async (request) => {
       sourceBytes: fileValue.size,
       providerStatus: response.status,
       providerRejected: true,
-    }))) return json({ error: 'StudyBolt could not record AI usage. Please try again later.' }, 503);
+    }))) {
+      await releasePowerPointImport(usageContext, limitedPowerPointImport, powerPointImportPeriodStart, powerPointSourceHash);
+      return json({ error: 'StudyBolt could not record AI usage. Please try again later.' }, 503);
+    }
+    await releasePowerPointImport(usageContext, limitedPowerPointImport, powerPointImportPeriodStart, powerPointSourceHash);
     return json({ error: providerError || 'The document processor could not read this file.' }, 502);
   }
 
@@ -166,8 +204,10 @@ Deno.serve(async (request) => {
       responseUnreadable: true,
     });
     if (!reconciled) {
+      await releasePowerPointImport(usageContext, limitedPowerPointImport, powerPointImportPeriodStart, powerPointSourceHash);
       return json({ error: 'StudyBolt could not record AI usage. Please try again later.' }, 503);
     }
+    await releasePowerPointImport(usageContext, limitedPowerPointImport, powerPointImportPeriodStart, powerPointSourceHash);
     return json({ error: 'The document processor returned an unreadable response.' }, 502);
   }
   if (uploadedFileId) await deleteProviderFile(uploadedFileId, openAiKey);
@@ -177,22 +217,74 @@ Deno.serve(async (request) => {
     sourceType: documentType,
     sourceBytes: fileValue.size,
   }))) {
+    await releasePowerPointImport(usageContext, limitedPowerPointImport, powerPointImportPeriodStart, powerPointSourceHash);
     return json({ error: 'StudyBolt could not record AI usage. Please try again later.' }, 503);
   }
-  if (!isRecord(payload)) return json({ error: 'The document processor returned an unreadable response.' }, 502);
+  if (!isRecord(payload)) {
+    await releasePowerPointImport(usageContext, limitedPowerPointImport, powerPointImportPeriodStart, powerPointSourceHash);
+    return json({ error: 'The document processor returned an unreadable response.' }, 502);
+  }
 
   try {
     const content = JSON.parse(outputText(payload)) as Record<string, unknown>;
     const owner = { userId: usageContext.user.id, admin: usageContext.admin };
     if (owner && localPptx?.visuals.length) await persistVisualSession(owner, documentId, fileName, localPptx.visuals);
-    return json(extractionOnly
+    const studyPack = extractionOnly
       ? buildExtractedStudyPack(content, { courseName, fileName, documentType }, localPptx, documentId)
-      : buildStudyPack(content, { courseName, fileName, documentType }, localPptx, documentId));
+      : buildStudyPack(content, { courseName, fileName, documentType }, localPptx, documentId);
+    if (limitedPowerPointImport && powerPointSourceHash && powerPointImportPeriodStart) {
+      const { data: completed, error: completionError } = await usageContext.admin.rpc('complete_studybolt_powerpoint_import', {
+        p_user_id: usageContext.user.id,
+        p_period_start: powerPointImportPeriodStart,
+        p_source_hash: powerPointSourceHash,
+      });
+      if (completionError || completed !== true) {
+        await releasePowerPointImport(usageContext, limitedPowerPointImport, powerPointImportPeriodStart, powerPointSourceHash);
+        return json({ error: 'StudyBolt could not save your monthly import status. Please try processing the file again.' }, 503);
+      }
+    }
+    return json(studyPack);
   } catch (error) {
     console.error('studybolt-process-document: invalid generated pack', error);
+    await releasePowerPointImport(usageContext, limitedPowerPointImport, powerPointImportPeriodStart, powerPointSourceHash);
     return json({ error: 'The generated study pack was incomplete. Please try processing the file again.' }, 502);
   }
 });
+
+async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+  return Array.from(digest, (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function releasePowerPointImport(
+  usageContext: { admin: SupabaseClient<any>; user: { id: string } },
+  limited: boolean,
+  periodStart: string | null,
+  sourceHash: string | null,
+): Promise<void> {
+  if (!limited || !periodStart || !sourceHash) return;
+  const { error } = await usageContext.admin.rpc('release_studybolt_powerpoint_import', {
+    p_user_id: usageContext.user.id,
+    p_period_start: periodStart,
+    p_source_hash: sourceHash,
+  });
+  if (error) console.error('studybolt-process-document: could not release PowerPoint import claim', error);
+}
+
+function powerPointLimitResponse(claim: Record<string, unknown>): Response {
+  const reason = claim.reason;
+  if (reason === 'in_progress') {
+    return json({ error: 'This PowerPoint is already being processed. Wait a moment, then try again.', code: 'powerpoint_import_in_progress' }, 409);
+  }
+  if (reason === 'already_imported') {
+    return json({ error: 'This PowerPoint has already used your free import for this month. Your saved Study Packs remain available in your library.', code: 'powerpoint_already_imported' }, 409);
+  }
+  return json({
+    error: 'You’ve used your one free PowerPoint import for this month. Your saved Study Packs are still available; subscribe to import more.',
+    code: 'powerpoint_monthly_limit',
+    periodStart: typeof claim.periodStart === 'string' ? claim.periodStart : undefined,
+  }, 429);
+}
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });

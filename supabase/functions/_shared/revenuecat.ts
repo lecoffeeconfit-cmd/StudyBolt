@@ -6,10 +6,10 @@ export type RevenueCatEntitlementState = {
 export async function fetchRevenueCatEntitlement(
   appUserId: string,
   entitlementId: string,
-  secretApiKey: string,
+  apiKey: string,
 ): Promise<RevenueCatEntitlementState> {
   const response = await fetch(`https://api.revenuecat.com/v1/subscribers/${encodeURIComponent(appUserId)}`, {
-    headers: { Authorization: `Bearer ${secretApiKey}`, Accept: 'application/json' },
+    headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
     signal: AbortSignal.timeout(10_000),
   });
   if (response.status === 404) return { active: false, expiresAt: null };

@@ -11,7 +11,7 @@ Deno.serve(async (request: Request) => {
   if (request.method !== 'POST') return json({ error: 'Method not allowed.' }, 405);
 
   const secret = Deno.env.get('REVENUECAT_WEBHOOK_SECRET');
-  const revenueCatApiKey = Deno.env.get('REVENUECAT_SECRET_API_KEY');
+  const revenueCatApiKey = Deno.env.get('REVENUECAT_API_KEY') || Deno.env.get('REVENUECAT_SECRET_API_KEY');
   const entitlementId = Deno.env.get('REVENUECAT_PREMIUM_ENTITLEMENT')?.trim();
   if (!secret || !revenueCatApiKey || !entitlementId) return json({ error: 'Subscription webhook is not configured.' }, 503);
 
@@ -43,6 +43,9 @@ Deno.serve(async (request: Request) => {
   if (!eventId || eventId.length > 180 || !eventType || eventType.length > 80 || !eventTimestamp || eventTimestamp <= 0) {
     return json({ error: 'Webhook event is missing required fields.' }, 400);
   }
+  // RevenueCat's dashboard fixture contains a synthetic UUID, not a StudyBolt
+  // account. Acknowledge the signed connectivity check without changing access.
+  if (eventType === 'TEST') return json({ status: 'test_received' });
 
   // Only durable Supabase user IDs can own access. Transfer events include
   // both sides so the previous account is revoked as well as the recipient.
