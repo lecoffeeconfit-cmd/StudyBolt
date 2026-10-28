@@ -1,0 +1,8 @@
+row_type,store,store_identifier,product_type,display_name,title,duration,territory,amount,currency,start_date,available,available_in_new_territories,locale,localized_name,localized_description,app_store_subscription_group_name,app_store_subscription_group_localized_name,app_store_subscription_group_custom_app_name,trial_offer_duration
+product,app_store,studybolt_premium_monthly,subscription,StudyBolt Premium Monthly,StudyBolt Premium Monthly,P1M,,,,,,,,,,StudyBolt Premium,,,
+price,app_store,studybolt_premium_monthly,,,,,United States,2.99,USD,,true,,,,,,,,
+localization,app_store,studybolt_premium_monthly,,,,,,,,,,,en-US,StudyBolt Premium Monthly,Unlock all Premium study tools.,,,,
+product,app_store,studybolt_premium_annual,subscription,StudyBolt Premium Annual,StudyBolt Premium Annual,P1Y,,,,,,,,,,StudyBolt Premium,,,
+price,app_store,studybolt_premium_annual,,,,,United States,19.99,USD,,true,,,,,,,,
+localization,app_store,studybolt_premium_annual,,,,,,,,,,,en-US,StudyBolt Premium Annual,Unlock all Premium study tools.,,,,
+offer,app_store,studybolt_premium_annual,,,,,United States,,,,true,,,,,,,,P7D

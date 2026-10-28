@@ -59,8 +59,8 @@ export function StudyBoltNavigator() {
     void syncRevenueCatUser(user?.id ?? null);
   }, [user?.id]);
 
-  const openDeck = useCallback((deck: StudyPack, tool?: StudyTool) => {
-    setRoute({ type: 'deck', deckId: deck.id, tool });
+  const openDeck = useCallback((deck: StudyPack, tool?: StudyTool, cardIds?: string[]) => {
+    setRoute({ type: 'deck', deckId: deck.id, tool, cardIds });
   }, []);
 
   const openSample = useCallback(() => {
@@ -189,8 +189,11 @@ export function StudyBoltNavigator() {
       <HomeScreen
         onOpenDeck={openDeck}
         onImport={(assets) => setRoute({ type: 'processing', assets })}
-        onStartStudy={(mode) => setRoute({ type: 'smart-study', mode })}
-        onOpenMistakes={() => setRoute({ type: 'mistakes' })}
+        onStartStudy={(mode, focus) => setRoute({ type: 'smart-study', mode, ...focus })}
+        onOpenMistakes={(itemIds) => setRoute({ type: 'mistakes', itemIds })}
+        onPracticeTest={(deckId) => setRoute({ type: 'exam', deckId })}
+        onOpenLibrary={() => setTab('library')}
+        onOpenStats={() => setTab('stats')}
         onOpenFlagged={openFlagged}
         onOpenPlanner={() => setTab('planner')}
       />
@@ -239,7 +242,7 @@ export function StudyBoltNavigator() {
       {showOnboarding ? <OnboardingScreen onComplete={finishOnboarding} onTrySample={trySampleFromOnboarding} /> : null}
       {!showOnboarding && !showAccountOnboarding && route.type === 'legal' ? <LegalScreen onBack={() => setRoute({ type: 'main' })} /> : null}
       {!showOnboarding && !showAccountOnboarding && route.type === 'reset-password' ? <ResetPasswordScreen onComplete={() => setRoute({ type: 'main' })} /> : null}
-      {!showOnboarding && !showAccountOnboarding && route.type === 'smart-study' ? <SmartStudyScreen initialMode={route.mode} focusDeckId={route.deckId} onBack={() => setRoute(route.deckId ? { type: 'deck', deckId: route.deckId } : { type: 'main' })} /> : null}
+      {!showOnboarding && !showAccountOnboarding && route.type === 'smart-study' ? <SmartStudyScreen initialMode={route.mode} focusDeckId={route.deckId} focusSectionIds={route.sectionIds} onBack={() => setRoute(route.deckId ? { type: 'deck', deckId: route.deckId } : { type: 'main' })} /> : null}
       {!showOnboarding && !showAccountOnboarding && route.type === 'speed-review' ? (
         <SpeedReviewScreen
           deckId={route.deckId}
@@ -264,6 +267,7 @@ export function StudyBoltNavigator() {
       /> : null}
       {!showOnboarding && !showAccountOnboarding && route.type === 'mistakes' ? (
         <MistakeNotebookScreen
+          itemIds={route.itemIds}
           onBack={() => setRoute({ type: 'main' })}
           onOpenDeck={(deckId, tool) => setRoute({ type: 'deck', deckId, tool })}
         />
@@ -284,6 +288,7 @@ export function StudyBoltNavigator() {
         <StudyPackScreen
           deckId={route.deckId}
           initialTool={route.tool}
+          flashcardIds={route.cardIds}
           onBack={() => setRoute({ type: 'main' })}
           onPlan={(deckId) => {
             setPlannerFocusDeckId(deckId);
@@ -345,7 +350,7 @@ export function StudyBoltNavigator() {
           }}
         />
       ) : null}
-      {!showOnboarding && !showAccountOnboarding && route.type !== 'processing' && route.type !== 'auth' && route.type !== 'widgets' ? <StudyPackGenerationProgress /> : null}
+      {!showOnboarding && !showAccountOnboarding && route.type !== 'processing' && route.type !== 'auth' && route.type !== 'widgets' ? <StudyPackGenerationProgress aboveNavigation={route.type === 'main'} /> : null}
     </View>
   );
 }

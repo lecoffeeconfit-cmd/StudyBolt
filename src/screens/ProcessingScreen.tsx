@@ -9,6 +9,8 @@ import type { ImportAsset, StudyPack } from '../models';
 import { documentIcon, documentTypeLabel, getImportDocumentType } from '../services/documentTypes';
 import { processDocument, type DocumentProcessPhase, StudyBoltProcessingError, validateImport, validateImportBatch } from '../services/documentProcessor';
 import { combineImportedPowerPoints } from '../services/studyPack';
+import { fetchTutorQuota } from '../services/aiTutor';
+import { canUseRevenueCat, syncRevenueCatEntitlement } from '../services/subscriptions';
 import { useAuth } from '../AuthContext';
 
 export function ProcessingScreen({ assets, courseId, courseName, onCancel, onSuccess, onTrySample, onRequireAuth }: { assets: ImportAsset[]; courseId?: string; courseName?: string; onCancel: () => void; onSuccess: (deck: StudyPack) => void; onTrySample: () => void; onRequireAuth: () => void }) {
@@ -79,13 +81,31 @@ export function ProcessingScreen({ assets, courseId, courseName, onCancel, onSuc
       validateImportBatch(assets);
       validateImport(asset);
       void getAccessToken()
-        .then((accessToken) => {
+        .then(async (accessToken) => {
           if (!accessToken) {
             if (mounted) {
               setAuthRequired(true);
               setError('Sign in to securely process and save this study material.');
             }
             return undefined;
+          }
+          if (getImportDocumentType(asset.name, asset.mimeType) === 'powerpoint' && canUseRevenueCat()) {
+            const subscriptionStatus = await syncRevenueCatEntitlement(accessToken);
+            if (!mounted) return undefined;
+            if (subscriptionStatus.error && subscriptionStatus.status !== 'throttled') {
+              setError(subscriptionStatus.error);
+              return undefined;
+            }
+          }
+          if (assets.length > 1) {
+            const membership = await fetchTutorQuota(accessToken);
+            if (!mounted) return undefined;
+            if (membership.quota?.plan !== 'premium') {
+              setError(membership.quota
+                ? 'Free accounts can import one PowerPoint each month. Choose one presentation or subscribe to import more.'
+                : 'StudyBolt could not confirm your plan. Please try importing one PowerPoint at a time.');
+              return undefined;
+            }
           }
           return processDocument(asset, className.trim(), accessToken, (nextPhase) => {
             if (mounted) setPhase(nextPhase);
@@ -166,6 +186,7 @@ export function ProcessingScreen({ assets, courseId, courseName, onCancel, onSuc
     ? 'Processing slides…'
     : importDocumentType === 'pdf' ? 'Processing your PDF…' : 'Processing your notes…';
   const allSourcesProcessed = assets.length > 1 && processedPacks.length === assets.length;
+  const mustChooseSinglePowerPoint = assets.length > 1 && Boolean(error?.includes('one PowerPoint'));
   return (
     <KeyboardAvoidingView style={[styles.page, { backgroundColor: colors.background, paddingTop: insets.top + 8, paddingBottom: insets.bottom + 20 }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.topBar}>
@@ -197,6 +218,8 @@ export function ProcessingScreen({ assets, courseId, courseName, onCancel, onSuc
             </View>
             {allSourcesProcessed
               ? <PrimaryButton label="Choose fewer presentations" icon="layers-triple-outline" onPress={onCancel} style={styles.action} />
+              : mustChooseSinglePowerPoint
+                ? <PrimaryButton label="Choose one PowerPoint" icon="file-presentation-box" onPress={onCancel} style={styles.action} />
               : authRequired
                 ? <PrimaryButton label="Sign in to continue" icon="account-outline" onPress={onRequireAuth} style={styles.action} />
                 : <PrimaryButton label={assets.length > 1 ? 'Retry this PowerPoint' : 'Try again'} icon="refresh" onPress={retryProcessing} style={styles.action} />}

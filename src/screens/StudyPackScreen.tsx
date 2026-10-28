@@ -155,6 +155,7 @@ export function StudyPackScreen({
   sharedMetadata,
   onSaveShared,
   initialTool = 'overview',
+  flashcardIds,
   onBack,
   onPlan,
   onStartStudy,
@@ -169,6 +170,7 @@ export function StudyPackScreen({
   sharedMetadata?: SharedStudyPackMetadata;
   onSaveShared?: () => void;
   initialTool?: StudyTool;
+  flashcardIds?: string[];
   onBack: () => void;
   onPlan: (deckId: string) => void;
   onStartStudy?: (mode: SmartStudyMode, deckId: string) => void;
@@ -240,7 +242,7 @@ export function StudyPackScreen({
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {tool === 'overview' ? <Overview deck={deck} onTool={setTool} onPlan={() => onPlan(deck.id)} onStartStudy={onStartStudy ? (mode) => onStartStudy(mode, deck.id) : undefined} onOpenSpeedReview={onOpenSpeedReview ? () => onOpenSpeedReview(deck.id) : undefined} onOpenVisualReview={onOpenVisualReview ? () => onOpenVisualReview(deck.id) : undefined} shared={shared} /> : null}
         {tool === 'notes' ? <Notes deck={deck} readOnly={shared} onAskSection={(note) => { setCoachSeed(`Help me understand this section in simpler words: ${note.title}. ${note.summary ?? note.keyIdea ?? note.bullets.join(' ')}`); setTool('coach'); }} /> : null}
-        {tool === 'flashcards' ? <MaterialGate deck={deck} material="flashcards" shared={shared}><Flashcards deck={deck} readOnly={shared} /></MaterialGate> : null}
+        {tool === 'flashcards' ? <MaterialGate deck={deck} material="flashcards" shared={shared}><Flashcards deck={flashcardIds ? { ...deck, flashcards: flashcardIds.flatMap((id) => deck.flashcards.filter((card) => card.id === id)) } : deck} readOnly={shared} /></MaterialGate> : null}
         {tool === 'quiz' ? <MaterialGate deck={deck} material="quiz" shared={shared}><Quiz deck={deck} readOnly={shared} onOpenExam={onOpenExam} /></MaterialGate> : null}
         {tool === 'audio' ? <MaterialGate deck={deck} material="audio" shared={shared}><AudioPlayer deck={deck} readOnly={shared} onRequireAuth={onRequireAuth} /></MaterialGate> : null}
         {tool === 'coach' ? <StudyCoach deck={deck} onTool={setTool} initialQuestion={coachSeed} onStartStudy={onStartStudy ? (mode) => onStartStudy(mode, deck.id) : undefined} /> : null}

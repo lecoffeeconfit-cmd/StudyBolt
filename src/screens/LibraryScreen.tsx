@@ -1,15 +1,18 @@
 import * as DocumentPicker from 'expo-document-picker';
-import React, { useMemo, useState } from 'react';
-import { Alert, Animated, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
+import { Alert, Animated, Easing, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Card, Header, Icon, type IconName, Pill, PrimaryButton, Screen } from '../components/ui';
 import { SubjectIcon } from '../components/SubjectIcon';
 import { getSubjectIcon, SUBJECT_ICONS } from '../data/subjectIcons';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 import { useStudyBolt } from '../StudyBoltContext';
-import type { ImportAsset, LibrarySort, StudyClass, StudyPack } from '../models';
+import type { ImportAsset, LibrarySort, StudyClass, StudyEvent, StudyPack } from '../models';
 import { calculateCourseMastery, calculateMastery } from '../services/mastery';
 import { DOCUMENT_PICKER_TYPE, getImportDocumentType, pageLabel } from '../services/documentTypes';
+import { getStudyEventMinutes } from '../services/studyActivity';
 import { radius } from '../theme';
 
 const CLASS_COLORS = ['#39BFA3', '#F26D8B', '#418DFF', '#F3A633', '#7D5CFF', '#11A7A2'];
@@ -23,21 +26,100 @@ const SORT_OPTIONS: Array<{ value: LibrarySort; label: string; description: stri
   { value: 'alphabetical', label: 'Name (A–Z)', description: 'Alphabetize classes and study packs', icon: 'sort-alphabetical-ascending' },
 ];
 
-function CollapseChevron({ collapsed, color }: { collapsed: boolean; color: string }) {
-  const progress = React.useRef(new Animated.Value(collapsed ? 0 : 1)).current;
+const CLASS_TRANSITION_MS = 220;
 
-  React.useEffect(() => {
-    Animated.timing(progress, {
+function CollapseChevron({ collapsed, color, reducedMotion }: { collapsed: boolean; color: string; reducedMotion: boolean }) {
+  const progress = useRef(new Animated.Value(collapsed ? 0 : 1)).current;
+
+  useEffect(() => {
+    progress.stopAnimation();
+    if (reducedMotion) {
+      progress.setValue(collapsed ? 0 : 1);
+      return;
+    }
+    const animation = Animated.timing(progress, {
       toValue: collapsed ? 0 : 1,
-      duration: 180,
+      duration: CLASS_TRANSITION_MS,
+      easing: Easing.out(Easing.cubic),
       useNativeDriver: Platform.OS !== 'web',
-    }).start();
-  }, [collapsed, progress]);
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [collapsed, progress, reducedMotion]);
 
   return (
-    <Animated.View style={{ transform: [{ rotate: progress.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '180deg'] }) }] }}>
+    <Animated.View aria-hidden accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={{ transform: [{ rotate: progress.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '180deg'] }) }] }}>
       <Icon name="chevron-down" size={20} color={color} />
     </Animated.View>
+  );
+}
+
+function CollapsibleClassBody({ expanded, reducedMotion, children }: { expanded: boolean; reducedMotion: boolean; children: ReactNode }) {
+  const progress = useRef(new Animated.Value(expanded ? 1 : 0)).current;
+  const [mounted, setMounted] = useState(expanded);
+  const [contentHeight, setContentHeight] = useState(0);
+
+  useEffect(() => {
+    progress.stopAnimation();
+    if (expanded) setMounted(true);
+    if (reducedMotion) {
+      progress.setValue(expanded ? 1 : 0);
+      setMounted(expanded);
+      return;
+    }
+    const animation = Animated.timing(progress, {
+      toValue: expanded ? 1 : 0,
+      duration: CLASS_TRANSITION_MS,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    });
+    animation.start(({ finished }) => {
+      if (finished && !expanded) setMounted(false);
+    });
+    return () => animation.stop();
+  }, [expanded, progress, reducedMotion]);
+
+  if (!mounted) return null;
+  return (
+    <Animated.View
+      pointerEvents={expanded ? 'auto' : 'none'}
+      aria-hidden={!expanded}
+      accessibilityElementsHidden={!expanded}
+      importantForAccessibility={expanded ? 'auto' : 'no-hide-descendants'}
+      style={{ overflow: 'hidden', height: contentHeight ? progress.interpolate({ inputRange: [0, 1], outputRange: [0, contentHeight] }) : undefined, opacity: progress }}
+    >
+      <View style={styles.measuredBody} onLayout={(event) => setContentHeight(event.nativeEvent.layout.height)}>{children}</View>
+    </Animated.View>
+  );
+}
+
+function ClassMasteryProgress({ value, courseName, reducedMotion }: { value: number; courseName: string; reducedMotion: boolean }) {
+  const { colors } = useStudyBolt();
+  const progress = useRef(new Animated.Value(value)).current;
+
+  useEffect(() => {
+    progress.stopAnimation();
+    if (reducedMotion) {
+      progress.setValue(value);
+      return;
+    }
+    const animation = Animated.timing(progress, { toValue: value, duration: CLASS_TRANSITION_MS, easing: Easing.out(Easing.cubic), useNativeDriver: false });
+    animation.start();
+    return () => animation.stop();
+  }, [progress, reducedMotion, value]);
+
+  return (
+    <View
+      accessibilityRole="progressbar"
+      accessibilityLabel={`Estimated mastery for ${courseName}`}
+      accessibilityValue={{ min: 0, max: 100, now: value }}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={value}
+      style={[styles.masteryTrack, { backgroundColor: colors.mintSoft }]}
+    >
+      <Animated.View style={[styles.masteryFill, { backgroundColor: colors.mint, width: progress.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'] }) }]} />
+    </View>
   );
 }
 
@@ -50,7 +132,37 @@ function formatClassAddedDate(value: string): string | null {
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  return date.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
+}
+
+function formatLastStudied(at: number, now = new Date()): string {
+  const date = new Date(at);
+  const calendarDay = (value: Date) => Date.UTC(value.getFullYear(), value.getMonth(), value.getDate()) / 86400000;
+  const days = calendarDay(now) - calendarDay(date);
+  if (days === 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days > 1 && days < 7) return `${days} days ago`;
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', ...(date.getFullYear() !== now.getFullYear() ? { year: 'numeric' } : {}) });
+}
+
+function getLibraryStudyHistory(events: StudyEvent[], decks: StudyPack[], now = Date.now()) {
+  const deckById = new Map(decks.map((deck) => [deck.id, deck]));
+  const latestByCourse = new Map<string, number>();
+  let latestDeck: StudyPack | null = null;
+  let latestDeckAt = 0;
+
+  for (const event of events) {
+    const at = timestamp(event.occurredAt);
+    if (!at || at > now || getStudyEventMinutes(event) <= 0) continue;
+    const deck = event.deckId ? deckById.get(event.deckId) : undefined;
+    const courseId = deck?.courseId ?? event.courseId;
+    if (courseId && at > (latestByCourse.get(courseId) ?? 0)) latestByCourse.set(courseId, at);
+    if (deck && at >= latestDeckAt) {
+      latestDeck = deck;
+      latestDeckAt = at;
+    }
+  }
+  return { latestByCourse, latestDeck, latestDeckAt };
 }
 
 function sortDecks(decks: StudyPack[], sort: LibrarySort): StudyPack[] {
@@ -77,6 +189,7 @@ export function LibraryScreen({
 }) {
   const { colors, state, addClass, setLibrarySort } = useStudyBolt();
   const insets = useSafeAreaInsets();
+  const reducedMotion = useReducedMotion();
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [choosingSort, setChoosingSort] = useState(false);
@@ -87,6 +200,7 @@ export function LibraryScreen({
   const [selectedColor, setSelectedColor] = useState(CLASS_COLORS[0] ?? '#39BFA3');
   const [selectedEmoji, setSelectedEmoji] = useState<string | null>(null);
   const [classError, setClassError] = useState<string | null>(null);
+  const [inspectedCourseId, setInspectedCourseId] = useState<string | null>(null);
   const suggestedIcon = getSubjectIcon(newClassName);
   const classEmoji = selectedEmoji ?? suggestedIcon.emoji;
 
@@ -114,6 +228,9 @@ export function LibraryScreen({
     }
     return sortedGroups.map((group) => ({ ...group, decks: sortDecks(group.decks, state.librarySort) }));
   }, [state.classes, state.decks, state.librarySort]);
+
+  const studyHistory = useMemo(() => getLibraryStudyHistory(state.activityEvents, state.decks), [state.activityEvents, state.decks]);
+  const inspectedCourse = courses.find((group) => group.course.id === inspectedCourseId);
 
   const normalizedSearch = searchQuery.trim().toLocaleLowerCase();
   const visibleCourses = useMemo(() => courses
@@ -202,7 +319,7 @@ export function LibraryScreen({
               >
                 <Icon name="plus" size={19} color={colors.primaryText} />
               </Pressable>
-              <Pressable onPress={() => { setSelecting((value) => !value); setSelected([]); }} style={[styles.selectButton, { backgroundColor: colors.primarySoft }]}>
+              <Pressable accessibilityRole="button" accessibilityLabel={selecting ? 'Finish selecting study packs' : 'Select study packs for an exam review'} accessibilityState={{ selected: selecting }} aria-pressed={selecting} onPress={() => { setSelecting((value) => !value); setSelected([]); }} style={({ pressed }) => [styles.selectButton, { backgroundColor: colors.primarySoft }, pressed && styles.deckRowPressed]}>
                 <Text style={[styles.selectText, { color: colors.primary }]}>{selecting ? 'Done' : 'Select'}</Text>
               </Pressable>
             </View>
@@ -212,7 +329,7 @@ export function LibraryScreen({
         <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{courses.length} {courses.length === 1 ? 'class' : 'classes'} · {state.decks.length} study {state.decks.length === 1 ? 'pack' : 'packs'}</Text>
 
         <View style={[styles.searchField, { backgroundColor: colors.cardStrong, borderColor: colors.border }]}>
-          <Icon name="magnify" size={19} color={colors.textMuted} />
+          <Icon name="magnify" size={20} color={colors.textSecondary} />
           <TextInput
             accessibilityLabel="Search classes and study packs"
             autoCapitalize="none"
@@ -220,16 +337,34 @@ export function LibraryScreen({
             value={searchQuery}
             onChangeText={setSearchQuery}
             placeholder="Search classes and study packs…"
-            placeholderTextColor={colors.textMuted}
+            placeholderTextColor={colors.textSecondary}
             returnKeyType="search"
             style={[styles.searchInput, { color: colors.text }]}
           />
           {searchQuery ? (
-            <Pressable accessibilityLabel="Clear library search" hitSlop={10} onPress={() => setSearchQuery('')}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Clear library search" style={styles.clearSearch} onPress={() => setSearchQuery('')}>
               <Icon name="close-circle" size={18} color={colors.textMuted} />
             </Pressable>
           ) : null}
         </View>
+
+        {studyHistory.latestDeck && !selecting && !normalizedSearch ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Continue studying ${studyHistory.latestDeck.title}, ${studyHistory.latestDeck.courseName}`}
+            accessibilityHint="Opens the study pack from your most recent recorded study activity."
+            onPress={() => { if (studyHistory.latestDeck) onOpenDeck(studyHistory.latestDeck); }}
+            style={({ pressed }) => [styles.continueRow, { backgroundColor: colors.card, borderColor: colors.border }, pressed && styles.deckRowPressed]}
+          >
+            <View style={[styles.continueIcon, { backgroundColor: colors.primarySoft }]}><Icon name="book-open-page-variant" size={21} color={colors.primary} /></View>
+            <View style={styles.deckCopy}>
+              <Text style={[styles.continueLabel, { color: colors.primary }]}>Continue studying</Text>
+              <Text numberOfLines={2} style={[styles.continueTitle, { color: colors.text }]}>{studyHistory.latestDeck.title}</Text>
+              <Text numberOfLines={2} style={[styles.continueMeta, { color: colors.textSecondary }]}>{studyHistory.latestDeck.courseName} · Last studied {formatLastStudied(studyHistory.latestDeckAt)}</Text>
+            </View>
+            <Icon name="arrow-right" size={19} color={colors.primary} />
+          </Pressable>
+        ) : null}
 
         {selecting ? (
           <Card style={[styles.reviewBanner, styles.flatCard, { backgroundColor: colors.purpleSoft }]}>
@@ -250,21 +385,23 @@ export function LibraryScreen({
           <View style={styles.toolbarActions}>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Open flagged review"
+              accessibilityLabel={`Open saved items, ${state.flaggedItems.length} saved`}
               onPress={onOpenFlagged}
-              style={({ pressed }) => [styles.savedButton, { backgroundColor: colors.cardStrong }, pressed && styles.sortButtonPressed]}
+              style={({ pressed }) => [styles.savedButton, { backgroundColor: state.flaggedItems.length ? colors.goldSoft : colors.cardStrong, borderColor: colors.border }, pressed && styles.sortButtonPressed]}
             >
-              <Icon name="flag-outline" size={17} color={colors.warning} />
+              <Icon name={state.flaggedItems.length ? 'flag' : 'flag-outline'} size={17} color={colors.goldText} />
               <Text style={[styles.savedButtonText, { color: colors.textSecondary }]}>Saved {state.flaggedItems.length}</Text>
             </Pressable>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={`Sort library, currently ${activeSort.label}`}
+              accessibilityState={{ expanded: choosingSort }}
+              aria-expanded={choosingSort}
               onPress={() => setChoosingSort(true)}
-              style={({ pressed }) => [styles.sortButton, { backgroundColor: colors.cardStrong }, pressed && styles.sortButtonPressed]}
+              style={({ pressed }) => [styles.sortButton, { backgroundColor: state.librarySort === 'default' ? colors.cardStrong : colors.primarySoft, borderColor: state.librarySort === 'default' ? colors.border : `${colors.primary}48` }, pressed && styles.sortButtonPressed]}
             >
               <Icon name="sort-variant" size={17} color={colors.primary} />
-              <Text style={[styles.sortButtonText, { color: colors.textSecondary }]}>Sort: {activeSort.label}</Text>
+              <Text numberOfLines={1} style={[styles.sortButtonText, { color: state.librarySort === 'default' ? colors.textSecondary : colors.primary }]}>Sort: {activeSort.label}</Text>
               <Icon name="chevron-down" size={16} color={colors.textMuted} />
             </Pressable>
           </View>
@@ -274,52 +411,46 @@ export function LibraryScreen({
             {visibleCourses.map(({ course, decks, visibleDecks }) => {
               const courseMastery = decks.length ? calculateCourseMastery(decks) : 0;
               const collapsed = normalizedSearch ? false : collapsedCourseIds.includes(course.id);
-              const addedDate = formatClassAddedDate(course.createdAt);
+              const lastStudied = studyHistory.latestByCourse.get(course.id);
+              const courseMeta = `${decks.length} study ${decks.length === 1 ? 'pack' : 'packs'}${lastStudied ? ` · Last studied ${formatLastStudied(lastStudied)}` : ''}`;
               return (
                 <View key={course.id} style={[styles.classGroup, { backgroundColor: colors.cardStrong, borderColor: `${course.color}38` }]}>
                   <View style={[styles.classAccent, { backgroundColor: course.color }]} />
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel={`${collapsed ? 'Expand' : 'Collapse'} ${course.name}`}
-                    accessibilityHint={addedDate ? `Class added ${addedDate}` : undefined}
+                    accessibilityLabel={`${collapsed ? 'Expand' : 'Collapse'} ${course.name}, ${courseMeta}`}
+                    accessibilityHint={normalizedSearch ? 'Matching study packs stay expanded while searching.' : undefined}
                     accessibilityState={{ expanded: !collapsed }}
+                    aria-expanded={!collapsed}
                     disabled={Boolean(normalizedSearch)}
                     onPress={() => toggleCourse(course.id)}
                     style={({ pressed }) => [styles.courseHeader, pressed && !normalizedSearch && styles.courseHeaderPressed]}
                   >
                     <View style={styles.courseHeaderMain}>
-                      <SubjectIcon subject={course.name} emoji={course.emoji} size={50} />
+                      <SubjectIcon subject={course.name} emoji={course.emoji} size={48} animated={false} />
                       <View style={styles.courseHeaderCopy}>
-                        <View style={styles.classLabelRow}>
-                          <Icon name="folder-outline" size={12} color={course.color} />
-                          <Text style={[styles.classLabel, { color: colors.textMuted }]}>CLASS</Text>
-                        </View>
-                        <Text numberOfLines={1} style={[styles.courseName, { color: colors.text }]}>{course.name}</Text>
-                        <Text style={[styles.courseMeta, { color: colors.textMuted }]}>
-                          {decks.length ? `${courseMastery}% estimated mastery` : 'Ready for your first study pack'}
-                        </Text>
-                        {addedDate ? (
-                          <View style={styles.classAddedRow}>
-                            <Icon name="calendar-outline" size={11} color={colors.textSecondary} />
-                            <Text style={[styles.classAddedText, { color: colors.textSecondary }]}>Added {addedDate}</Text>
-                          </View>
-                        ) : null}
+                        <Text numberOfLines={2} style={[styles.courseName, { color: colors.text }]}>{course.name}</Text>
+                        <Text numberOfLines={2} style={[styles.courseMeta, { color: colors.textSecondary }]}>{courseMeta}</Text>
                       </View>
-                      <View style={styles.courseHeaderTail}>
-                        <View style={[styles.classCount, { backgroundColor: colors.card, borderColor: `${course.color}2E` }]}>
-                          <Text style={[styles.classCountText, { color: colors.textSecondary }]}>{decks.length} {decks.length === 1 ? 'PACK' : 'PACKS'}</Text>
-                        </View>
-                        <CollapseChevron collapsed={collapsed} color={colors.textMuted} />
-                      </View>
+                      <CollapseChevron collapsed={collapsed} color={colors.textSecondary} reducedMotion={reducedMotion} />
                     </View>
-                    {decks.length ? (
-                      <View style={[styles.masteryTrack, { backgroundColor: `${course.color}18` }]}>
-                        <View style={[styles.masteryFill, { backgroundColor: course.color, width: `${courseMastery}%` }]} />
-                      </View>
-                    ) : null}
                   </Pressable>
 
-                  {!collapsed ? (
+                  <View style={styles.masteryArea}>
+                    <View style={styles.masteryLabelRow}>
+                      <Text style={[styles.masteryLabel, { color: colors.textSecondary }]}>{decks.length ? `Estimated mastery — ${courseMastery}%` : 'Ready for your first study pack'}</Text>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`About ${course.name}${decks.length ? ' and estimated mastery' : ''}`}
+                        hitSlop={8}
+                        onPress={() => setInspectedCourseId(course.id)}
+                        style={({ pressed }) => [styles.classInfoButton, pressed && styles.deckRowPressed]}
+                      ><Icon name="information-outline" size={17} color={colors.textSecondary} /></Pressable>
+                    </View>
+                    {decks.length ? <ClassMasteryProgress value={courseMastery} courseName={course.name} reducedMotion={reducedMotion} /> : null}
+                  </View>
+
+                  <CollapsibleClassBody expanded={!collapsed} reducedMotion={reducedMotion}>
                     <View style={[styles.classBody, { borderTopColor: colors.border }]}>
                       {decks.length > 0 && !selecting ? (
                         <Pressable
@@ -331,7 +462,7 @@ export function LibraryScreen({
                           <View style={[styles.speedReviewIcon, { backgroundColor: colors.purple }]}><Icon name="speedometer" size={17} color={colors.primaryText} /></View>
                           <View style={styles.speedReviewCopy}>
                             <Text style={[styles.speedReviewTitle, { color: colors.text }]}>Speed Review</Text>
-                            <Text style={[styles.speedReviewSubtitle, { color: colors.textSecondary }]}>Listen to a short pass across this class</Text>
+                            <Text style={[styles.speedReviewSubtitle, { color: colors.textSecondary }]}>Quick audio recap of this class</Text>
                           </View>
                           <Icon name="arrow-right" size={18} color={colors.purple} />
                         </Pressable>
@@ -342,10 +473,10 @@ export function LibraryScreen({
                             <Icon name="file-plus-outline" size={21} color={course.color} />
                           </View>
                           <View style={styles.emptyClassCopy}>
-                            <Text style={[styles.emptyClassTitle, { color: colors.text }]}>Add your first study pack</Text>
+                            <Text style={[styles.emptyClassTitle, { color: colors.text }]}>Create your first study pack</Text>
                             <Text style={[styles.emptyClassSubtitle, { color: colors.textSecondary }]}>Upload slides, a PDF, or notes. Select multiple PowerPoints to study them together.</Text>
                           </View>
-                          <Pressable accessibilityRole="button" accessibilityLabel={`Add study pack to ${course.name}`} onPress={() => void pickDocument(course)} style={[styles.addSlidesButton, { backgroundColor: course.color }]}>
+                          <Pressable accessibilityRole="button" accessibilityLabel={`Create a study pack in ${course.name}`} onPress={() => void pickDocument(course)} style={({ pressed }) => [styles.addSlidesButton, { backgroundColor: course.color }, pressed && styles.deckRowPressed]}>
                             <Icon name="plus" size={18} color="#FFFFFF" />
                           </Pressable>
                         </View>
@@ -363,8 +494,10 @@ export function LibraryScreen({
                             return (
                               <React.Fragment key={deck.id}>
                                 <Pressable
-                                  accessibilityRole="button"
+                                  accessibilityRole={selecting ? 'checkbox' : 'button'}
                                   accessibilityLabel={selecting ? `${isSelected ? 'Deselect' : 'Select'} ${deck.title}` : `Open ${deck.title}`}
+                                  accessibilityState={selecting ? { checked: isSelected } : undefined}
+                                  aria-checked={selecting ? isSelected : undefined}
                                   onPress={() => selecting ? toggle(deck.id) : onOpenDeck(deck)}
                                   style={({ pressed }) => [styles.deckRow, isSelected && { backgroundColor: colors.primarySoft }, pressed && styles.deckRowPressed]}
                                 >
@@ -378,8 +511,8 @@ export function LibraryScreen({
                                     </View>
                                   )}
                                   <View style={styles.deckCopy}>
-                                    <Text numberOfLines={1} style={[styles.deckTitle, { color: colors.text }]}>{deck.title}</Text>
-                                    <Text numberOfLines={1} style={[styles.deckMeta, { color: colors.textMuted }]}>
+                                    <Text numberOfLines={2} style={[styles.deckTitle, { color: colors.text }]}>{deck.title}</Text>
+                                    <Text numberOfLines={2} style={[styles.deckMeta, { color: colors.textSecondary }]}>
                                       <Text style={[styles.deckKind, { color: colors.textSecondary }]}>{fileVisual.label}</Text>
                                       {` · ${deck.pageCount} ${pageLabel(deck.fileType)} · ${calculateMastery(deck).overall}% mastered`}
                                     </Text>
@@ -396,16 +529,16 @@ export function LibraryScreen({
                       {decks.length > 0 && !selecting && !normalizedSearch ? (
                         <Pressable
                           accessibilityRole="button"
-                          accessibilityLabel={`Add study pack to ${course.name}`}
+                          accessibilityLabel={`Create a study pack in ${course.name}`}
                           onPress={() => void pickDocument(course)}
                           style={({ pressed }) => [styles.addPackRow, pressed && styles.deckRowPressed]}
                         >
                           <View style={[styles.addPackIcon, { backgroundColor: `${course.color}16` }]}><Icon name="plus" size={16} color={course.color} /></View>
-                          <Text style={[styles.addPackText, { color: colors.textSecondary }]}>Add study pack</Text>
+                          <Text style={[styles.addPackText, { color: colors.textSecondary }]}>Create study pack</Text>
                         </Pressable>
                       ) : null}
                     </View>
-                  ) : null}
+                  </CollapsibleClassBody>
                 </View>
               );
             })}
@@ -424,10 +557,10 @@ export function LibraryScreen({
         )}
       </Screen>
 
-      <Modal visible={choosingSort} transparent animationType="slide" onRequestClose={() => setChoosingSort(false)}>
+      <Modal visible={choosingSort} transparent animationType={reducedMotion ? 'none' : 'slide'} onRequestClose={() => setChoosingSort(false)}>
         <View style={[styles.modalRoot, { backgroundColor: colors.mode === 'dark' ? 'rgba(0,0,0,0.68)' : 'rgba(17,28,78,0.32)' }]}>
           <Pressable accessibilityLabel="Close sort options" onPress={() => setChoosingSort(false)} style={StyleSheet.absoluteFill} />
-          <View style={[styles.sortSheet, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow, paddingBottom: Math.max(insets.bottom, 18) }]}>
+          <View role="dialog" aria-modal accessibilityViewIsModal accessibilityLabel="Sort your library" style={[styles.sortSheet, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow, paddingBottom: Math.max(insets.bottom, 18) }]}>
             <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
             <View style={styles.sheetHeadingRow}>
               <View style={[styles.sheetIcon, { backgroundColor: colors.primarySoft }]}><Icon name="sort-variant" size={24} color={colors.primary} /></View>
@@ -446,6 +579,7 @@ export function LibraryScreen({
                     key={option.value}
                     accessibilityRole="radio"
                     accessibilityState={{ checked: active }}
+                    aria-checked={active}
                     onPress={() => {
                       setLibrarySort(option.value);
                       setChoosingSort(false);
@@ -474,10 +608,42 @@ export function LibraryScreen({
         </View>
       </Modal>
 
-      <Modal visible={creatingClass} transparent animationType="slide" onRequestClose={closeClassModal}>
+      {inspectedCourse ? (
+        <Modal visible transparent animationType={reducedMotion ? 'none' : 'slide'} onRequestClose={() => setInspectedCourseId(null)}>
+          <View style={[styles.modalRoot, { backgroundColor: colors.mode === 'dark' ? 'rgba(0,0,0,0.68)' : 'rgba(17,28,78,0.32)' }]}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Close class details" onPress={() => setInspectedCourseId(null)} style={StyleSheet.absoluteFill} />
+            <View role="dialog" aria-modal accessibilityViewIsModal accessibilityLabel={`${inspectedCourse.course.name} class details`} style={[styles.sortSheet, styles.detailsSheet, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow, paddingBottom: Math.max(insets.bottom, 18) }]}>
+              <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
+              <View style={styles.sheetHeadingRow}>
+                <SubjectIcon subject={inspectedCourse.course.name} emoji={inspectedCourse.course.emoji} size={44} animated={false} />
+                <View style={styles.sheetHeadingCopy}>
+                  <Text style={[styles.sheetTitle, { color: colors.text }]}>{inspectedCourse.course.name}</Text>
+                  <Text style={[styles.sheetSubtitle, { color: colors.textSecondary }]}>Class details</Text>
+                </View>
+                <Pressable accessibilityRole="button" accessibilityLabel="Dismiss class details" onPress={() => setInspectedCourseId(null)} style={styles.classInfoButton}><Icon name="close" size={22} color={colors.textSecondary} /></Pressable>
+              </View>
+              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.detailsContent}>
+                {formatClassAddedDate(inspectedCourse.course.createdAt) ? (
+                  <View style={styles.detailsDateRow}>
+                    <Icon name="calendar-outline" size={18} color={colors.textSecondary} />
+                    <Text style={[styles.detailsText, { color: colors.textSecondary }]}>Created {formatClassAddedDate(inspectedCourse.course.createdAt)}</Text>
+                  </View>
+                ) : null}
+                <Text style={[styles.detailsHeading, { color: colors.text }]}>Estimated mastery{inspectedCourse.decks.length ? ` — ${calculateCourseMastery(inspectedCourse.decks)}%` : ''}</Text>
+                <Text style={[styles.detailsText, { color: colors.textSecondary }]}>{inspectedCourse.decks.length ? 'Class mastery is the rounded average of the existing mastery scores of its study packs.' : 'Create your first study pack to see an estimated mastery score.'}</Text>
+                <Text style={[styles.detailsText, { color: colors.textSecondary }]}>Each pack combines reviewed notes (25%), flashcard confidence (35%), and its latest quiz score (40%). Known flashcards count fully, learning cards count half, and new cards count zero.</Text>
+                <Text style={[styles.detailsText, { color: colors.textSecondary }]}>Once a cumulative test is recorded, the weights are notes 20%, flashcards 30%, latest quiz 20%, and latest test 30%.</Text>
+                <Text style={[styles.detailsNote, { color: colors.textSecondary, backgroundColor: colors.cardStrong }]}>This is a study estimate, not a predicted exam grade. “Last studied” uses recorded study activity, rather than the date a pack was created or opened.</Text>
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+      ) : null}
+
+      <Modal visible={creatingClass} transparent animationType={reducedMotion ? 'none' : 'slide'} onRequestClose={closeClassModal}>
         <KeyboardAvoidingView style={[styles.modalRoot, { backgroundColor: colors.mode === 'dark' ? 'rgba(0,0,0,0.68)' : 'rgba(17,28,78,0.32)' }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <Pressable accessibilityLabel="Close new class dialog" onPress={closeClassModal} style={StyleSheet.absoluteFill} />
-          <View style={[styles.sheet, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow, paddingBottom: Math.max(insets.bottom, 16) }]}>
+          <View role="dialog" aria-modal accessibilityViewIsModal accessibilityLabel="Create a class" style={[styles.sheet, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow, paddingBottom: Math.max(insets.bottom, 16) }]}>
             <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
             <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} bounces={false}>
               <View style={styles.sheetHeadingRow}>
@@ -557,69 +723,73 @@ export function LibraryScreen({
 
 const styles = StyleSheet.create({
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  newClassButton: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  selectButton: { paddingHorizontal: 11, paddingVertical: 9, borderRadius: 12 },
-  selectText: { fontSize: 11, fontWeight: '800' },
+  newClassButton: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  selectButton: { minHeight: 44, paddingHorizontal: 13, paddingVertical: 10, borderRadius: 14, justifyContent: 'center' },
+  selectText: { fontSize: 12, fontWeight: '700' },
   title: { fontSize: 28, lineHeight: 33, fontWeight: '900', letterSpacing: -0.9, marginTop: 11 },
   subtitle: { fontSize: 12, lineHeight: 17, marginTop: 4 },
-  searchField: { minHeight: 44, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 15 },
-  searchInput: { flex: 1, minWidth: 0, height: 43, fontSize: 13 },
+  searchField: { minHeight: 48, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, paddingLeft: 13, paddingRight: 4, flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 15 },
+  searchInput: { flex: 1, minWidth: 0, minHeight: 46, paddingVertical: 10, fontSize: 13 },
+  clearSearch: { width: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  continueRow: { minHeight: 76, borderRadius: radius.md, borderWidth: StyleSheet.hairlineWidth, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 11, marginTop: 14 },
+  continueIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  continueLabel: { fontSize: 11, lineHeight: 15, fontWeight: '700' },
+  continueTitle: { fontSize: 14, lineHeight: 19, fontWeight: '700', marginTop: 2 },
+  continueMeta: { fontSize: 11, lineHeight: 16, marginTop: 3 },
   reviewBanner: { marginTop: 18 },
   reviewBannerRow: { flexDirection: 'row', alignItems: 'center', gap: 11 },
   reviewTitle: { fontSize: 14, fontWeight: '800' },
   reviewSubtitle: { fontSize: 11, marginTop: 3 },
   reviewButton: { minHeight: 48, marginTop: 14 },
-  libraryToolbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 9, marginTop: 20, marginBottom: 12 },
+  libraryToolbar: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 20, marginBottom: 12 },
   sectionTitle: { fontSize: 18, lineHeight: 23, fontWeight: '800', letterSpacing: -0.3 },
-  toolbarActions: { flexShrink: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 7 },
-  savedButton: { minHeight: 38, borderRadius: radius.pill, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10 },
+  toolbarActions: { flexGrow: 1, flexShrink: 1, flexBasis: 240, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 8 },
+  savedButton: { minHeight: 44, borderWidth: StyleSheet.hairlineWidth, borderRadius: radius.pill, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 11 },
   savedButtonText: { fontSize: 11, fontWeight: '800' },
-  sortButton: { minHeight: 38, maxWidth: 162, flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, borderRadius: radius.pill },
-  sortButtonPressed: { opacity: 0.82, transform: [{ scale: 0.98 }] },
+  sortButton: { minHeight: 44, maxWidth: 180, flexShrink: 1, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 11, borderRadius: radius.pill },
+  sortButtonPressed: { opacity: 0.82 },
   sortButtonText: { flexShrink: 1, fontSize: 11, fontWeight: '800' },
   courseList: { gap: 14 },
   classGroup: { position: 'relative', borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
   classAccent: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 4 },
-  courseHeader: { paddingHorizontal: 14, paddingTop: 13, paddingBottom: 12, paddingLeft: 17 },
-  courseHeaderPressed: { opacity: 0.86 },
+  courseHeader: { minHeight: 72, paddingHorizontal: 14, paddingTop: 13, paddingBottom: 3, paddingLeft: 17 },
+  courseHeaderPressed: { opacity: 0.88 },
   courseHeaderMain: { flexDirection: 'row', alignItems: 'center', gap: 11 },
   courseHeaderCopy: { flex: 1, minWidth: 0 },
-  courseHeaderTail: { alignItems: 'flex-end', justifyContent: 'center', gap: 7 },
-  classLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 3 },
-  classLabel: { fontSize: 8, lineHeight: 10, fontWeight: '900', letterSpacing: 1.1 },
-  classCount: { minHeight: 24, borderRadius: radius.pill, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 },
-  classCountText: { fontSize: 8, fontWeight: '900', letterSpacing: 0.45 },
-  courseName: { fontSize: 17, fontWeight: '800' },
-  courseMeta: { fontSize: 11, marginTop: 3 },
-  classAddedRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 5 },
-  classAddedText: { flexShrink: 1, fontSize: 10, lineHeight: 14 },
-  masteryTrack: { height: 3, borderRadius: 2, overflow: 'hidden', marginTop: 10, marginLeft: 61 },
-  masteryFill: { height: 3, borderRadius: 2 },
+  courseName: { fontSize: 17, lineHeight: 23, fontWeight: '800' },
+  courseMeta: { fontSize: 11, lineHeight: 16, marginTop: 4 },
+  masteryArea: { paddingLeft: 17, paddingRight: 14, paddingBottom: 12 },
+  masteryLabelRow: { minHeight: 36, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 5 },
+  masteryLabel: { flex: 1, fontSize: 12, lineHeight: 17, fontWeight: '600' },
+  classInfoButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 12 },
+  masteryTrack: { height: 5, borderRadius: 3, overflow: 'hidden' },
+  masteryFill: { height: 5, borderRadius: 3 },
+  measuredBody: { width: '100%', flexShrink: 0 },
   classBody: { borderTopWidth: StyleSheet.hairlineWidth, paddingHorizontal: 10, paddingTop: 10, paddingBottom: 9 },
-  speedReviewRow: { minHeight: 62, borderRadius: 15, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 11, marginBottom: 10 },
-  speedReviewIcon: { width: 35, height: 35, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  speedReviewCopy: { flex: 1 },
+  speedReviewRow: { minHeight: 54, borderRadius: 14, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 11, paddingVertical: 8, marginBottom: 10 },
+  speedReviewIcon: { width: 32, height: 32, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  speedReviewCopy: { flex: 1, minWidth: 0 },
   speedReviewTitle: { fontSize: 12, fontWeight: '900' },
-  speedReviewSubtitle: { fontSize: 10, lineHeight: 14, marginTop: 2 },
+  speedReviewSubtitle: { fontSize: 11, lineHeight: 15, marginTop: 2 },
   emptyClassCard: { minHeight: 68, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 11, padding: 12 },
   emptyClassIcon: { width: 39, height: 39, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   emptyClassCopy: { flex: 1 },
   emptyClassTitle: { fontSize: 13, fontWeight: '800' },
   emptyClassSubtitle: { fontSize: 10, lineHeight: 15, marginTop: 3 },
-  addSlidesButton: { width: 38, height: 38, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  addSlidesButton: { width: 44, height: 44, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   deckList: { borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
-  deckRow: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 12, paddingVertical: 9 },
-  deckRowPressed: { opacity: 0.78 },
-  deckDivider: { height: StyleSheet.hairlineWidth, marginLeft: 57 },
-  deckFileIcon: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  checkbox: { width: 26, height: 26, borderRadius: 8, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
-  deckCopy: { flex: 1 },
-  deckTitle: { fontSize: 13, lineHeight: 17, fontWeight: '800' },
+  deckRow: { minHeight: 72, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 11 },
+  deckRowPressed: { opacity: 0.84 },
+  deckDivider: { height: StyleSheet.hairlineWidth, marginLeft: 58 },
+  deckFileIcon: { width: 36, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  checkbox: { width: 36, height: 36, borderRadius: 11, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
+  deckCopy: { flex: 1, minWidth: 0 },
+  deckTitle: { fontSize: 14, lineHeight: 19, fontWeight: '700' },
   deckKind: { fontWeight: '700' },
-  deckMeta: { fontSize: 10, lineHeight: 14, marginTop: 3 },
-  addPackRow: { minHeight: 38, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 8, marginTop: 5 },
+  deckMeta: { fontSize: 11, lineHeight: 16, marginTop: 4 },
+  addPackRow: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 8, marginTop: 5 },
   addPackIcon: { width: 27, height: 27, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
-  addPackText: { fontSize: 11, fontWeight: '800' },
+  addPackText: { fontSize: 12, fontWeight: '700' },
   emptyLibrary: { minHeight: 210, borderRadius: 19, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center', padding: 22 },
   emptyLibraryIcon: { width: 48, height: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
   emptyLibraryTitle: { fontSize: 16, fontWeight: '900' },
@@ -632,12 +802,18 @@ const styles = StyleSheet.create({
   sortSheet: { width: '100%', maxWidth: 560, alignSelf: 'center', borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 20, paddingTop: 10, shadowOffset: { width: 0, height: -8 }, shadowOpacity: 0.16, shadowRadius: 24, elevation: 16 },
   sortOptions: { gap: 9, marginTop: 20 },
   sortOption: { minHeight: 68, borderRadius: radius.md, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 11 },
-  sortOptionPressed: { opacity: 0.8, transform: [{ scale: 0.99 }] },
+  sortOptionPressed: { opacity: 0.8 },
   sortOptionIcon: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   sortOptionCopy: { flex: 1 },
   sortOptionTitle: { fontSize: 13, lineHeight: 17, fontWeight: '900' },
   sortOptionDescription: { fontSize: 10, lineHeight: 14, marginTop: 2 },
   radio: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
+  detailsSheet: { maxHeight: '85%' },
+  detailsContent: { gap: 14, paddingTop: 18, paddingBottom: 10 },
+  detailsDateRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  detailsHeading: { fontSize: 16, lineHeight: 22, fontWeight: '700', marginTop: 3 },
+  detailsText: { flexShrink: 1, fontSize: 13, lineHeight: 20 },
+  detailsNote: { fontSize: 12, lineHeight: 18, padding: 12, borderRadius: 12 },
   sheet: { width: '100%', maxWidth: 560, maxHeight: '94%', alignSelf: 'center', borderTopLeftRadius: 27, borderTopRightRadius: 27, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 22, paddingTop: 10, paddingBottom: 16, shadowOffset: { width: 0, height: -8 }, shadowOpacity: 0.18, shadowRadius: 24, elevation: 16 },
   sheetHandle: { width: 42, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 18 },
   sheetHeadingRow: { flexDirection: 'row', alignItems: 'center', gap: 11 },

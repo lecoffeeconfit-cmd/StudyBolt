@@ -198,6 +198,7 @@ export function PremiumScreen({ onBack, onOpenLegal, onRequireAuth }: { onBack: 
             <>
               <Text style={[styles.usageTitle, { color: colors.text }]}>{quota.remaining} of {quota.limit} AI interactions left</Text>
               <Text style={[styles.usageCopy, { color: colors.textSecondary }]}>Allowance resets {quota.periodEnd}. Document processing and AI Tutor use the same allowance.</Text>
+              {quota.plan === 'free' ? <Text style={[styles.usageCopy, { color: colors.textSecondary }]}>You can keep using your saved Study Packs and import one PowerPoint each month.</Text> : null}
             </>
           ) : (
             <Text style={[styles.usageCopy, { color: colors.textSecondary }]}>{loading ? 'Checking the current plan with the StudyBolt server…' : 'Sign-in and the secure AI service must be available to verify a plan.'}</Text>
@@ -223,8 +224,8 @@ export function PremiumScreen({ onBack, onOpenLegal, onRequireAuth }: { onBack: 
                     <Pressable key={item.identifier} accessibilityRole="radio" accessibilityState={{ selected }} onPress={() => setSelectedPackageId(item.identifier)} style={[styles.packageCard, { backgroundColor: colors.card, borderColor: selected ? colors.primary : colors.border }]}>
                       <View style={[styles.radio, { borderColor: selected ? colors.primary : colors.border }]}>{selected ? <View style={[styles.radioDot, { backgroundColor: colors.primary }]} /> : null}</View>
                       <View style={{ flex: 1 }}>
-                        <Text style={[styles.packageTitle, { color: colors.text }]}>{item.product.title || 'StudyBolt Premium'}</Text>
-                        <Text style={[styles.packageDetail, { color: colors.textSecondary }]}>{item.product.description || 'Premium study access'}{subscriptionPeriodLabel(item.product.subscriptionPeriod) ? ` · Renews ${subscriptionPeriodLabel(item.product.subscriptionPeriod)}` : ''}</Text>
+                        <Text style={[styles.packageTitle, { color: colors.text }]}>{packagePlanName(item)}</Text>
+                        <Text style={[styles.packageDetail, { color: colors.textSecondary }]}>{packageBillingDetail(item)}</Text>
                       </View>
                       <Text style={[styles.packagePrice, { color: colors.text }]}>{item.product.priceString}</Text>
                     </Pressable>
@@ -300,15 +301,30 @@ function isSubscriptionSyncReady(result: { status?: string; error?: string }): b
   return !result.error && result.status !== 'throttled';
 }
 
-function subscriptionPeriodLabel(period: string | null): string | null {
+function packagePlanName(item: PurchasesPackage): string {
+  return subscriptionPeriodMonths(item.product.subscriptionPeriod) === 12 ? 'Annual plan' : 'Monthly plan';
+}
+
+function packageBillingDetail(item: PurchasesPackage): string {
+  if (subscriptionPeriodMonths(item.product.subscriptionPeriod) === 12) {
+    const intro = item.product.introPrice;
+    const trialDays = intro?.periodUnit.toUpperCase() === 'WEEK'
+      ? intro.periodNumberOfUnits * 7
+      : intro?.periodUnit.toUpperCase() === 'DAY' ? intro.periodNumberOfUnits : 0;
+    if (intro?.price === 0 && trialDays === 7) {
+      return `7-day free trial for eligible new subscribers · then ${item.product.priceString} per year`;
+    }
+    return `${item.product.priceString} per year · billed annually`;
+  }
+  return `${item.product.priceString} per month · billed monthly`;
+}
+
+function subscriptionPeriodMonths(period: string | null): number | null {
   if (!period) return null;
-  const match = /^P(?:(\d+)Y)?(?:(\d+)M)?(?:(\d+)W)?(?:(\d+)D)?$/.exec(period);
+  const match = /^P(?:(\d+)Y)?(?:(\d+)M)?$/.exec(period);
   if (!match) return null;
-  const [, years, months, weeks, days] = match;
-  const [value, unit] = years ? [years, 'year'] : months ? [months, 'month'] : weeks ? [weeks, 'week'] : days ? [days, 'day'] : ['', ''];
-  if (!value || !unit) return null;
-  const count = Number(value);
-  return `every ${count} ${unit}${count === 1 ? '' : 's'}`;
+  const months = (Number(match[1] ?? 0) * 12) + Number(match[2] ?? 0);
+  return months > 0 ? months : null;
 }
 
 const styles = StyleSheet.create({

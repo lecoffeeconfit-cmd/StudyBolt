@@ -13,12 +13,12 @@ export type Route =
   | { type: 'widgets' }
   | { type: 'legal' }
   | { type: 'reset-password' }
-  | { type: 'smart-study'; mode?: SmartStudyMode; deckId?: string }
+  | { type: 'smart-study'; mode?: SmartStudyMode; deckId?: string; sectionIds?: string[] }
   | { type: 'speed-review'; deckId?: string; courseId?: string; returnDeckId?: string }
   | { type: 'exam'; deckId?: string }
-  | { type: 'mistakes' }
+  | { type: 'mistakes'; itemIds?: string[] }
   | { type: 'flagged' }
-  | { type: 'deck'; deckId: string; tool?: StudyTool }
+  | { type: 'deck'; deckId: string; tool?: StudyTool; cardIds?: string[] }
   | { type: 'visual-review'; deckId: string }
   | { type: 'shared'; token: string }
   | { type: 'community-class'; classId: string }

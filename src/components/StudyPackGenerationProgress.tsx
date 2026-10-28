@@ -1,13 +1,17 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { StudyPackMaterial } from '../models';
 import { AUTOMATIC_STUDY_PACK_MATERIALS, STUDY_PACK_MATERIAL_LABELS } from '../services/documentProcessor';
 import { useStudyBolt } from '../StudyBoltContext';
+import { bottomTabBarTop } from './BottomTabs';
 import { Icon } from './ui';
 
-export function StudyPackGenerationProgress() {
+export function StudyPackGenerationProgress({ aboveNavigation = false }: { aboveNavigation?: boolean }) {
   const { colors, state, retryStudyPackMaterial } = useStudyBolt();
+  const insets = useSafeAreaInsets();
+  const navigationSpacing = aboveNavigation ? { bottom: bottomTabBarTop(insets.bottom) + 12 } : undefined;
   const [expanded, setExpanded] = useState(false);
   const [hiddenDeckIds, setHiddenDeckIds] = useState<string[]>([]);
   const deck = useMemo(() => [...state.decks]
@@ -50,7 +54,7 @@ export function StudyPackGenerationProgress() {
 
   if (complete) {
     return (
-      <View accessibilityLiveRegion="polite" style={[styles.banner, { backgroundColor: colors.card, borderColor: colors.mint }]}>
+      <View accessibilityLiveRegion="polite" style={[styles.banner, navigationSpacing, { backgroundColor: colors.card, borderColor: colors.mint }]}>
         <View style={[styles.bannerIcon, { backgroundColor: colors.mintSoft }]}><Icon name="check" size={18} color={colors.mint} /></View>
         <Text style={[styles.bannerTitle, { color: colors.text }]}>Study Pack ready</Text>
       </View>
@@ -59,7 +63,7 @@ export function StudyPackGenerationProgress() {
 
   if (!expanded) {
     return (
-      <Pressable accessibilityRole="button" accessibilityLabel="View Study Pack tools" onPress={() => setExpanded(true)} style={[styles.banner, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <Pressable accessibilityRole="button" accessibilityLabel="View Study Pack tools" onPress={() => setExpanded(true)} style={[styles.banner, navigationSpacing, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <View style={[styles.bannerIcon, { backgroundColor: colors.goldSoft }]}><Icon name="lightning-bolt" size={18} color={colors.goldText} /></View>
         <Text numberOfLines={1} style={[styles.bannerTitle, { color: colors.text }]}>Study Pack ready · {ready}/{totalMaterials} tools ready</Text>
         <Text style={[styles.viewLabel, { color: colors.primary }]}>View tools</Text>
@@ -68,7 +72,7 @@ export function StudyPackGenerationProgress() {
   }
 
   return (
-    <View accessibilityLiveRegion="polite" style={[styles.panel, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow }]}>
+    <View accessibilityLiveRegion="polite" style={[styles.panel, navigationSpacing, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow }]}>
       <View style={styles.header}>
         <View style={[styles.panelIcon, { backgroundColor: colors.goldSoft }]}><Icon name="lightning-bolt" size={20} color={colors.goldText} /></View>
         <View style={styles.headerCopy}>

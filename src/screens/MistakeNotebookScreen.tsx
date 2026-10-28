@@ -13,12 +13,14 @@ type NotebookAction = 'review' | 'explain' | 'example';
 export function MistakeNotebookScreen({
   onBack,
   onOpenDeck,
+  itemIds,
 }: {
   onBack: () => void;
   onOpenDeck: (deckId: string, tool: StudyTool) => void;
+  itemIds?: string[];
 }) {
   const { colors, state } = useStudyBolt();
-  const items = useMemo(() => buildMistakeNotebook(state), [state]);
+  const items = useMemo(() => buildMistakeNotebook(state).filter((item) => !itemIds || itemIds.includes(item.id)), [state, itemIds]);
   const [open, setOpen] = useState<{ id: string; action: NotebookAction } | null>(null);
   const dangerous = items.filter((item) => item.confidentlyWrong > 0).length;
 

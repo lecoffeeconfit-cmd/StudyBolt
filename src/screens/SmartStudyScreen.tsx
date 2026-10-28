@@ -29,7 +29,7 @@ const FORMAT_LABELS: Record<SmartStudyItem['format'], string> = {
   application: 'Apply it',
 };
 
-export function SmartStudyScreen({ initialMode = 'smart', focusDeckId, onBack }: { initialMode?: SmartStudyMode; focusDeckId?: string; onBack: () => void }) {
+export function SmartStudyScreen({ initialMode = 'smart', focusDeckId, focusSectionIds, onBack }: { initialMode?: SmartStudyMode; focusDeckId?: string; focusSectionIds?: string[]; onBack: () => void }) {
   const { colors, recordStudyEvent, state, updateDeck } = useStudyBolt();
   const insets = useSafeAreaInsets();
   const [mode, setMode] = useState<SmartStudyMode>(initialMode);
@@ -43,7 +43,7 @@ export function SmartStudyScreen({ initialMode = 'smart', focusDeckId, onBack }:
   const [results, setResults] = useState<SessionResult[]>([]);
   const questionStartedAt = useRef(Date.now());
   const sessionStartedAt = useRef(Date.now());
-  const brief = useMemo(() => buildSmartStudyBrief(state, mode, focusDeckId, sessionMinutes), [focusDeckId, mode, sessionMinutes, state]);
+  const brief = useMemo(() => buildSmartStudyBrief(state, mode, focusDeckId, sessionMinutes, focusSectionIds), [focusDeckId, focusSectionIds, mode, sessionMinutes, state]);
   const item = brief.items[index];
   const introPalette = mode === 'smart'
     ? colors.mode === 'dark'

@@ -560,6 +560,8 @@ export interface StudyPlanDay {
 export interface StudyPlan {
   createdAt?: string;
   targetDate?: string;
+  /** Present only after the student explicitly saves a test date in Planner. */
+  exam?: { date: string; title?: string };
   durationDays: number;
   scope: StudyScope;
   modalities: StudyModality[];

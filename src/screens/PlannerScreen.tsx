@@ -32,10 +32,49 @@ const MODALITY_ICONS: Record<StudyModality, IconName> = {
   test: 'school-outline',
 };
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function getCalendarDayOffset(dateInput: string, now = new Date()): number | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateInput);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const target = new Date(year, month - 1, day, 12);
+  if (target.getFullYear() !== year || target.getMonth() !== month - 1 || target.getDate() !== day) return null;
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const targetOrdinal = Date.UTC(year, month - 1, day);
+  const todayOrdinal = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  return Math.round((targetOrdinal - todayOrdinal) / DAY_MS);
+}
+
+function toDateInputValue(value?: string): string {
+  if (!value) return '';
+  const date = new Date(value);
+  if (!Number.isFinite(+date)) return '';
+  const input = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  return (getCalendarDayOffset(input) ?? -1) >= 0 ? input : '';
+}
+
+function getRemainingPlanDays(targetDate?: string): number | null {
+  const input = toDateInputValue(targetDate);
+  const offset = input ? getCalendarDayOffset(input) : null;
+  return offset !== null && offset >= 0 ? offset + 1 : null;
+}
+
+function formatPlanDayDate(value?: string): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (!Number.isFinite(+date)) return null;
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
 export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: string; onFocusApplied?: () => void }) {
   const { colors, recordStudyEvent, state, setPlan, setFocusMinutes } = useStudyBolt();
   const [notice, setNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
-  const [examDate, setExamDate] = useState(() => state.plan.targetDate?.slice(0, 10) ?? '');
+  const [examDate, setExamDate] = useState(() => toDateInputValue(state.plan.targetDate));
+  const [examTitle, setExamTitle] = useState(() => state.plan.exam?.title ?? '');
+  const [examNotice, setExamNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
   const [editingPlan, setEditingPlan] = useState(false);
   const [showTimer, setShowTimer] = useState(false);
   const appliedFocus = useRef<string | undefined>(undefined);
@@ -62,8 +101,9 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
   }, [setPlan, state.plan]);
 
   useEffect(() => {
-    if (state.plan.targetDate) setExamDate(state.plan.targetDate.slice(0, 10));
-  }, [state.plan.targetDate]);
+    setExamDate(toDateInputValue(state.plan.targetDate));
+    setExamTitle(state.plan.exam?.title ?? '');
+  }, [state.plan.exam?.title, state.plan.targetDate]);
 
   useEffect(() => {
     if (!focusDeckId || appliedFocus.current === focusDeckId) return;
@@ -71,15 +111,15 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
     if (!deck) return;
     appliedFocus.current = focusDeckId;
     void disableStudyReminders();
-    setPlan(buildStudyPlan([deck], {
-      durationDays: state.plan.durationDays,
+    setPlan({ ...buildStudyPlan([deck], {
+      durationDays: getRemainingPlanDays(state.plan.targetDate) ?? state.plan.durationDays,
       scope: { type: 'deck', id: deck.id },
       modalities: state.plan.modalities.length ? state.plan.modalities : RECOMMENDED_MODALITIES,
       quizQuestionCount: state.quizQuestionCount,
       remindersEnabled: false,
-    }));
+    }), exam: state.plan.exam });
     onFocusApplied?.();
-  }, [focusDeckId, onFocusApplied, setPlan, state.decks, state.plan.durationDays, state.plan.modalities, state.quizQuestionCount]);
+  }, [focusDeckId, onFocusApplied, setPlan, state.decks, state.plan.durationDays, state.plan.modalities, state.plan.targetDate, state.plan.exam, state.quizQuestionCount]);
 
   const selectedDecks = useMemo(() => decksForScope(state.plan.scope), [decksForScope, state.plan.scope]);
   const subject = state.plan.scope.type === 'deck'
@@ -91,21 +131,39 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
   );
   const totalMinutes = state.plan.days.reduce((sum, day) => sum + day.minutes, 0);
   const activeDayCount = Math.max(1, state.plan.days.filter((day) => day.minutes > 0).length);
+  const remainingPlanDays = getRemainingPlanDays(state.plan.targetDate);
+  const examDateOffset = getCalendarDayOffset(examDate);
+  const examDateIsBuildable = examDateOffset !== null && examDateOffset >= 0 && examDateOffset < 90;
   const planProgress = getPlanProgress(state.plan);
   const mastery = calculateCourseMastery(selectedDecks);
+  const planPreview = useMemo(() => {
+    if (!examDateIsBuildable || examDateOffset === null || !selectedDecks.length || !state.plan.modalities.length) return null;
+    if (toDateInputValue(state.plan.targetDate) === examDate) return state.plan;
+    return buildStudyPlan(selectedDecks, {
+      durationDays: examDateOffset + 1,
+      scope: state.plan.scope,
+      modalities: state.plan.modalities,
+      quizQuestionCount: state.quizQuestionCount,
+      remindersEnabled: false,
+    });
+  }, [examDate, examDateIsBuildable, examDateOffset, selectedDecks, state.plan, state.quizQuestionCount]);
+  const previewTotalMinutes = planPreview?.days.reduce((sum, day) => sum + day.minutes, 0) ?? 0;
+  const previewActiveDays = Math.max(1, planPreview?.days.filter((day) => day.minutes > 0).length ?? 0);
 
-  const applyPlan = useCallback((scope: StudyScope, durationDays = state.plan.durationDays, modalities = state.plan.modalities) => {
+  const applyPlan = useCallback((scope: StudyScope, durationDays?: number, modalities = state.plan.modalities, exam = durationDays === undefined ? state.plan.exam : undefined) => {
     const decks = decksForScope(scope);
     if (!decks.length || !modalities.length) return;
-    const next = buildStudyPlan(decks, {
-      durationDays,
+    const planDays = durationDays ?? getRemainingPlanDays(state.plan.targetDate) ?? state.plan.durationDays;
+    const next = { ...buildStudyPlan(decks, {
+      durationDays: planDays,
       scope,
       modalities,
       quizQuestionCount: state.quizQuestionCount,
       remindersEnabled: state.plan.remindersEnabled,
-    });
+    }), exam };
     setPlan(next);
     setNotice(null);
+    setExamNotice(null);
     if (next.remindersEnabled) {
       void scheduleStudyPlanReminders(next, scope.type === 'deck' ? decks[0]?.title ?? 'your PowerPoint' : decks[0]?.courseName ?? 'your class')
         .then((result) => {
@@ -115,7 +173,7 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
           }
         });
     }
-  }, [decksForScope, setPlan, state.plan.durationDays, state.plan.modalities, state.plan.remindersEnabled, state.quizQuestionCount]);
+  }, [decksForScope, setPlan, state.plan.durationDays, state.plan.modalities, state.plan.remindersEnabled, state.plan.targetDate, state.plan.exam, state.quizQuestionCount]);
 
   useEffect(() => {
     if (focusDeckId || state.plan.quizQuestionCount === state.quizQuestionCount) return;
@@ -142,7 +200,7 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
     const next = selected
       ? state.plan.modalities.filter((item) => item !== modality)
       : [...state.plan.modalities, modality];
-    applyPlan(state.plan.scope, state.plan.durationDays, next);
+    applyPlan(state.plan.scope, undefined, next);
   };
 
   const toggleBlock = (dayId: string, blockId: string) => {
@@ -174,20 +232,19 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
   };
 
   const applyExamDate = () => {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(examDate)) {
-      setNotice({ tone: 'error', text: 'Enter the exam date as YYYY-MM-DD.' });
+    if (!examDateIsBuildable) {
+      setExamNotice({ tone: 'error', text: examDateOffset === null ? 'Enter a real date in YYYY-MM-DD format.' : examDateOffset < 0 ? 'Choose today or a future date.' : 'Choose a test date within the next 90 days.' });
       return;
     }
-    const target = new Date(`${examDate}T23:59:59`);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    if (!Number.isFinite(+target) || +target < +today) {
-      setNotice({ tone: 'error', text: 'Choose today or a future exam date.' });
+    if (!selectedDecks.length) {
+      setExamNotice({ tone: 'error', text: 'Add a study pack, then choose it under Edit plan.' });
       return;
     }
-    const days = Math.min(90, Math.max(1, Math.floor((+target - +today) / 86400000) + 1));
-    applyPlan(state.plan.scope, days);
-    setNotice({ tone: 'success', text: `Exam Mode built a ${days}-day countdown and will rebalance it as you study.` });
+    const days = (examDateOffset ?? 0) + 1;
+    applyPlan(state.plan.scope, days, state.plan.modalities, { date: examDate, title: examTitle.trim() || undefined });
+    const target = new Date(`${examDate}T12:00:00`);
+    const readableDate = target.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+    setExamNotice({ tone: 'success', text: `Your ${days}-day study plan is set through ${readableDate}. It will rebalance as you study.` });
   };
 
   return (
@@ -202,7 +259,7 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
             <View style={{ flex: 1 }}>
               <Text style={[styles.summaryEyebrow, { color: colors.mode === 'dark' ? '#8FB5EE' : colors.primary }]}>YOUR ROUTE</Text>
               <Text style={[styles.summaryTitle, { color: colors.mode === 'dark' ? '#EDF1F5' : colors.text }]}>{subject}</Text>
-              <Text style={[styles.summaryDetail, { color: colors.mode === 'dark' ? '#C1CAD3' : colors.textSecondary }]}>{selectedDecks.length} PowerPoint{selectedDecks.length === 1 ? '' : 's'} · {state.plan.durationDays} day{state.plan.durationDays === 1 ? '' : 's'}</Text>
+              <Text style={[styles.summaryDetail, { color: colors.mode === 'dark' ? '#C1CAD3' : colors.textSecondary }]}>{selectedDecks.length} PowerPoint{selectedDecks.length === 1 ? '' : 's'} · {remainingPlanDays === null ? 'set a test date' : `${remainingPlanDays}-day plan`}</Text>
             </View>
             <View style={[styles.timeBubble, { backgroundColor: colors.mode === 'dark' ? '#FFFFFF14' : colors.card }]}>
               <Text style={[styles.timeValue, { color: colors.mode === 'dark' ? '#EDF1F5' : colors.text }]}>{formatMinutes(totalMinutes)}</Text>
@@ -217,6 +274,79 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
           <Text style={[styles.progressLabel, { color: colors.mode === 'dark' ? '#AAB6C2' : colors.textMuted }]}>{planProgress}% complete</Text>
         </Card>
 
+        <Card style={[styles.examModeCard, styles.examCard, { backgroundColor: colors.mode === 'dark' ? colors.primarySoft : '#F3F7FF', borderColor: colors.mode === 'dark' ? colors.border : '#DCE7FA' }]}>
+          <View style={styles.examModeHeading}>
+            <View style={[styles.examModeIcon, { backgroundColor: colors.primary }]}><Icon name="school-outline" size={22} color={colors.primaryText} /></View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.examModeTitle, { color: colors.text }]}>Study toward a test</Text>
+              <Text style={[styles.examModeText, { color: colors.textSecondary }]}>Choose a date and we’ll pace your selected material through test day.</Text>
+            </View>
+          </View>
+          <View style={[styles.examSelection, { backgroundColor: colors.mode === 'dark' ? '#FFFFFF0C' : '#FFFFFF' }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.selectionEyebrow, { color: colors.textMuted }]}>{state.plan.scope.type === 'deck' ? 'ONE POWERPOINT' : 'ENTIRE CLASS'}</Text>
+              <Text numberOfLines={1} style={[styles.selectionTitle, { color: colors.text }]}>{subject}</Text>
+              <Text style={[styles.selectionDetail, { color: colors.textMuted }]}>{selectedDecks.length} selected PowerPoint{selectedDecks.length === 1 ? '' : 's'}</Text>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityHint="Opens the study material and study mix controls below."
+              onPress={() => setEditingPlan(true)}
+              style={({ pressed }) => [styles.changeSelection, { backgroundColor: colors.primarySoft }, pressed && styles.controlPressed]}
+            >
+              <Text style={[styles.changeSelectionText, { color: colors.primary }]}>Change</Text>
+              <Icon name="chevron-right" size={16} color={colors.primary} />
+            </Pressable>
+          </View>
+          <Text style={[styles.dateFieldLabel, { color: colors.textSecondary }]}>TEST NAME · OPTIONAL</Text>
+          <TextInput accessibilityLabel="Test name, optional" value={examTitle} onChangeText={setExamTitle} placeholder="e.g. Midterm" placeholderTextColor={colors.textMuted} maxLength={80} style={[styles.examNameInput, { color: colors.text, backgroundColor: colors.card, borderColor: colors.border }]} />
+          <Text style={[styles.dateFieldLabel, { color: colors.textSecondary }]}>TEST DATE</Text>
+          <View style={styles.examDateRow}>
+            <View style={[styles.dateInputWrap, { borderColor: colors.border, backgroundColor: colors.card }]}>
+              <Icon name="calendar-month-outline" size={18} color={colors.primary} />
+              <TextInput
+                accessibilityLabel="Test date"
+                accessibilityHint="Enter the date as four-digit year, month, and day."
+                value={examDate}
+                onChangeText={(value) => { setExamDate(value); setExamNotice(null); }}
+                placeholder="YYYY-MM-DD"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="numbers-and-punctuation"
+                maxLength={10}
+                style={[styles.examDateInput, { color: colors.text }]}
+              />
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={remainingPlanDays === null ? 'Build study plan' : 'Update study plan'}
+              disabled={!examDateIsBuildable || !selectedDecks.length}
+              onPress={applyExamDate}
+              style={({ pressed }) => [styles.examDateButton, { backgroundColor: examDateIsBuildable && selectedDecks.length ? colors.primary : colors.border }, pressed && styles.controlPressed]}
+            >
+              <Text style={[styles.examDateButtonText, { color: examDateIsBuildable && selectedDecks.length ? colors.primaryText : colors.textMuted }]}>{remainingPlanDays === null ? 'Build plan' : 'Update plan'}</Text>
+            </Pressable>
+          </View>
+          <Text style={[styles.dateHelper, { color: examDate.trim() && !examDateIsBuildable ? colors.danger : colors.textMuted }]}>
+            {!selectedDecks.length
+              ? 'Add a study pack, then choose it under Edit plan.'
+              : !examDate.trim()
+                ? 'Enter a date to plan up to 90 study days.'
+                : examDateOffset === null
+                  ? 'Use a real date in YYYY-MM-DD format.'
+                  : examDateOffset < 0
+                    ? 'Choose today or a future date.'
+                    : examDateOffset >= 90
+                      ? 'Choose a test date that fits a 90-day study window.'
+                      : `${new Date(`${examDate}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} · ${examDateOffset + 1} study-plan day${examDateOffset === 0 ? '' : 's'} · about ${Math.max(1, Math.ceil(previewTotalMinutes / previewActiveDays))} min per study day`}
+          </Text>
+          {examNotice ? (
+            <View accessibilityLiveRegion="polite" style={[styles.examNotice, { backgroundColor: examNotice.tone === 'success' ? colors.mintSoft : `${colors.danger}14` }]}>
+              <Icon name={examNotice.tone === 'success' ? 'check-circle' : 'alert-circle-outline'} color={examNotice.tone === 'success' ? colors.mint : colors.danger} size={16} />
+              <Text style={[styles.examNoticeText, { color: colors.textSecondary }]}>{examNotice.text}</Text>
+            </View>
+          ) : null}
+        </Card>
+
         <Pressable
           accessibilityRole="button"
           accessibilityState={{ expanded: editingPlan }}
@@ -224,7 +354,7 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
           style={({ pressed }) => [styles.editPlanButton, { backgroundColor: colors.cardStrong }, pressed && styles.controlPressed]}
         >
           <Icon name="tune-variant" size={19} color={colors.primary} />
-          <Text style={[styles.editPlanText, { color: colors.text }]}>{editingPlan ? 'Done editing' : 'Edit plan'}</Text>
+          <Text style={[styles.editPlanText, { color: colors.text }]}>{editingPlan ? 'Done editing' : 'Edit materials & study mix'}</Text>
           <Icon name={editingPlan ? 'chevron-up' : 'chevron-down'} size={20} color={colors.textMuted} />
         </Pressable>
 
@@ -262,33 +392,7 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
           })}
         </View>
 
-        <SectionHeader title="2 · When is your exam?" action="Auto-adjusting" />
-        <Card style={[styles.examModeCard, { backgroundColor: colors.mode === 'dark' ? colors.primarySoft : '#EEF5FF' }]}>
-          <View style={styles.examModeHeading}>
-            <View style={[styles.examModeIcon, { backgroundColor: colors.primary }]}><Icon name="school-outline" size={22} color={colors.primaryText} /></View>
-            <View style={{ flex: 1 }}><Text style={[styles.examModeTitle, { color: colors.text }]}>Exam Mode</Text><Text style={[styles.examModeText, { color: colors.textSecondary }]}>Pick the real date. Missed work rolls into the lightest remaining days.</Text></View>
-          </View>
-          <View style={styles.examDateRow}>
-            <TextInput
-              value={examDate}
-              onChangeText={setExamDate}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={colors.textMuted}
-              keyboardType="numbers-and-punctuation"
-              maxLength={10}
-              style={[styles.examDateInput, { color: colors.text, backgroundColor: colors.card, borderColor: colors.border }]}
-            />
-            <Pressable onPress={applyExamDate} style={[styles.examDateButton, { backgroundColor: colors.primary }]}><Text style={[styles.examDateButtonText, { color: colors.primaryText }]}>Build plan</Text></Pressable>
-          </View>
-          <View style={styles.examFacts}>
-            <Text style={[styles.examFact, { color: colors.textSecondary }]}>{state.plan.durationDays} days</Text>
-            <View style={[styles.examFactDot, { backgroundColor: colors.textMuted }]} />
-            <Text style={[styles.examFact, { color: colors.textSecondary }]}>{selectedDecks.reduce((sum, deck) => sum + deck.flashcards.filter((card) => card.confidence !== 'known').length, 0)} concepts remaining</Text>
-            <View style={[styles.examFactDot, { backgroundColor: colors.textMuted }]} />
-            <Text style={[styles.examFact, { color: colors.textSecondary }]}>~{Math.max(1, Math.ceil(totalMinutes / activeDayCount))} min/day</Text>
-          </View>
-        </Card>
-        <Text style={[styles.quickDeadlineLabel, { color: colors.textMuted }]}>OR CHOOSE A QUICK DEADLINE</Text>
+        <Text style={[styles.quickDeadlineLabel, { color: colors.textMuted }]}>OR USE A QUICK STUDY WINDOW</Text>
         <View style={styles.durationGrid}>
           {DURATIONS.map((duration) => {
             const selected = state.plan.durationDays === duration.days;
@@ -301,7 +405,7 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
           })}
         </View>
 
-        <SectionHeader title="3 · Choose your study mix" action="Use recommended" onAction={() => applyPlan(state.plan.scope, state.plan.durationDays, RECOMMENDED_MODALITIES)} />
+        <SectionHeader title="2 · Choose your study mix" action="Use recommended" onAction={() => applyPlan(state.plan.scope, undefined, RECOMMENDED_MODALITIES)} />
         <Card style={[styles.recommendation, { backgroundColor: colors.mintSoft }]}>
           <Icon name="creation" color={colors.mint} size={22} />
           <View style={{ flex: 1 }}>
@@ -343,7 +447,7 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
               <Card style={[styles.dayCard, styles.flatCard, day.complete && { borderColor: colors.mint }]}>
                 <View style={styles.dayHeader}>
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.dayTitle, { color: colors.text }]}>{day.label}</Text>
+                    <Text style={[styles.dayTitle, { color: colors.text }]}>{day.label}{formatPlanDayDate(day.date) ? ` · ${formatPlanDayDate(day.date)}` : ''}</Text>
                     <Text style={[styles.daySubtitle, { color: colors.textMuted }]}>{day.subtitle}</Text>
                   </View>
                   <Pill label={day.minutes ? formatMinutes(day.minutes) : 'Rest'} tone={day.complete ? 'mint' : index === 0 ? 'blue' : 'neutral'} />
@@ -480,17 +584,27 @@ const styles = StyleSheet.create({
   scopeTitle: { fontSize: 13, fontWeight: '800' },
   scopeDetail: { fontSize: 10, marginTop: 3 },
   examModeCard: { padding: 15 },
+  examCard: { marginTop: 15, borderWidth: 1, shadowOpacity: 0, elevation: 0 },
   examModeHeading: { flexDirection: 'row', alignItems: 'center', gap: 11 },
   examModeIcon: { width: 43, height: 43, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   examModeTitle: { fontSize: 14, fontWeight: '900' },
-  examModeText: { fontSize: 9, lineHeight: 14, marginTop: 3 },
-  examDateRow: { flexDirection: 'row', gap: 8, marginTop: 13 },
-  examDateInput: { flex: 1, minHeight: 45, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, fontSize: 12, fontWeight: '700' },
-  examDateButton: { minHeight: 45, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 15 },
+  examModeText: { fontSize: 11, lineHeight: 16, marginTop: 4 },
+  examSelection: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14, paddingHorizontal: 11, paddingVertical: 9, marginTop: 14 },
+  selectionEyebrow: { fontSize: 8, fontWeight: '900', letterSpacing: 0.8 },
+  selectionTitle: { fontSize: 12, fontWeight: '800', marginTop: 3 },
+  selectionDetail: { fontSize: 9, marginTop: 2 },
+  changeSelection: { minHeight: 34, borderRadius: 10, paddingHorizontal: 9, flexDirection: 'row', alignItems: 'center', gap: 2 },
+  changeSelectionText: { fontSize: 10, fontWeight: '800' },
+  dateFieldLabel: { fontSize: 9, fontWeight: '900', letterSpacing: 0.8, marginTop: 14 },
+  examNameInput: { minHeight: 44, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, fontSize: 12, marginTop: 6 },
+  examDateRow: { flexDirection: 'row', gap: 8, marginTop: 6 },
+  dateInputWrap: { flex: 1, minWidth: 0, minHeight: 46, borderWidth: 1, borderRadius: 12, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  examDateInput: { flex: 1, minWidth: 0, height: 42, paddingHorizontal: 0, fontSize: 12, fontWeight: '700' },
+  examDateButton: { minHeight: 46, minWidth: 96, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 11 },
   examDateButtonText: { fontSize: 10, fontWeight: '900' },
-  examFacts: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 7, marginTop: 12 },
-  examFact: { fontSize: 9, fontWeight: '800' },
-  examFactDot: { width: 3, height: 3, borderRadius: 2 },
+  dateHelper: { fontSize: 10, lineHeight: 14, marginTop: 7 },
+  examNotice: { marginTop: 10, borderRadius: 12, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 7 },
+  examNoticeText: { flex: 1, fontSize: 10, lineHeight: 14 },
   quickDeadlineLabel: { fontSize: 8, fontWeight: '900', letterSpacing: 0.9, marginTop: 15, marginBottom: 8 },
   durationGrid: { flexDirection: 'row', gap: 7 },
   duration: { flex: 1, minHeight: 58, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },

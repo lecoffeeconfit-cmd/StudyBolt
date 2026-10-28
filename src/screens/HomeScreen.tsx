@@ -1,14 +1,11 @@
 import * as DocumentPicker from 'expo-document-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as Notifications from 'expo-notifications';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Animated, AppState, Easing, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, AppState, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import { useStudyBolt } from '../StudyBoltContext';
-import type { ImportAsset, StudyPack } from '../models';
-import { calculateMastery } from '../services/mastery';
-import { buildMistakeNotebook, buildSmartStudyBrief } from '../services/adaptiveStudy';
+import type { ImportAsset, StudyPack, StudyTool } from '../models';
 import type { SmartStudyMode } from '../services/adaptiveStudy';
 import { DOCUMENT_PICKER_TYPE, getImportDocumentType, pageLabel } from '../services/documentTypes';
 import {
@@ -18,9 +15,17 @@ import {
   subscribeToStudyTimerSettings,
   type StudyTimerSettings,
 } from '../services/studyTimer';
-import { BoltMark, Card, Header, Icon, Pill, ProgressBar, Screen, SectionHeader } from '../components/ui';
+import { Card, Header, Icon, Pill, Screen, SectionHeader } from '../components/ui';
 import { SubjectIcon } from '../components/SubjectIcon';
+import { AddStudyMaterialCard } from '../components/AddStudyMaterialCard';
 import { useReducedMotion } from '../hooks/useReducedMotion';
+import { findHomeAudioResume } from '../services/homeStudy';
+import { buildHomeDashboard } from '../services/homeDashboard';
+import type { HomeDueReview, HomeWeakTopic } from '../services/homeDashboard';
+import { getRetentionCardSchedule } from '../services/retentionScheduler';
+import { HomePrioritySheet, RecentLearningCard, UpcomingExamCard } from '../components/HomeLearningCards';
+import type { HomePriority } from '../components/TodaysPlanCard';
+import { TodaysPlanCard } from '../components/TodaysPlanCard';
 import { useAuth } from '../AuthContext';
 
 const POMODORO_STORAGE_KEY = '@studybolt/pomodoro-timer/v1';
@@ -90,81 +95,44 @@ export function HomeScreen({
   onOpenMistakes,
   onOpenFlagged,
   onOpenPlanner,
+  onPracticeTest,
+  onOpenLibrary,
+  onOpenStats,
 }: {
-  onOpenDeck: (deck: StudyPack) => void;
+  onOpenDeck: (deck: StudyPack, tool?: StudyTool, cardIds?: string[]) => void;
   onImport: (assets: ImportAsset[]) => void;
-  onStartStudy: (mode: SmartStudyMode) => void;
-  onOpenMistakes: () => void;
+  onStartStudy: (mode: SmartStudyMode, focus?: { deckId: string; sectionIds?: string[] }) => void;
+  onOpenMistakes: (itemIds?: string[]) => void;
   onOpenFlagged: () => void;
   onOpenPlanner: () => void;
+  onPracticeTest: (deckId?: string) => void;
+  onOpenLibrary: () => void;
+  onOpenStats: () => void;
 }) {
   const { colors, state, setTheme } = useStudyBolt();
   const { user } = useAuth();
-  const reducedMotion = useReducedMotion();
-  const energySweep = useRef(new Animated.Value(0)).current;
-  const avatarInitial = (user?.email?.[0] ?? 'H').toUpperCase();
-  const brief = useMemo(() => buildSmartStudyBrief(state), [state]);
-  const mistakeCount = useMemo(() => buildMistakeNotebook(state).length, [state]);
-  const today = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
-  const studyNowPalette = colors.mode === 'dark'
-    ? {
-        gradient: ['#18243D', '#153049', '#302A18'] as const,
-        pillBackground: '#FFD45E18',
-        dot: colors.goldBright,
-        pillText: '#F6D988',
-        estimate: '#B6C6DD',
-        title: '#F8FBFF',
-        body: '#C1CDDD',
-        metricValue: '#F8FBFF',
-        metricLabel: '#9FB0C8',
-        divider: '#88A8CE4D',
-        actionBackground: colors.goldBright,
-        actionIcon: colors.onGold,
-        borderGradient: ['#6E96C4', '#536F8B', '#B08F43'] as const,
-        borderShadow: '#000000',
-        glow: '#FFD45E18',
-        streak: '#FFF2B8',
-      }
-    : {
-        gradient: ['#EAF2FF', '#E4F1FF', '#FFF3C8'] as const,
-        pillBackground: '#FFFFFFB8',
-        dot: colors.gold,
-        pillText: '#72521B',
-        estimate: '#55708D',
-        title: '#16204A',
-        body: '#53657A',
-        metricValue: '#16204A',
-        metricLabel: '#64758A',
-        divider: '#AFC2D8',
-        actionBackground: colors.goldBright,
-        actionIcon: colors.onGold,
-        borderGradient: ['#82B1EE', '#BFD3E9', '#E9C456'] as const,
-        borderShadow: '#6683A8',
-        glow: '#FFD45E24',
-        streak: '#FFFFFF',
-      };
-
+  const avatarInitial = user?.email?.[0]?.toUpperCase();
+  const [now, setNow] = useState(() => new Date());
+  const [priority, setPriority] = useState<HomePriority | 'flashcards' | null>(null);
   useEffect(() => {
-    energySweep.stopAnimation();
-    if (reducedMotion) {
-      energySweep.setValue(1);
-      return;
-    }
-    energySweep.setValue(0);
-    const animation = Animated.sequence([
-      Animated.delay(520),
-      Animated.timing(energySweep, {
-        toValue: 1,
-        duration: 900,
-        easing: Easing.inOut(Easing.cubic),
-        useNativeDriver: Platform.OS !== 'web',
-      }),
-    ]);
-    animation.start();
-    return () => animation.stop();
-  }, [energySweep, reducedMotion]);
+    const timer = setInterval(() => setNow(new Date()), 60_000);
+    const subscription = AppState.addEventListener('change', (next) => { if (next === 'active') setNow(new Date()); });
+    return () => { clearInterval(timer); subscription.remove(); };
+  }, []);
+  const academicState = useMemo(() => ({ ...state, decks: state.decks.filter((deck) => deck.fileType !== 'demo'), activityEvents: state.activityEvents.filter((event) => !event.id.startsWith('seed-')) }), [state]);
+  const resumeDeck = useMemo(() => findHomeAudioResume(academicState), [academicState]);
+  const dashboard = useMemo(() => buildHomeDashboard(state, {
+    now, resumeDeckId: resumeDeck?.id,
+    scheduleCard: (deckId, cardId) => getRetentionCardSchedule(academicState, deckId, cardId, state.retentionMode === 'standard' ? 'sm2' : state.retentionMode, now),
+  }), [state, academicState, now, resumeDeck?.id]);
+  const importInFlight = useRef(false);
+  const today = now.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
+  const recentMaterials = (dashboard.decks.length ? dashboard.decks : state.decks).slice().sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, 2);
+  const failedPack = dashboard.decks.find((deck) => deck.generation && Object.values(deck.generation.materials).some((material) => material.status === 'failed'));
 
   const pickDocument = async () => {
+    if (importInFlight.current) return;
+    importInFlight.current = true;
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: DOCUMENT_PICKER_TYPE,
@@ -184,7 +152,29 @@ export function HomeScreen({
       onImport(assets);
     } catch {
       Alert.alert('Couldn’t open files', 'Check file permissions, then try again.');
+    } finally {
+      importInFlight.current = false;
     }
+  };
+
+  const reviewDue = (group: HomeDueReview) => onOpenDeck(group.deck, 'flashcards', group.cardIds);
+  const studyWeak = (topic: HomeWeakTopic) => topic.cardIds.length
+    ? onStartStudy('smart', { deckId: topic.deck.id, sectionIds: [topic.sectionId] })
+    : onOpenDeck(topic.deck, 'notes');
+  const practice = () => dashboard.decks.length ? onPracticeTest(dashboard.decks.find((deck) => deck.quiz.length || deck.flashcards.length)?.id) : void pickDocument();
+  const startRecommended = () => {
+    const next = dashboard.recommendation;
+    const deck = dashboard.decks.find((item) => item.id === next.deckId);
+    if (next.kind === 'materials') return pickDocument();
+    if (next.kind === 'mistakes') return onOpenMistakes(dashboard.mistakeIds);
+    if (!deck) return onOpenLibrary();
+    if (next.kind === 'resume') return onOpenDeck(deck, 'audio');
+    if (next.kind === 'due') return onOpenDeck(deck, 'flashcards', next.cardIds);
+    if (next.kind === 'weak' && next.sectionId) {
+      if (!next.cardIds?.length) return onOpenDeck(deck, 'notes');
+      return onStartStudy('smart', { deckId: deck.id, sectionIds: [next.sectionId] });
+    }
+    return deck.flashcards.length ? onStartStudy('smart', { deckId: deck.id }) : onOpenDeck(deck, 'notes');
   };
 
   return (
@@ -194,6 +184,7 @@ export function HomeScreen({
         right={
           <View style={styles.headerActions}>
             <Pressable
+              accessibilityRole="button"
               accessibilityLabel={`Switch to ${colors.mode === 'dark' ? 'light' : 'dark'} mode`}
               onPress={() => setTheme(colors.mode === 'dark' ? 'light' : 'dark')}
               style={[styles.roundButton, { backgroundColor: colors.card, borderColor: colors.border }]}
@@ -201,7 +192,7 @@ export function HomeScreen({
               <Icon name={colors.mode === 'dark' ? 'weather-sunny' : 'weather-night'} size={19} color={colors.mode === 'dark' ? colors.warning : colors.primary} />
             </Pressable>
             <View style={[styles.avatar, { backgroundColor: colors.mintSoft }]}>
-              <Text style={styles.avatarText}>{avatarInitial}</Text>
+              {avatarInitial ? <Text style={[styles.avatarText, { color: colors.mode === 'dark' ? '#A4E0CE' : '#12775E' }]}>{avatarInitial}</Text> : <Icon name="account-outline" size={21} color={colors.mode === 'dark' ? '#A4E0CE' : '#12775E'} />}
             </View>
           </View>
         }
@@ -210,127 +201,48 @@ export function HomeScreen({
       <View style={styles.heroCopy}>
         <View style={styles.dateRow}>
           <Icon name="lightning-bolt" size={12} color={colors.goldText} />
-          <Text style={[styles.date, { color: colors.textMuted }]}>{today.toUpperCase()}</Text>
+          <Text style={[styles.date, { color: colors.textSecondary }]}>{today.toUpperCase()}</Text>
         </View>
         <Text style={[styles.title, { color: colors.text }]}>Ready when you are</Text>
-        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Your next best session is ready.</Text>
+        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Let’s build on what you know.</Text>
       </View>
 
-      <Pressable accessibilityRole="button" accessibilityLabel="Start your smart study session" onPress={() => onStartStudy('smart')}>
-        {({ pressed }) => (
-          <LinearGradient
-            colors={studyNowPalette.borderGradient}
-            locations={[0, 0.62, 1]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={[
-              styles.studyNowFrame,
-              {
-                opacity: pressed ? 0.9 : 1,
-                shadowColor: studyNowPalette.borderShadow,
-                shadowOpacity: colors.mode === 'dark' ? 0.24 : 0.14,
-              },
-            ]}
-          >
-            <LinearGradient
-              colors={studyNowPalette.gradient}
-              locations={[0, 0.7, 1]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.studyNowCard}
-            >
-              <View style={[styles.energyGlow, { backgroundColor: studyNowPalette.glow }]} />
-              <Animated.View
-                accessibilityElementsHidden
-                importantForAccessibility="no-hide-descendants"
-                style={[
-                  styles.energySweep,
-                  {
-                    backgroundColor: studyNowPalette.streak,
-                    opacity: energySweep.interpolate({ inputRange: [0, 0.16, 0.84, 1], outputRange: [0, 0.32, 0.24, 0] }),
-                    transform: [
-                      { translateX: energySweep.interpolate({ inputRange: [0, 1], outputRange: [-120, 480] }) },
-                      { rotate: '18deg' },
-                    ],
-                  },
-                ]}
-              />
-              <BoltMark animated={false} size={74} iconSize={42} style={styles.energyBolt} />
-              <View style={styles.studyNowTop}>
-                <View style={[styles.todayPill, { backgroundColor: studyNowPalette.pillBackground }]}><View style={[styles.liveDot, { backgroundColor: studyNowPalette.dot }]} /><Text style={[styles.todayPillText, { color: studyNowPalette.pillText }]}>TODAY’S PLAN</Text></View>
-                <Text style={[styles.estimate, { color: studyNowPalette.estimate }]}>{brief.estimatedMinutes} MIN</Text>
-              </View>
-              <Text style={[styles.studyNowTitle, { color: studyNowPalette.title }]}>Study Now</Text>
-              <Text style={[styles.studyNowText, { color: studyNowPalette.body }]}>Due reviews, weak topics, and recent misses—prioritized for you.</Text>
-              <View style={styles.studyMetrics}>
-                <View><Text style={[styles.studyMetricValue, { color: studyNowPalette.metricValue }]}>{brief.dueReviews}</Text><Text style={[styles.studyMetricLabel, { color: studyNowPalette.metricLabel }]}>reviews</Text></View>
-                <View style={[styles.metricDivider, { backgroundColor: studyNowPalette.divider }]} />
-                <View><Text style={[styles.studyMetricValue, { color: studyNowPalette.metricValue }]}>{brief.weakTopics}</Text><Text style={[styles.studyMetricLabel, { color: studyNowPalette.metricLabel }]}>weak topics</Text></View>
-                <View style={[styles.metricDivider, { backgroundColor: studyNowPalette.divider }]} />
-                <View><Text style={[styles.studyMetricValue, { color: studyNowPalette.metricValue }]}>{brief.recentMistakes}</Text><Text style={[styles.studyMetricLabel, { color: studyNowPalette.metricLabel }]}>{brief.recentMistakes === 1 ? 'mistake area' : 'mistake areas'}</Text></View>
-                <View style={[styles.startCircle, { backgroundColor: studyNowPalette.actionBackground }]}><Icon name="arrow-right" size={23} color={studyNowPalette.actionIcon} /></View>
-              </View>
-            </LinearGradient>
-          </LinearGradient>
-        )}
-      </Pressable>
+      <TodaysPlanCard dashboard={dashboard} colors={colors} onStartSession={startRecommended} onOpenPriority={setPriority} />
 
-      <PomodoroTimerCard />
+      <AddStudyMaterialCard colors={colors} onPress={pickDocument} compact={dashboard.decks.length > 0} />
+      {failedPack ? <Card onPress={() => onOpenDeck(failedPack)} style={[styles.statusCard, { backgroundColor: colors.goldSoft }]}><Icon name="information-outline" color={colors.goldText} size={20} /><Text style={[styles.statusText, { color: colors.text }]}>Some tools in {failedPack.title} need another try. Open the pack to retry generation.</Text><Icon name="chevron-right" color={colors.goldText} size={18} /></Card> : null}
+      <UpcomingExamCard exam={dashboard.exam} onOpenPlan={onOpenPlanner} />
 
-      {brief.examDaysLeft !== null ? (
-        <Pressable onPress={onOpenPlanner} style={[styles.examCard, { backgroundColor: colors.cardStrong }]}>
-          <View style={[styles.examIcon, { backgroundColor: brief.examDaysLeft <= 1 ? `${colors.danger}15` : colors.primarySoft }]}><Icon name="school-outline" size={22} color={brief.examDaysLeft <= 1 ? colors.danger : colors.primary} /></View>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.examTitle, { color: colors.text }]}>{brief.examDaysLeft === 0 ? 'Exam day' : `${brief.examDaysLeft} days left`} <Text style={{ color: colors.textMuted }}>· {brief.examConceptsRemaining} concepts remaining</Text></Text>
-            <Text style={[styles.examText, { color: colors.textMuted }]}>≈ {Math.max(5, Math.ceil((brief.examConceptsRemaining * 3) / Math.max(1, brief.examDaysLeft ?? 1)))} min/day · Plan adjusts if you miss a day</Text>
-          </View>
-          <Icon name="chevron-right" color={colors.textMuted} />
-        </Pressable>
-      ) : null}
-
-      <Text style={[styles.sectionLabel, { color: colors.text }]}>Quick start</Text>
+      <Text accessibilityRole="header" style={[styles.sectionLabel, { color: colors.text }]}>Quick start</Text>
       <View style={styles.quickActions}>
-        <QuickAction icon="radar" label="Pre-Test" detail="Find your baseline" color={colors.primary} background={colors.primarySoft} onPress={() => onStartStudy('pretest')} />
-        <QuickAction icon="fire" label="Cram" detail="Highest yield first" color={colors.warning} background={`${colors.warning}18`} onPress={() => onStartStudy('cram')} />
-        <QuickAction icon="book-alert-outline" label="Mistakes" detail={`${mistakeCount} to review`} color={colors.purple} background={colors.purpleSoft} onPress={onOpenMistakes} />
-        <QuickAction icon="flag-outline" label="Saved" detail={`${state.flaggedItems.length} flagged`} color={colors.goldText} background={colors.goldSoft} onPress={onOpenFlagged} />
+        <QuickAction icon="clipboard-check-outline" label="Practice Test" detail="Test what you know" color={colors.primary} background={colors.primarySoft} onPress={practice} />
+        <QuickAction icon="book-alert-outline" label="Review Mistakes" detail="Retry missed questions" color={colors.purple} background={colors.purpleSoft} onPress={() => setPriority('mistakes')} />
+        <QuickAction icon="cards-outline" label="Flashcards" detail="Practice active recall" color={colors.mode === 'dark' ? colors.mint : '#187D68'} background={colors.mintSoft} onPress={() => setPriority('flashcards')} />
+        <QuickAction icon="bookshelf" label="Study Materials" detail="Continue learning" color={colors.goldText} background={colors.goldSoft} onPress={onOpenLibrary} />
       </View>
-
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Import one or more study files"
-        onPress={pickDocument}
-        style={({ pressed }) => [
-          styles.uploadCard,
-          { backgroundColor: colors.backgroundRaised, borderColor: `${colors.primary}66`, opacity: pressed ? 0.86 : 1 },
-        ]}
-      >
-        <View style={[styles.cloudCircle, { backgroundColor: colors.primarySoft }]}>
-          <Icon name="cloud-upload-outline" size={34} color={colors.primary} />
-        </View>
-        <Text style={[styles.uploadTitle, { color: colors.text }]}>Upload study material</Text>
-        <Text style={[styles.uploadHint, { color: colors.textSecondary }]}>Tap to choose one file or multiple PowerPoints</Text>
-        <Text style={[styles.formats, { color: colors.textMuted }]}>PPT, PPTX, PDF, or notes</Text>
-        <Text style={[styles.formats, { color: colors.textMuted }]}>Multiple PowerPoints become one integrated Study Pack</Text>
-        <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.fileTypes}>
-          <FileTypeIcon icon="microsoft-powerpoint" color="#D9472F" background="#FFF0EC" />
-          <FileTypeIcon icon="file-pdf-box" color="#E5535D" background="#FFF0F2" />
-          <FileTypeIcon icon="note-text-outline" color="#7D5CFF" background="#F0ECFF" />
-        </View>
-      </Pressable>
-
-      <SectionHeader title="Recent uploads" />
+      <View style={styles.moreTools}>
+        <Pressable accessibilityRole="button" onPress={() => dashboard.decks.length ? onStartStudy('cram', { deckId: dashboard.decks[0]!.id }) : void pickDocument()} style={styles.moreTool}><Icon name="fire" color={colors.goldText} size={17} /><Text style={[styles.moreToolText, { color: colors.textSecondary }]}>Cram review</Text></Pressable>
+        <Pressable accessibilityRole="button" onPress={onOpenFlagged} style={styles.moreTool}><Icon name="flag-outline" color={colors.purple} size={17} /><Text style={[styles.moreToolText, { color: colors.textSecondary }]}>Saved items</Text></Pressable>
+      </View>
+      <RecentLearningCard activity={dashboard.activity} onOpenStats={onOpenStats} onStart={() => { void startRecommended(); }} />
+      <Text accessibilityRole="header" style={[styles.sectionLabel, { color: colors.text }]}>Make room to focus</Text>
+      <PomodoroTimerCard />
+      <SectionHeader title={dashboard.decks.length ? 'Recent materials' : 'Explore sample materials'} action="Library" onAction={onOpenLibrary} />
       <View style={styles.deckList}>
-        {state.decks.slice(0, 2).map((deck) => (
-          <RecentDeck key={deck.id} deck={deck} onPress={() => onOpenDeck(deck)} />
-        ))}
+        {!recentMaterials.length ? <Text style={[styles.emptyMaterials, { color: colors.textSecondary }]}>Your Study Packs will appear here after you import materials.</Text> : null}
+        {recentMaterials.map((deck) => <RecentDeck key={deck.id} deck={deck} onPress={() => onOpenDeck(deck)} />)}
       </View>
+      <Text style={[styles.localNote, { color: colors.textSecondary }]}>Your saved study material and learning activity are available offline. AI features may require a connection.</Text>
+      <HomePrioritySheet kind={priority} dashboard={dashboard} onClose={() => setPriority(null)} onDue={reviewDue} onWeak={studyWeak} onMistakes={() => onOpenMistakes(dashboard.mistakeIds)} onFlashcards={(deck) => onOpenDeck(deck, 'flashcards')} onPractice={practice} />
     </Screen>
   );
 }
 
 function PomodoroTimerCard() {
   const { colors, state, setFocusMinutes, recordStudyEvent } = useStudyBolt();
+  const { width, fontScale } = useWindowDimensions();
+  const stackedTimer = width < 370 || fontScale >= 1.3;
+  const startingRef = useRef(false);
   const [session, setSession] = useState<PomodoroSession | null>(null);
   const [timerSettings, setTimerSettings] = useState(DEFAULT_STUDY_TIMER_SETTINGS);
   const [clock, setClock] = useState(Date.now());
@@ -415,7 +327,7 @@ function PomodoroTimerCard() {
     if (session.phase === 'focus' && !session.recorded) {
       completed.recorded = true;
       changed = true;
-      const durationMinutes = session.durationMinutes ?? 25;
+      const durationMinutes = session.durationMinutes ?? DEFAULT_STUDY_TIMER_SETTINGS.focusMinutes;
       setFocusMinutes(state.focusMinutes + durationMinutes);
       recordStudyEvent({ type: 'focus', durationMinutes });
     }
@@ -437,6 +349,8 @@ function PomodoroTimerCard() {
   };
 
   const startPhase = async (phase: PomodoroPhase, seconds: number, askForPermission: boolean, resumedSession?: PomodoroSession) => {
+    if (startingRef.current) return;
+    startingRef.current = true;
     setStarting(true);
     try {
       await cancelPomodoroAlarm(session?.notificationId);
@@ -461,6 +375,7 @@ function PomodoroTimerCard() {
       setClock(Date.now());
       saveSession(next);
     } finally {
+      startingRef.current = false;
       setStarting(false);
     }
   };
@@ -517,62 +432,57 @@ function PomodoroTimerCard() {
   const actionIcon = !session || session.status === 'paused' || session.status === 'complete' ? 'play' : 'pause';
 
   return (
-    <View style={[styles.pomodoroCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <View style={[styles.pomodoroIcon, { backgroundColor: colors.purpleSoft }]}><Icon name={session?.phase === 'break' ? 'coffee-outline' : 'timer-outline'} size={20} color={colors.purple} /></View>
-      <View style={styles.pomodoroCopy}>
-        <Text style={[styles.pomodoroTitle, { color: colors.text }]}>{session?.methodLabel ?? studyTimerMethodLabel(timerSettings)}</Text>
-        <Text numberOfLines={1} style={[styles.pomodoroDetail, { color: colors.textMuted }]}>{detail}</Text>
+    <View style={[styles.pomodoroCard, stackedTimer && styles.pomodoroCardStacked, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <View style={styles.pomodoroHeading}>
+        <View style={[styles.pomodoroIcon, { backgroundColor: colors.purpleSoft }]}><Icon name={session?.phase === 'break' ? 'coffee-outline' : 'timer-outline'} size={20} color={colors.purple} /></View>
+        <View style={styles.pomodoroCopy}>
+          <Text style={[styles.pomodoroTitle, { color: colors.text }]}>{session?.methodLabel ?? studyTimerMethodLabel(timerSettings)}</Text>
+          <Text style={[styles.pomodoroDetail, { color: colors.textSecondary }]}>{detail}</Text>
+        </View>
       </View>
-      <Text accessibilityLabel={`Time remaining ${timeLabel}`} style={[styles.pomodoroTime, { color: session?.status === 'complete' ? colors.mint : colors.text }]}>{session?.status === 'complete' ? 'DONE' : timeLabel}</Text>
-      {session ? (
-        <Pressable accessibilityRole="button" accessibilityLabel={session.status === 'complete' ? 'Reset Pomodoro timer' : 'Stop Pomodoro timer'} accessibilityState={{ disabled: starting }} disabled={starting} hitSlop={6} onPress={stopSession} style={({ pressed }) => [styles.pomodoroStop, { backgroundColor: colors.backgroundRaised, opacity: starting ? 0.45 : pressed ? 0.72 : 1 }]}>
-          <Icon name="stop" size={16} color={colors.textMuted} />
+      <View style={[styles.pomodoroControls, stackedTimer && styles.pomodoroControlsStacked]}>
+        <Text accessibilityLabel={`Time remaining ${timeLabel}`} style={[styles.pomodoroTime, { color: session?.status === 'complete' ? colors.mint : colors.text }]}>{session?.status === 'complete' ? 'DONE' : timeLabel}</Text>
+        {session ? (
+          <Pressable accessibilityRole="button" accessibilityLabel={session.status === 'complete' ? 'Reset Pomodoro timer' : 'Stop Pomodoro timer'} accessibilityState={{ disabled: starting }} disabled={starting} hitSlop={6} onPress={stopSession} style={({ pressed }) => [styles.pomodoroStop, { backgroundColor: colors.backgroundRaised, opacity: starting ? 0.45 : pressed ? 0.72 : 1 }]}>
+            <Icon name="stop" size={16} color={colors.textMuted} />
+          </Pressable>
+        ) : null}
+        <Pressable accessibilityRole="button" accessibilityLabel={actionLabel} accessibilityState={{ disabled: !ready || !settingsReady || starting }} disabled={!ready || !settingsReady || starting} onPress={primaryAction} style={({ pressed }) => [styles.pomodoroAction, { backgroundColor: colors.purple, opacity: !ready || !settingsReady || starting ? 0.5 : pressed ? 0.82 : 1 }]}>
+          <Icon name={starting ? 'timer-sand' : actionIcon} size={18} color={colors.primaryText} />
         </Pressable>
-      ) : null}
-      <Pressable accessibilityRole="button" accessibilityLabel={actionLabel} accessibilityState={{ disabled: !ready || !settingsReady || starting }} disabled={!ready || !settingsReady || starting} onPress={primaryAction} style={({ pressed }) => [styles.pomodoroAction, { backgroundColor: colors.purple, opacity: !ready || !settingsReady || starting ? 0.5 : pressed ? 0.82 : 1 }]}>
-        <Icon name={starting ? 'timer-sand' : actionIcon} size={18} color={colors.primaryText} />
-      </Pressable>
+      </View>
     </View>
   );
 }
 
 function QuickAction({ icon, label, detail, color, background, onPress }: { icon: Parameters<typeof Icon>[0]['name']; label: string; detail: string; color: string; background: string; onPress: () => void }) {
   const { colors } = useStudyBolt();
+  const reducedMotion = useReducedMotion();
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.quickAction, { backgroundColor: colors.card, borderColor: colors.border }, pressed && styles.pressed]}>
+    <Pressable accessibilityRole="button" accessibilityLabel={`${label}. ${detail}`} onPress={onPress} style={({ pressed }) => [styles.quickAction, { backgroundColor: colors.card, borderColor: colors.border }, pressed && (reducedMotion ? { opacity: 0.78 } : styles.pressed)]}>
       <View style={[styles.quickActionIcon, { backgroundColor: background }]}><Icon name={icon} size={20} color={color} /></View>
       <Text style={[styles.quickActionLabel, { color: colors.text }]}>{label}</Text>
-      <Text style={[styles.quickActionDetail, { color: colors.textMuted }]}>{detail}</Text>
+      <Text style={[styles.quickActionDetail, { color: colors.textSecondary }]}>{detail}</Text>
     </Pressable>
-  );
-}
-
-function FileTypeIcon({ icon, color, background }: { icon: Parameters<typeof Icon>[0]['name']; color: string; background: string }) {
-  return (
-    <View style={[styles.fileIcon, { backgroundColor: background }]}>
-      <Icon name={icon} size={24} color={color} />
-    </View>
   );
 }
 
 function RecentDeck({ deck, onPress }: { deck: StudyPack; onPress: () => void }) {
   const { colors } = useStudyBolt();
-  const mastery = calculateMastery(deck).overall;
   return (
     <Card onPress={onPress} style={[styles.deckCard, styles.flatCard]}>
       <SubjectIcon subject={deck.courseName} emoji={deck.emoji} size={52} />
       <View style={styles.deckCopy}>
         <View style={styles.deckTitleRow}>
           <Text numberOfLines={1} style={[styles.deckTitle, { color: colors.text }]}>{deck.courseName}</Text>
-          <Pill label={`${mastery}%`} tone={mastery >= 75 ? 'mint' : 'blue'} />
+          <Pill label={deck.fileType === 'demo' ? 'Sample' : 'Study pack'} tone="blue" />
         </View>
         <Text numberOfLines={1} style={[styles.deckSubtitle, { color: colors.textSecondary }]}>{deck.title}</Text>
         <View style={styles.deckMetaRow}>
-          <Text style={[styles.deckMeta, { color: colors.textMuted }]}>{deck.pageCount} {pageLabel(deck.fileType)}</Text>
+          <Text style={[styles.deckMeta, { color: colors.textSecondary }]}>{deck.pageCount} {pageLabel(deck.fileType)}</Text>
           <View style={[styles.dot, { backgroundColor: colors.textMuted }]} />
-          <Text style={[styles.deckMeta, { color: colors.textMuted }]}>Available offline</Text>
+          <Text style={[styles.deckMeta, { color: colors.textSecondary }]}>Available offline</Text>
         </View>
-        <View style={styles.miniProgress}><ProgressBar progress={mastery} color={deck.color} /></View>
       </View>
       <Icon name="chevron-right" size={24} color={colors.textMuted} />
     </Card>
@@ -580,8 +490,14 @@ function RecentDeck({ deck, onPress }: { deck: StudyPack; onPress: () => void })
 }
 
 const styles = StyleSheet.create({
+  statusCard: { marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 8, padding: 13, shadowOpacity: 0, elevation: 0 },
+  statusText: { flex: 1, fontSize: 12, lineHeight: 18 },
+  moreTools: { flexDirection: 'row', flexWrap: 'wrap', gap: 16, marginTop: 6 },
+  moreTool: { flexDirection: 'row', alignItems: 'center', minHeight: 44, gap: 6 },
+  moreToolText: { fontSize: 12, lineHeight: 18, fontWeight: '600' },
+  localNote: { fontSize: 10, lineHeight: 16, marginTop: 18 },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 9 },
-  roundButton: { width: 38, height: 38, borderRadius: 19, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center' },
+  roundButton: { width: 44, height: 44, borderRadius: 22, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center' },
   avatar: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
   avatarText: { fontSize: 14, fontWeight: '800', color: '#12775E' },
   heroCopy: { marginTop: 14, marginBottom: 16 },
@@ -590,49 +506,36 @@ const styles = StyleSheet.create({
   eyebrow: { fontSize: 10, fontWeight: '900', letterSpacing: 1.2, marginBottom: 8 },
   title: { fontSize: 28, lineHeight: 33, fontWeight: '900', letterSpacing: -0.9 },
   subtitle: { marginTop: 5, fontSize: 13, lineHeight: 18, maxWidth: 500 },
-  studyNowFrame: { borderRadius: 23.5, padding: 1.75, shadowOffset: { width: 0, height: 7 }, shadowRadius: 16, elevation: 3 },
-  studyNowCard: { minHeight: 204, borderRadius: 21.25, padding: 18, overflow: 'hidden' },
-  energyGlow: { position: 'absolute', width: 170, height: 170, borderRadius: 85, right: -72, top: -92, pointerEvents: 'none' },
-  energySweep: { position: 'absolute', width: 54, height: 290, left: 0, top: -42, pointerEvents: 'none' },
-  energyBolt: { position: 'absolute', right: 16, top: 54, opacity: 0.28 },
-  studyNowTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  todayPill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 9, paddingVertical: 6, backgroundColor: '#FFFFFF12', borderRadius: 999 },
-  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#71E3BE' },
-  todayPillText: { color: '#C8D8EF', fontSize: 8, fontWeight: '900', letterSpacing: 0.9 },
-  estimate: { color: '#9EB5D1', fontSize: 9, fontWeight: '900', letterSpacing: 0.8 },
-  studyNowTitle: { color: '#FFFFFF', fontSize: 31, lineHeight: 36, fontWeight: '900', letterSpacing: -1, marginTop: 18 },
-  studyNowText: { color: '#BBCADF', fontSize: 12, lineHeight: 18, maxWidth: 365, marginTop: 6 },
-  studyMetrics: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 19 },
-  studyMetricValue: { color: '#FFFFFF', fontSize: 17, fontWeight: '900' },
-  studyMetricLabel: { color: '#93A8C4', fontSize: 8, marginTop: 1 },
-  metricDivider: { width: StyleSheet.hairlineWidth, height: 29, backgroundColor: '#FFFFFF24' },
-  startCircle: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#79E0C1', alignItems: 'center', justifyContent: 'center', marginLeft: 'auto' },
   examCard: { minHeight: 62, borderRadius: 15, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 },
   examIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   examTitle: { fontSize: 11, fontWeight: '900' },
   examText: { fontSize: 9, lineHeight: 13, marginTop: 3 },
+  resumeCard: { marginTop: 14, flexDirection: 'row', alignItems: 'center', padding: 15, gap: 11, shadowOpacity: 0, elevation: 0 },
+  resumeIcon: { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  resumeCopy: { flex: 1, minWidth: 0 },
+  resumeTitle: { fontSize: 15, lineHeight: 21, fontWeight: '800' },
+  resumeSubtitle: { fontSize: 12, lineHeight: 18, marginTop: 2 },
+  resumeDeck: { fontSize: 11, lineHeight: 17, marginTop: 4 },
+  emptyMaterials: { fontSize: 13, lineHeight: 20, paddingVertical: 8 },
+  pomodoroCardStacked: { flexDirection: 'column', alignItems: 'stretch' },
+  pomodoroHeading: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 9 },
+  pomodoroControls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 8, flexShrink: 1 },
+  pomodoroControlsStacked: { alignSelf: 'stretch', flexWrap: 'wrap' },
   pomodoroCard: { minHeight: 70, borderRadius: 17, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 11, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 10 },
   pomodoroIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   pomodoroCopy: { flex: 1, minWidth: 0 },
   pomodoroTitle: { fontSize: 12, fontWeight: '900' },
-  pomodoroDetail: { fontSize: 9, marginTop: 3 },
+  pomodoroDetail: { fontSize: 11, lineHeight: 16, marginTop: 3 },
   pomodoroTime: { minWidth: 47, textAlign: 'right', fontSize: 14, fontWeight: '900', fontVariant: ['tabular-nums'] },
-  pomodoroStop: { width: 32, height: 32, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
-  pomodoroAction: { width: 38, height: 38, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  pomodoroStop: { width: 44, height: 44, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  pomodoroAction: { width: 44, height: 44, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   sectionLabel: { fontSize: 17, fontWeight: '800', letterSpacing: -0.2, marginTop: 22 },
   quickActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
   quickAction: { flexBasis: '48%', flexGrow: 1, minHeight: 74, borderRadius: 15, borderWidth: StyleSheet.hairlineWidth, padding: 10, paddingLeft: 50, justifyContent: 'center' },
   quickActionIcon: { position: 'absolute', left: 10, width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  quickActionLabel: { fontSize: 11, fontWeight: '900' },
-  quickActionDetail: { fontSize: 8, lineHeight: 11, marginTop: 2 },
+  quickActionLabel: { fontSize: 13, lineHeight: 19, fontWeight: '900' },
+  quickActionDetail: { fontSize: 11, lineHeight: 16, marginTop: 2 },
   pressed: { opacity: 0.78, transform: [{ scale: 0.985 }] },
-  uploadCard: { minHeight: 232, borderWidth: 1.5, borderStyle: 'dashed', borderRadius: 22, alignItems: 'center', justifyContent: 'center', padding: 20, marginTop: 20 },
-  cloudCircle: { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
-  uploadTitle: { fontSize: 17, fontWeight: '900' },
-  uploadHint: { fontSize: 13, marginTop: 3 },
-  fileTypes: { flexDirection: 'row', gap: 10, marginTop: 17 },
-  fileIcon: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  formats: { fontSize: 11, fontWeight: '600', marginTop: 14 },
   promise: { marginTop: 14, minHeight: 58, borderRadius: 16, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, gap: 11 },
   promiseIcon: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   promiseText: { flex: 1, fontSize: 12, lineHeight: 17, fontWeight: '600' },

@@ -172,7 +172,7 @@ function interleave<T extends { deckId: string }>(items: T[]): T[] {
   return output;
 }
 
-export function buildSmartStudyBrief(state: StudyBoltState, mode: SmartStudyMode = 'smart', focusDeckId?: string, targetMinutes?: number): SmartStudyBrief {
+export function buildSmartStudyBrief(state: StudyBoltState, mode: SmartStudyMode = 'smart', focusDeckId?: string, targetMinutes?: number, focusSectionIds?: string[]): SmartStudyBrief {
   const analytics = buildAnalytics(state);
   const { bySection } = missCounts(state);
   const insightByCard = new Map(
@@ -200,7 +200,8 @@ export function buildSmartStudyBrief(state: StudyBoltState, mode: SmartStudyMode
             : mode === 'cram' ? 'High-yield exam topic' : 'Weak concept';
     return { deck, cardIndex, mastery, priority, reason, checkpoint: Boolean(due && mastery >= 65), unseen, due, atRisk, misses };
   }));
-  const eligible = mode === 'pretest' ? candidates.filter((item) => item.unseen || item.mastery < 80) : candidates;
+  const scopedCandidates = focusSectionIds ? candidates.filter((item) => focusSectionIds.includes(item.deck.flashcards[item.cardIndex]!.source.sectionId)) : candidates;
+  const eligible = mode === 'pretest' ? scopedCandidates.filter((item) => item.unseen || item.mastery < 80) : scopedCandidates;
   const defaultCount = mode === 'cram' ? 12 : mode === 'pretest' ? 8 : 10;
   const minutesPerPrompt = mode === 'cram' ? 1.1 : 1.4;
   const requestedCount = targetMinutes ? Math.max(1, Math.ceil(targetMinutes / minutesPerPrompt)) : defaultCount;
