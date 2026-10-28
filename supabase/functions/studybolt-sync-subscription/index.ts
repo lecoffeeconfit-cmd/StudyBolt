@@ -17,7 +17,9 @@ Deno.serve(async (request: Request) => {
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  const revenueCatKey = Deno.env.get('REVENUECAT_SECRET_API_KEY');
+  // API v1 subscriber reads accept the app's SDK key. A privileged key is not
+  // needed to verify an entitlement; keep the old secret name as a fallback.
+  const revenueCatKey = Deno.env.get('REVENUECAT_API_KEY') || Deno.env.get('REVENUECAT_SECRET_API_KEY');
   const webhookSecret = Deno.env.get('REVENUECAT_WEBHOOK_SECRET');
   const entitlementId = Deno.env.get('REVENUECAT_PREMIUM_ENTITLEMENT')?.trim();
   if (!supabaseUrl || !serviceRoleKey || !revenueCatKey || !webhookSecret || !entitlementId
