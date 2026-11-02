@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Animated, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '../AuthContext';
 import { AuthField } from '../components/AuthField';
 import { Card, Header, Icon, PrimaryButton, Screen, SectionHeader } from '../components/ui';
 import { useStudyBolt } from '../StudyBoltContext';
 import { radius } from '../theme';
+import { checkAppleSubscriptionForDeletion, openAppleSubscriptionManagement } from '../services/subscriptions';
 
 export function AccountScreen({ onBack, onSignedOut, onDeleted }: { onBack: () => void; onSignedOut: () => void; onDeleted: () => void }) {
   const { colors, resetLocalData } = useStudyBolt();
@@ -15,6 +16,9 @@ export function AccountScreen({ onBack, onSignedOut, onDeleted }: { onBack: () =
   const [notice, setNotice] = useState<{ tone: 'error' | 'success'; text: string } | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [confirmingSignOut, setConfirmingSignOut] = useState(false);
+  const [appleSubscription, setAppleSubscription] = useState<'checking' | 'active' | 'inactive' | 'unavailable'>('checking');
+  const deletionInFlight = useRef(false);
+  const subscriptionCheck = useRef(0);
   const entrance = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -58,18 +62,45 @@ export function AccountScreen({ onBack, onSignedOut, onDeleted }: { onBack: () =
     onSignedOut();
   };
 
-  const removeAccount = async () => {
-    setBusy('delete');
-    const result = await deleteAccount();
-    setBusy(null);
-    if (result.error) {
-      setConfirmingDelete(false);
-      setNotice({ tone: 'error', text: result.error });
-      return;
+  const confirmDeletion = async () => {
+    if (busy) return;
+    setConfirmingDelete(true);
+    setAppleSubscription('checking');
+    const checkId = ++subscriptionCheck.current;
+    try {
+      const active = user && await checkAppleSubscriptionForDeletion(user.id);
+      if (subscriptionCheck.current === checkId) setAppleSubscription(active ? 'active' : 'inactive');
+    } catch {
+      if (subscriptionCheck.current === checkId) setAppleSubscription('unavailable');
     }
-    resetLocalData();
-    setConfirmingDelete(false);
-    onDeleted();
+  };
+
+  const manageAppleBilling = async () => {
+    try { await openAppleSubscriptionManagement(); }
+    catch { setNotice({ tone: 'error', text: 'Open Settings → your Apple Account → Subscriptions to manage Apple billing.' }); }
+  };
+
+  const removeAccount = async () => {
+    if (deletionInFlight.current) return;
+    deletionInFlight.current = true;
+    setBusy('delete');
+    try {
+      const result = await deleteAccount();
+      if (result.error) {
+        setConfirmingDelete(false);
+        setNotice({ tone: 'error', text: result.error });
+        return;
+      }
+      let localCleanupFailed = result.sessionCleanupFailed;
+      try { await resetLocalData(user?.id); } catch { localCleanupFailed = true; }
+      setConfirmingDelete(false);
+      if (localCleanupFailed) Alert.alert('Deletion recorded', 'You are signed out, but some saved files or reminders on this device could not be cleared. Remove this app’s stored data in device settings before sharing the device. Apple billing is not cancelled.');
+      else if (result.deletionPending) Alert.alert('Deletion requested', result.message);
+      onDeleted();
+    } catch {
+      setConfirmingDelete(false);
+      setNotice({ tone: 'error', text: 'Deletion could not be fully confirmed on this device. Please retry; the server safely resumes recorded requests.' });
+    } finally { deletionInFlight.current = false; setBusy(null); }
   };
 
   const initial = (user?.email?.[0] ?? 'S').toUpperCase();
@@ -121,30 +152,36 @@ export function AccountScreen({ onBack, onSignedOut, onDeleted }: { onBack: () =
                 <Text style={[styles.dangerCopy, { color: colors.textSecondary }]}>Permanently removes your account and synced data. This cannot be undone.</Text>
               </View>
             </View>
-            <Pressable accessibilityRole="button" onPress={() => setConfirmingDelete(true)} style={[styles.deleteButton, { borderColor: colors.danger }]}>
+            <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busy) }} disabled={Boolean(busy)} onPress={() => void confirmDeletion()} style={[styles.deleteButton, { borderColor: colors.danger }]}>
               <Text style={[styles.deleteLabel, { color: colors.danger }]}>Delete my account</Text>
             </Pressable>
           </Card>
         </Animated.View>
       </Screen>
 
-      <Modal visible={confirmingDelete} transparent animationType="fade" onRequestClose={() => setConfirmingDelete(false)}>
+      <Modal visible={confirmingDelete} transparent animationType="fade" onRequestClose={() => { if (busy !== 'delete') setConfirmingDelete(false); }}>
         <View style={styles.modalBackdrop}>
-          <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow }]}>
+          <View accessibilityViewIsModal style={[styles.modalCard, { maxHeight: '90%', backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow }]}>
+            <ScrollView style={{ width: '100%' }} contentContainerStyle={{ alignItems: 'center' }}>
             <View style={[styles.modalIcon, { backgroundColor: `${colors.danger}16` }]}><Icon name="delete-alert-outline" size={30} color={colors.danger} /></View>
             <Text style={[styles.modalTitle, { color: colors.text }]}>Delete your account?</Text>
-            <Text style={[styles.modalCopy, { color: colors.textSecondary }]}>This permanently deletes {user?.email ?? 'your account'} and its synced data. StudyBolt cannot restore it later. If you have Premium, cancel it through your App Store account before continuing; deleting your StudyBolt account does not cancel store billing.</Text>
+            <Text style={[styles.modalCopy, { color: colors.textSecondary }]}>This permanently removes {user?.email ?? 'your account'}, its StudyBolt data, and local Study Packs. Secure cleanup may continue after you’re signed out if a service needs to retry.</Text>
+            <Text accessibilityLiveRegion="polite" style={[styles.modalCopy, { color: colors.textSecondary }]}>{appleSubscription === 'checking' ? 'Checking Apple subscription status…' : appleSubscription === 'active' ? 'An active Apple subscription was found.' : appleSubscription === 'inactive' ? 'No active Apple subscription was reported.' : 'Subscription status could not be verified. You can check it with Apple.'} Deleting your account or RevenueCat record does not cancel Apple or Google Play billing. You can manage billing separately or delete your account now.</Text>
+            <Pressable accessibilityRole="button" disabled={busy === 'delete'} onPress={() => void manageAppleBilling()} style={styles.modalCancel}>
+              <Text style={[styles.modalCancelText, { color: colors.primary }]}>Manage Apple subscriptions</Text>
+            </Pressable>
             <Pressable
               accessibilityRole="button"
               disabled={busy === 'delete'}
               onPress={() => void removeAccount()}
               style={[styles.modalDelete, { backgroundColor: colors.danger, opacity: busy === 'delete' ? 0.65 : 1 }]}
             >
-              <Text style={[styles.modalDeleteText, { color: colors.primaryText }]}>{busy === 'delete' ? 'Deleting…' : 'Yes, delete account'}</Text>
+              <Text style={[styles.modalDeleteText, { color: colors.primaryText }]}>{busy === 'delete' ? 'Requesting deletion…' : 'Delete account now'}</Text>
             </Pressable>
             <Pressable accessibilityRole="button" disabled={busy === 'delete'} onPress={() => setConfirmingDelete(false)} style={styles.modalCancel}>
               <Text style={[styles.modalCancelText, { color: colors.textSecondary }]}>Keep my account</Text>
             </Pressable>
+            </ScrollView>
           </View>
         </View>
       </Modal>

@@ -10,6 +10,12 @@ const ACTIVITY_TYPES = new Set(['pack-created', 'note-review', 'flashcard-review
 const keyFor = (userId: string) => `@studybolt/admin-activity/${userId}`;
 // Serialize queue writes and flushes so a completed upload cannot erase a new event.
 let pending: Promise<void> = Promise.resolve();
+const deletingUsers = new Set<string>();
+export async function clearAdminActivityForDeletion(userId: string): Promise<void> {
+  deletingUsers.add(userId);
+  await pending;
+  await AsyncStorage.removeItem(keyFor(userId));
+}
 function enqueue(work: () => Promise<void>) {
   pending = pending.then(work).catch(() => undefined);
   return pending;
@@ -26,8 +32,9 @@ export function summarizeAdminActivity(event: StudyEvent): AdminActivity | null 
 }
 
 export function queueAdminActivity(userId: string, events: AdminActivity[]) {
-  if (!events.length || !supabase) return Promise.resolve();
+  if (!events.length || !supabase || deletingUsers.has(userId)) return Promise.resolve();
   return enqueue(async () => {
+    if (deletingUsers.has(userId)) return;
     const stored = JSON.parse(await AsyncStorage.getItem(keyFor(userId)) ?? '[]') as AdminActivity[];
     const unique = new Map([...stored, ...events].map(event => [event.id, event]));
     const cutoff = Date.now() - 7 * 86400000;
@@ -37,7 +44,7 @@ export function queueAdminActivity(userId: string, events: AdminActivity[]) {
 
 export function flushAdminActivity(userId: string) {
   return enqueue(async () => {
-    if (!supabase) return;
+    if (!supabase || deletingUsers.has(userId)) return;
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.user.id !== userId) return;
     const { error: registrationError } = await supabase.rpc('register_studybolt_account');
@@ -45,6 +52,6 @@ export function flushAdminActivity(userId: string) {
     const stored = JSON.parse(await AsyncStorage.getItem(keyFor(userId)) ?? '[]') as AdminActivity[];
     if (!stored.length) return;
     const { error } = await supabase.rpc('record_studybolt_activity', { p_events: stored.slice(0, 100) });
-    if (!error) await AsyncStorage.setItem(keyFor(userId), JSON.stringify(stored.slice(100)));
+    if (!error && !deletingUsers.has(userId)) await AsyncStorage.setItem(keyFor(userId), JSON.stringify(stored.slice(100)));
   });
 }

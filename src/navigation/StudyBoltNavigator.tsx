@@ -7,6 +7,7 @@ import { BottomTabs } from '../components/BottomTabs';
 import { StudyPackGenerationProgress } from '../components/StudyPackGenerationProgress';
 import type { MainTab } from '../components/BottomTabs';
 import { useStudyBolt } from '../StudyBoltContext';
+import { isCommunitySharingEnabled } from '../config/community';
 import { AccountScreen } from '../screens/AccountScreen';
 import { AccountOnboardingScreen } from '../screens/AccountOnboardingScreen';
 import { AdminScreen } from '../screens/AdminScreen';
@@ -160,7 +161,7 @@ export function StudyBoltNavigator() {
       );
     }
     if (tab === 'planner') return <PlannerScreen focusDeckId={plannerFocusDeckId} onFocusApplied={() => setPlannerFocusDeckId(undefined)} />;
-    if (tab === 'discover') {
+    if (tab === 'discover' && isCommunitySharingEnabled) {
       return (
         <DiscoverScreen
           onPreviewSet={(token) => setRoute({ type: 'shared', token })}
@@ -194,6 +195,7 @@ export function StudyBoltNavigator() {
         onPracticeTest={(deckId) => setRoute({ type: 'exam', deckId })}
         onOpenLibrary={() => setTab('library')}
         onOpenStats={() => setTab('stats')}
+        onOpenProfile={() => setTab('profile')}
         onOpenFlagged={openFlagged}
         onOpenPlanner={() => setTab('planner')}
       />
@@ -311,7 +313,7 @@ export function StudyBoltNavigator() {
           onBack={() => setRoute({ type: 'deck', deckId: route.deckId })}
         />
       ) : null}
-      {!showOnboarding && !showAccountOnboarding && route.type === 'shared' ? (
+      {isCommunitySharingEnabled && !showOnboarding && !showAccountOnboarding && route.type === 'shared' ? (
         <SharedStudyPackScreen
           token={route.token}
           onBack={() => setRoute({ type: 'main' })}
@@ -322,7 +324,7 @@ export function StudyBoltNavigator() {
           onOpenSavedDeck={(deckId) => setRoute({ type: 'deck', deckId })}
         />
       ) : null}
-      {!showOnboarding && !showAccountOnboarding && route.type === 'community-class' ? (
+      {isCommunitySharingEnabled && !showOnboarding && !showAccountOnboarding && route.type === 'community-class' ? (
         <CommunityClassScreen
           classId={route.classId}
           onBack={() => {

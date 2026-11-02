@@ -10,6 +10,7 @@ import { useAdminActivity } from './hooks/useAdminActivity';
 import { AUTOMATIC_STUDY_PACK_MATERIALS, generateStudyPackMaterial, STUDY_PACK_MATERIAL_LABELS, STUDY_PACK_MATERIAL_STAGES, StudyBoltProcessingError } from './services/documentProcessor';
 import { loadStudyBoltState, saveStudyBoltState } from './services/persistence';
 import { updateStudyBoltWidgets } from './services/widgets';
+import { clearStudyBoltLocalAccountData } from './services/accountDeletionLocal';
 import { AppColors, resolveColors } from './theme';
 
 interface StudyBoltContextValue {
@@ -19,7 +20,7 @@ interface StudyBoltContextValue {
   setTheme: (theme: ThemePreference) => void;
   setRetentionMode: (mode: RetentionMode) => void;
   completeOnboarding: () => void;
-  resetLocalData: () => void;
+  resetLocalData: (deletedUserId?: string) => Promise<void>;
   setQuizQuestionCount: (count: QuizQuestionCount) => void;
   setLibrarySort: (sort: LibrarySort) => void;
   addClass: (studyClass: StudyClass) => void;
@@ -47,6 +48,7 @@ export function StudyBoltProvider({ children }: { children: ReactNode }) {
   const runningDecks = useRef(new Set<string>());
   const materialQueues = useRef(new Map<string, StudyPackMaterial[]>());
   const deckSnapshots = useRef(new Map<string, StudyPack>());
+  const generationEpoch = useRef(0);
   const stateRef = useRef(state);
   useAdminActivity(user?.id, state.activityEvents, hydrated);
 
@@ -97,6 +99,7 @@ export function StudyBoltProvider({ children }: { children: ReactNode }) {
     }
 
     const jobKey = `${deckId}:${material}`;
+    const epoch = generationEpoch.current;
     if (activeMaterialJobs.current.has(jobKey)) return;
     activeMaterialJobs.current.add(jobKey);
     runningDecks.current.add(deckId);
@@ -117,8 +120,9 @@ export function StudyBoltProvider({ children }: { children: ReactNode }) {
 
     void getAccessToken()
       .catch(() => null)
-      .then((accessToken) => generateStudyPackMaterial(deck, material, accessToken))
+      .then((accessToken) => epoch === generationEpoch.current ? generateStudyPackMaterial(deck, material, accessToken) : undefined)
       .then((generated) => {
+        if (!generated || epoch !== generationEpoch.current) return;
         setState((current) => ({
           ...current,
           decks: current.decks.map((item) => item.id !== deckId || !item.generation || item.generation.materials[material]?.status === 'ready' ? item : {
@@ -135,6 +139,7 @@ export function StudyBoltProvider({ children }: { children: ReactNode }) {
         }));
       })
       .catch((reason: unknown) => {
+        if (epoch !== generationEpoch.current) return;
         const error = reason instanceof StudyBoltProcessingError
           ? reason.userMessage
           : `${STUDY_PACK_MATERIAL_LABELS[material]} could not be created. Retry just this item.`;
@@ -153,6 +158,7 @@ export function StudyBoltProvider({ children }: { children: ReactNode }) {
         }));
       })
       .finally(() => {
+        if (epoch !== generationEpoch.current) return;
         activeMaterialJobs.current.delete(jobKey);
         runningDecks.current.delete(deckId);
         processNextStudyPackMaterial(deckId);
@@ -218,10 +224,17 @@ export function StudyBoltProvider({ children }: { children: ReactNode }) {
       setTheme: (theme) => setState((current) => ({ ...current, theme })),
       setRetentionMode: (retentionMode) => setState((current) => ({ ...current, retentionMode })),
       completeOnboarding: () => setState((current) => ({ ...current, hasCompletedOnboarding: true })),
-      resetLocalData: () => {
+      resetLocalData: async (deletedUserId) => {
+        generationEpoch.current += 1;
         materialQueues.current.clear();
         deckSnapshots.current.clear();
-        setState({ ...initialState, hasCompletedOnboarding: true });
+        activeMaterialJobs.current.clear();
+        runningDecks.current.clear();
+        const clean = { ...initialState, hasCompletedOnboarding: true };
+        stateRef.current = clean;
+        setState(clean);
+        updateStudyBoltWidgets(clean);
+        await clearStudyBoltLocalAccountData(deletedUserId);
       },
       setQuizQuestionCount: (quizQuestionCount) => setState((current) => ({ ...current, quizQuestionCount })),
       setLibrarySort: (librarySort) => setState((current) => ({ ...current, librarySort })),

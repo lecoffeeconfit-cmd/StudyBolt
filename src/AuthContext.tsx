@@ -156,7 +156,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(null);
     },
     deleteAccount: async () => {
-      const current = await activeSession();
+      // A just-deleted Auth row cannot refresh, but the original token can
+      // acknowledge the already-recorded deletion after a lost response.
+      const current = await activeSession() ?? session;
       if (!current) return { error: 'Please sign in again before deleting your account.' };
       const result = await deleteRemoteAccount(current);
       if (!result.error) setSession(null);

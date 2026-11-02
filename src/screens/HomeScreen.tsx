@@ -7,7 +7,9 @@ import { Alert, AppState, Platform, Pressable, StyleSheet, Text, useWindowDimens
 import { useStudyBolt } from '../StudyBoltContext';
 import type { ImportAsset, StudyPack, StudyTool } from '../models';
 import type { SmartStudyMode } from '../services/adaptiveStudy';
-import { DOCUMENT_PICKER_TYPE, getImportDocumentType, pageLabel } from '../services/documentTypes';
+import { DOCUMENT_PICKER_TYPE, pageLabel } from '../services/documentTypes';
+import { AUTOMATIC_STUDY_PACK_MATERIALS, StudyBoltProcessingError, validateImportBatch } from '../services/documentProcessor';
+import { getHomeUploadStatus } from '../services/homeUpload';
 import {
   DEFAULT_STUDY_TIMER_SETTINGS,
   loadStudyTimerSettings,
@@ -17,7 +19,6 @@ import {
 } from '../services/studyTimer';
 import { Card, Header, Icon, Pill, Screen, SectionHeader } from '../components/ui';
 import { SubjectIcon } from '../components/SubjectIcon';
-import { AddStudyMaterialCard } from '../components/AddStudyMaterialCard';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import { findHomeAudioResume } from '../services/homeStudy';
 import { buildHomeDashboard } from '../services/homeDashboard';
@@ -26,6 +27,7 @@ import { getRetentionCardSchedule } from '../services/retentionScheduler';
 import { HomePrioritySheet, RecentLearningCard, UpcomingExamCard } from '../components/HomeLearningCards';
 import type { HomePriority } from '../components/TodaysPlanCard';
 import { TodaysPlanCard } from '../components/TodaysPlanCard';
+import { AddStudyMaterialCard } from '../components/AddStudyMaterialCard';
 import { useAuth } from '../AuthContext';
 
 const POMODORO_STORAGE_KEY = '@studybolt/pomodoro-timer/v1';
@@ -98,6 +100,7 @@ export function HomeScreen({
   onPracticeTest,
   onOpenLibrary,
   onOpenStats,
+  onOpenProfile,
 }: {
   onOpenDeck: (deck: StudyPack, tool?: StudyTool, cardIds?: string[]) => void;
   onImport: (assets: ImportAsset[]) => void;
@@ -108,12 +111,21 @@ export function HomeScreen({
   onPracticeTest: (deckId?: string) => void;
   onOpenLibrary: () => void;
   onOpenStats: () => void;
+  onOpenProfile: () => void;
 }) {
   const { colors, state, setTheme } = useStudyBolt();
   const { user } = useAuth();
   const avatarInitial = user?.email?.[0]?.toUpperCase();
+  const [profileFocused, setProfileFocused] = useState(false);
   const [now, setNow] = useState(() => new Date());
   const [priority, setPriority] = useState<HomePriority | 'flashcards' | null>(null);
+  const [choosingFiles, setChoosingFiles] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const homeMounted = useRef(true);
+  useEffect(() => {
+    homeMounted.current = true;
+    return () => { homeMounted.current = false; };
+  }, []);
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 60_000);
     const subscription = AppState.addEventListener('change', (next) => { if (next === 'active') setNow(new Date()); });
@@ -128,11 +140,26 @@ export function HomeScreen({
   const importInFlight = useRef(false);
   const today = now.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
   const recentMaterials = (dashboard.decks.length ? dashboard.decks : state.decks).slice().sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, 2);
-  const failedPack = dashboard.decks.find((deck) => deck.generation && Object.values(deck.generation.materials).some((material) => material.status === 'failed'));
+  const uploadStatus = useMemo(() => getHomeUploadStatus(state.decks, AUTOMATIC_STUDY_PACK_MATERIALS), [state.decks]);
+
+  const acceptImportAssets = (assets: ImportAsset[]) => {
+    setImportError(null);
+    try {
+      validateImportBatch(assets);
+      // Continue through the existing class-name, plan checks and processing route.
+      onImport(assets);
+      return true;
+    } catch (reason) {
+      setImportError(reason instanceof StudyBoltProcessingError ? reason.userMessage : 'These files could not be opened. Please choose them again.');
+      return false;
+    }
+  };
 
   const pickDocument = async () => {
     if (importInFlight.current) return;
     importInFlight.current = true;
+    setChoosingFiles(true);
+    setImportError(null);
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: DOCUMENT_PICKER_TYPE,
@@ -142,18 +169,14 @@ export function HomeScreen({
         // base64 copy into memory before the multipart upload starts.
         base64: false,
       });
-      if (result.canceled) return;
+      if (result.canceled || !homeMounted.current) return;
       const assets = result.assets.map((asset) => ({ name: asset.name, uri: asset.uri, mimeType: asset.mimeType, size: asset.size, file: asset.file }));
-      if (!assets.length) return;
-      if (assets.length > 1 && assets.some((asset) => getImportDocumentType(asset.name, asset.mimeType) !== 'powerpoint')) {
-        Alert.alert('Choose PowerPoints together', 'To create one integrated Study Pack, select only PowerPoint files. Other file types can be imported one at a time.');
-        return;
-      }
-      onImport(assets);
+      acceptImportAssets(assets);
     } catch {
-      Alert.alert('Couldn’t open files', 'Check file permissions, then try again.');
+      if (homeMounted.current) setImportError('Couldn’t open files. Check file permissions, then choose files again.');
     } finally {
       importInFlight.current = false;
+      if (homeMounted.current) setChoosingFiles(false);
     }
   };
 
@@ -191,9 +214,19 @@ export function HomeScreen({
             >
               <Icon name={colors.mode === 'dark' ? 'weather-sunny' : 'weather-night'} size={19} color={colors.mode === 'dark' ? colors.warning : colors.primary} />
             </Pressable>
-            <View style={[styles.avatar, { backgroundColor: colors.mintSoft }]}>
-              {avatarInitial ? <Text style={[styles.avatarText, { color: colors.mode === 'dark' ? '#A4E0CE' : '#12775E' }]}>{avatarInitial}</Text> : <Icon name="account-outline" size={21} color={colors.mode === 'dark' ? '#A4E0CE' : '#12775E'} />}
-            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Open profile and settings"
+              accessibilityHint="Manage your account, membership, and study preferences."
+              onPress={onOpenProfile}
+              onFocus={() => setProfileFocused(true)}
+              onBlur={() => setProfileFocused(false)}
+              style={({ pressed }) => [styles.avatarButton, { borderColor: profileFocused ? colors.primary : 'transparent', opacity: pressed ? 0.7 : 1 }]}
+            >
+              <View pointerEvents="none" accessible={false} aria-hidden accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[styles.avatar, { backgroundColor: colors.mintSoft }]}>
+                {avatarInitial ? <Text style={[styles.avatarText, { color: colors.mode === 'dark' ? '#A4E0CE' : '#12775E' }]}>{avatarInitial}</Text> : <Icon name="account-outline" size={21} color={colors.mode === 'dark' ? '#A4E0CE' : '#12775E'} />}
+              </View>
+            </Pressable>
           </View>
         }
       />
@@ -203,14 +236,23 @@ export function HomeScreen({
           <Icon name="lightning-bolt" size={12} color={colors.goldText} />
           <Text style={[styles.date, { color: colors.textSecondary }]}>{today.toUpperCase()}</Text>
         </View>
-        <Text style={[styles.title, { color: colors.text }]}>Ready when you are</Text>
-        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Let’s build on what you know.</Text>
+        <Text style={[styles.title, { color: colors.text }]}>{dashboard.decks.length ? 'Make progress today' : 'Your next step starts here'}</Text>
+        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{!dashboard.decks.length ? 'Bring your material. Make it easier to practice.' : dashboard.exam ? 'Build toward your next exam, one focused step at a time.' : 'Pick up your next useful study step.'}</Text>
       </View>
 
-      <TodaysPlanCard dashboard={dashboard} colors={colors} onStartSession={startRecommended} onOpenPriority={setPriority} />
+      <TodaysPlanCard dashboard={dashboard} colors={colors} onStartSession={startRecommended} onOpenPriority={setPriority} onOpenPlan={onOpenPlanner} />
 
-      <AddStudyMaterialCard colors={colors} onPress={pickDocument} compact={dashboard.decks.length > 0} />
-      {failedPack ? <Card onPress={() => onOpenDeck(failedPack)} style={[styles.statusCard, { backgroundColor: colors.goldSoft }]}><Icon name="information-outline" color={colors.goldText} size={20} /><Text style={[styles.statusText, { color: colors.text }]}>Some tools in {failedPack.title} need another try. Open the pack to retry generation.</Text><Icon name="chevron-right" color={colors.goldText} size={18} /></Card> : null}
+      <AddStudyMaterialCard
+        colors={colors}
+        onPress={() => { void pickDocument(); }}
+        onDropAssets={(assets) => !importInFlight.current && acceptImportAssets(assets)}
+        opening={choosingFiles}
+        primaryAction={!dashboard.decks.length}
+        error={importError}
+        status={uploadStatus}
+        onOpenPack={(deck) => onOpenDeck(deck)}
+      />
+
       <UpcomingExamCard exam={dashboard.exam} onOpenPlan={onOpenPlanner} />
 
       <Text accessibilityRole="header" style={[styles.sectionLabel, { color: colors.text }]}>Quick start</Text>
@@ -490,14 +532,13 @@ function RecentDeck({ deck, onPress }: { deck: StudyPack; onPress: () => void })
 }
 
 const styles = StyleSheet.create({
-  statusCard: { marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 8, padding: 13, shadowOpacity: 0, elevation: 0 },
-  statusText: { flex: 1, fontSize: 12, lineHeight: 18 },
   moreTools: { flexDirection: 'row', flexWrap: 'wrap', gap: 16, marginTop: 6 },
   moreTool: { flexDirection: 'row', alignItems: 'center', minHeight: 44, gap: 6 },
   moreToolText: { fontSize: 12, lineHeight: 18, fontWeight: '600' },
   localNote: { fontSize: 10, lineHeight: 16, marginTop: 18 },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   roundButton: { width: 44, height: 44, borderRadius: 22, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center' },
+  avatarButton: { width: 44, height: 44, borderRadius: 22, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   avatar: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
   avatarText: { fontSize: 14, fontWeight: '800', color: '#12775E' },
   heroCopy: { marginTop: 14, marginBottom: 16 },

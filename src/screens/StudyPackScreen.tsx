@@ -1,5 +1,5 @@
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { setAudioModeAsync } from 'expo-audio';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Speech from 'expo-speech';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, Image, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
@@ -10,6 +10,7 @@ import { AskStudyBoltSheet, SpeedPickerSheet, VoicePickerSheet } from '../compon
 import { Card, FlagButton, Header, Icon, Pill, PrimaryButton, ProgressBar, SectionHeader } from '../components/ui';
 import type { IconName } from '../components/ui';
 import { StudyPackShareSheet } from '../components/StudyPackShareSheet';
+import { StudyCastArtwork } from '../components/StudyCastArtwork';
 import { SubjectIcon } from '../components/SubjectIcon';
 import { useStudyBolt } from '../StudyBoltContext';
 import { useNarrationPreferences } from '../hooks/useNarrationPreferences';
@@ -1509,6 +1510,8 @@ function SeekProgress({ progress, color, onSeek, currentPosition, total }: { pro
 function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPack; readOnly?: boolean; onRequireAuth?: () => void }) {
   const { colors, recordStudyEvent, updateDeck } = useStudyBolt();
   const { user, getAccessToken } = useAuth();
+  const { width: audioWindowWidth, fontScale: audioFontScale } = useWindowDimensions();
+  const compactAudioModes = audioWindowWidth < 360 || audioFontScale > 1.2;
   const { preferences: narrationPreferences, voices, updatePreferences: updateNarrationPreferences } = useNarrationPreferences();
   const [mode, setMode] = useState<StudyCastMode>('summary');
   const [playing, setPlaying] = useState(false);
@@ -2117,9 +2120,9 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
       <View style={styles.toolHeadingRow}>
         <View style={{ flex: 1 }}>
           <Text style={[styles.toolHeading, { color: colors.text }]}>StudyCast</Text>
-          <Text style={[styles.toolSubheading, { color: colors.textSecondary }]}>Listen offline. Ask AI only when you choose.</Text>
+          <Text style={[styles.toolSubheading, { color: colors.textSecondary }]}>Listen at your pace. Pick up where you left off.</Text>
         </View>
-        <Pill label="DEVICE TTS" tone="purple" />
+        <Pill label="OFFLINE AUDIO" tone="mint" />
       </View>
       <View style={[styles.audioModeSwitch, { backgroundColor: colors.cardStrong }]}>
         {AUDIO_MODES.map((item) => {
@@ -2135,35 +2138,33 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
               onPress={() => void switchMode(item.id)}
               style={[styles.audioMode, active && { backgroundColor: colors.card }, disabled && styles.audioModeDisabled]}
             >
-              <Icon name={item.icon} size={17} color={active ? colors.purple : colors.textMuted} />
+              {!compactAudioModes ? <Icon name={item.icon} size={17} color={active ? colors.primary : colors.textMuted} /> : null}
               <Text numberOfLines={1} style={[styles.audioModeText, { color: active ? colors.text : colors.textMuted }]}>{item.label}</Text>
             </Pressable>
           );
         })}
       </View>
-      <Card style={[styles.player, { backgroundColor: colors.mode === 'dark' ? '#111820' : '#11162F' }]}>
-        <View style={styles.playerArtWrap}>
-          <View style={[styles.playerGlow, { backgroundColor: colors.purple }]} />
-          <View style={styles.playerArt}><MaterialCommunityIcons name="lightning-bolt" size={50} color="#C8B5FF" /></View>
-        </View>
-        <Text style={styles.nowPlaying}>{mode === 'original' ? 'ORIGINAL STUDYCAST' : mode === 'flashcards' ? 'FLASHCARD LISTENING' : 'QUICK REVIEW'}</Text>
-        <Text style={styles.audioTitle}>{deck.title}</Text>
-        <Text style={styles.audioCourse}>{deck.courseName} · {remainingMinutes || '< 1'} min remaining</Text>
-        <View style={styles.currentSection}><Text style={styles.currentSectionLabel}>NOW STUDYING</Text><Text numberOfLines={1} style={styles.currentSectionTitle}>{tutorContext.currentChunk.title}</Text></View>
-        <View style={styles.audioProgress}><SeekProgress progress={progress} color={colors.purple} onSeek={seekToProgress} currentPosition={position} total={words.length} /></View>
+      <Card style={[styles.player, { borderColor: colors.mode === 'dark' ? '#344A56' : '#D9E7F8' }]}>
+        <LinearGradient colors={colors.mode === 'dark' ? ['#1A2B42', '#192934', '#272F32'] : ['#EFF6FF', '#F7FCFC', '#FFFCF2']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.playerWash} />
+        <StudyCastArtwork playing={playing} colors={colors} visible={!driveModeVisible} />
+        <View style={[styles.nowPlayingBadge, { backgroundColor: colors.primarySoft }]}><Icon name="headphones" size={12} color={colors.primary} /><Text style={[styles.nowPlaying, { color: colors.primary }]}>{mode === 'original' ? 'ORIGINAL STUDYCAST' : mode === 'flashcards' ? 'FLASHCARD LISTENING' : 'QUICK REVIEW'}</Text></View>
+        <Text style={[styles.audioTitle, { color: colors.text }]}>{deck.title}</Text>
+        <Text style={[styles.audioCourse, { color: colors.textSecondary }]}>{deck.courseName} · {remainingMinutes || '< 1'} min remaining</Text>
+        <View style={[styles.currentSection, { backgroundColor: colors.mode === 'dark' ? '#213441' : '#FFFFFFB3', borderColor: colors.mode === 'dark' ? '#344B57' : '#E5EDF3' }]}><Text style={[styles.currentSectionLabel, { color: colors.textSecondary }]}>CURRENT SECTION</Text><Text numberOfLines={2} style={[styles.currentSectionTitle, { color: colors.text }]}>{tutorContext.currentChunk.title}</Text></View>
+        <View style={styles.audioProgress}><SeekProgress progress={progress} color={colors.primary} onSeek={seekToProgress} currentPosition={position} total={words.length} /></View>
         <View style={styles.timeRow}>
-          <Text style={styles.timeText}>{Math.floor(position / (2.25 * rate) / 60)}:{Math.floor((position / (2.25 * rate)) % 60).toString().padStart(2, '0')}</Text>
-          <Text style={styles.timeText}>−{Math.floor((words.length - position) / (2.25 * rate) / 60)}:{Math.floor(((words.length - position) / (2.25 * rate)) % 60).toString().padStart(2, '0')}</Text>
+          <Text style={[styles.timeText, { color: colors.textSecondary }]}>{Math.floor(position / (2.25 * rate) / 60)}:{Math.floor((position / (2.25 * rate)) % 60).toString().padStart(2, '0')}</Text>
+          <Text style={[styles.timeText, { color: colors.textSecondary }]}>−{Math.floor((words.length - position) / (2.25 * rate) / 60)}:{Math.floor(((words.length - position) / (2.25 * rate)) % 60).toString().padStart(2, '0')}</Text>
         </View>
         <View style={styles.controls}>
-          <Pressable accessibilityLabel="Skip back 15 seconds" onPress={() => void skip(-15)} style={styles.smallControl}><Icon name="rewind-15" color="#D9DCF0" size={29} /></Pressable>
-          <Pressable accessibilityLabel={playing ? 'Pause audio' : 'Play audio'} onPress={() => void togglePlay()} style={[styles.playButton, { backgroundColor: colors.purple }]}><Icon name={playing ? 'pause' : 'play'} color={colors.primaryText} size={35} /></Pressable>
-          <Pressable accessibilityLabel="Skip forward 15 seconds" onPress={() => void skip(15)} style={styles.smallControl}><Icon name="fast-forward-15" color="#D9DCF0" size={29} /></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Skip back 15 seconds" onPress={() => void skip(-15)} style={[styles.smallControl, { backgroundColor: colors.mode === 'dark' ? '#253A49' : '#FFFFFFB3' }]}><Icon name="rewind-15" color={colors.textSecondary} size={25} /></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel={playing ? 'Pause audio' : 'Play audio'} onPress={() => void togglePlay()} style={({ pressed }) => [styles.playButton, { backgroundColor: colors.primary, opacity: pressed ? 0.88 : 1 }]}><Icon name={playing ? 'pause' : 'play'} color={colors.primaryText} size={25} /><Text numberOfLines={1} style={[styles.playButtonLabel, { color: colors.primaryText }]}>{playing ? 'Pause' : words.length > 0 && position >= words.length ? 'Listen again' : position > 0 ? 'Continue' : 'Listen now'}</Text></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Skip forward 15 seconds" onPress={() => void skip(15)} style={[styles.smallControl, { backgroundColor: colors.mode === 'dark' ? '#253A49' : '#FFFFFFB3' }]}><Icon name="fast-forward-15" color={colors.textSecondary} size={25} /></Pressable>
         </View>
-        <Pressable accessibilityRole="button" onPress={() => void openAsk()} style={styles.askStudyBoltButton}>
-          <View style={styles.askStudyBoltIcon}><Icon name="creation" size={20} color="#C8B5FF" /></View>
-          <View style={styles.askStudyBoltCopy}><Text style={styles.askStudyBoltTitle}>Ask StudyBolt</Text><Text style={styles.askStudyBoltText}>Pause and ask about this part</Text></View>
-          <Icon name="chevron-right" size={20} color="#B1A8D0" />
+        <Pressable accessibilityRole="button" onPress={() => void openAsk()} style={[styles.askStudyBoltButton, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={[styles.askStudyBoltIcon, { backgroundColor: colors.mintSoft }]}><Icon name="creation" size={20} color={colors.mint} /></View>
+          <View style={styles.askStudyBoltCopy}><Text style={[styles.askStudyBoltTitle, { color: colors.text }]}>Ask StudyBolt</Text><Text style={[styles.askStudyBoltText, { color: colors.textSecondary }]}>Pause and ask about this part</Text></View>
+          <Icon name="chevron-right" size={20} color={colors.textSecondary} />
         </Pressable>
       </Card>
       <View style={styles.audioSettings}>
@@ -2564,32 +2565,32 @@ const styles = StyleSheet.create({
   audioMode: { flex: 1, minWidth: 0, flexDirection: 'row', gap: 4, alignItems: 'center', justifyContent: 'center', paddingVertical: 10, borderRadius: 12 },
   audioModeDisabled: { opacity: 0.42 },
   audioModeText: { flexShrink: 1, fontSize: 10, fontWeight: '800' },
-  player: { padding: 22, alignItems: 'center' },
-  playerArtWrap: { width: 130, height: 130, alignItems: 'center', justifyContent: 'center', marginVertical: 8 },
-  playerGlow: { position: 'absolute', width: 112, height: 112, borderRadius: 56, opacity: 0.22 },
-  playerArt: { width: 98, height: 98, borderRadius: 49, backgroundColor: '#26224A', borderWidth: 1, borderColor: '#7868C4', alignItems: 'center', justifyContent: 'center' },
-  nowPlaying: { color: '#B1A8D0', fontSize: 9, fontWeight: '900', letterSpacing: 1.2, marginTop: 8 },
-  audioTitle: { color: '#EDF1F5', fontSize: 20, fontWeight: '900', marginTop: 8 },
-  audioCourse: { color: '#B4BEC8', fontSize: 11, marginTop: 4 },
-  currentSection: { alignSelf: 'stretch', alignItems: 'center', marginTop: 14 },
-  currentSectionLabel: { color: '#857DA8', fontSize: 7, fontWeight: '900', letterSpacing: 1 },
-  currentSectionTitle: { maxWidth: '90%', color: '#CFCAE5', fontSize: 10, fontWeight: '800', marginTop: 3 },
-  audioProgress: { width: '100%', marginTop: 14 },
+  player: { padding: 20, borderRadius: 26, alignItems: 'center' },
+  playerWash: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, borderRadius: 26, pointerEvents: 'none' },
+  nowPlayingBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20, marginTop: 2 },
+  nowPlaying: { fontSize: 9, fontWeight: '800', letterSpacing: 1.1 },
+  audioTitle: { fontSize: 20, lineHeight: 27, fontWeight: '800', letterSpacing: -0.4, marginTop: 10, textAlign: 'center' },
+  audioCourse: { fontSize: 12, lineHeight: 18, marginTop: 4, textAlign: 'center' },
+  currentSection: { alignSelf: 'stretch', alignItems: 'center', borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 11, marginTop: 18 },
+  currentSectionLabel: { fontSize: 8, fontWeight: '800', letterSpacing: 1 },
+  currentSectionTitle: { fontSize: 11, lineHeight: 16, fontWeight: '700', marginTop: 4, textAlign: 'center' },
+  audioProgress: { width: '100%', marginTop: 5 },
   seekTouchArea: { width: '100%', height: 44, justifyContent: 'center' },
   seekTrack: { width: '100%', height: 6, borderRadius: 4, justifyContent: 'center' },
   seekFill: { position: 'absolute', left: 0, top: 0, height: 6, borderRadius: 4 },
   seekThumb: { position: 'absolute', width: 20, height: 20, borderRadius: 10, marginLeft: -10, top: -7, borderWidth: 2, borderColor: '#F2EDFF' },
   seekThumbActive: { width: 24, height: 24, borderRadius: 12, marginLeft: -12, top: -9, borderWidth: 2.5, elevation: 3, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 3, shadowOffset: { width: 0, height: 1 } },
-  timeRow: { width: '100%', flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
-  timeText: { color: '#929EAA', fontSize: 9 },
-  controls: { flexDirection: 'row', alignItems: 'center', gap: 27, marginTop: 17 },
-  smallControl: { width: 46, height: 46, alignItems: 'center', justifyContent: 'center' },
-  playButton: { width: 65, height: 65, borderRadius: 33, alignItems: 'center', justifyContent: 'center' },
-  askStudyBoltButton: { alignSelf: 'stretch', minHeight: 58, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: '#4B456E', backgroundColor: '#1B1D3C', flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, marginTop: 18 },
-  askStudyBoltIcon: { width: 35, height: 35, borderRadius: 11, backgroundColor: '#29264E', alignItems: 'center', justifyContent: 'center' },
+  timeRow: { width: '100%', flexDirection: 'row', justifyContent: 'space-between' },
+  timeText: { fontSize: 10, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  controls: { alignSelf: 'stretch', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 18 },
+  smallControl: { width: 44, height: 44, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  playButton: { flex: 1, maxWidth: 178, minHeight: 56, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 18, flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center' },
+  playButtonLabel: { flexShrink: 1, fontSize: 14, fontWeight: '800' },
+  askStudyBoltButton: { alignSelf: 'stretch', minHeight: 62, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 10, marginTop: 18 },
+  askStudyBoltIcon: { width: 35, height: 35, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   askStudyBoltCopy: { flex: 1 },
-  askStudyBoltTitle: { color: '#F4F0FF', fontSize: 12, fontWeight: '900' },
-  askStudyBoltText: { color: '#9F9AB9', fontSize: 8, marginTop: 2 },
+  askStudyBoltTitle: { fontSize: 12, fontWeight: '800' },
+  askStudyBoltText: { fontSize: 10, lineHeight: 15, marginTop: 2 },
   audioSettings: { flexDirection: 'row', gap: 10, marginTop: 12 },
   audioSettingCard: { width: '48.5%', flexDirection: 'row', alignItems: 'center', gap: 9, padding: 12 },
   settingArrow: { width: 22, height: 36, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },

@@ -3,6 +3,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { Platform } from 'react-native';
 import { resolveProcessorUrl } from '../config/backend';
 import { ensureDistinctNoteLayers } from './noteLayers';
+import { withUploadTimeout } from './uploadTimeout';
 import {
   getFileExtension,
   getImportFileName,
@@ -128,7 +129,7 @@ async function uploadDocument(
     // React Native's fetch/FormData bridge is inconsistent with iOS document
     // provider URIs. Expo's native uploader builds the multipart body in
     // native code and preserves the picked file without a base64 copy.
-    const result = await FileSystem.uploadAsync(endpoint, asset.uri, {
+    const task = FileSystem.createUploadTask(endpoint, asset.uri, {
       fieldName: 'file',
       httpMethod: 'POST',
       mimeType,
@@ -141,6 +142,21 @@ async function uploadDocument(
       uploadType: FileSystem.FileSystemUploadType.MULTIPART,
       headers,
     });
+    const result = await withUploadTimeout(
+      task.uploadAsync(),
+      PROCESSOR_TIMEOUT_MS,
+      () => task.cancelAsync(),
+      () => new StudyBoltProcessingError(
+        'Processor request timed out',
+        'Document processing took too long. Check your connection and try again.',
+      ),
+    );
+    if (!result) {
+      throw new StudyBoltProcessingError(
+        'Processor upload was cancelled',
+        'The file upload did not finish. Please choose the file again and try again.',
+      );
+    }
     return {
       ok: result.status >= 200 && result.status < 300,
       status: result.status,

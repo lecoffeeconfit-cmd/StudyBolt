@@ -13,6 +13,7 @@ import type {
   StudyPack,
   SharedStudyPackVisibility,
 } from '../models';
+import { isCommunitySharingEnabled } from '../config/community';
 import { ensureDistinctNoteLayers } from './noteLayers';
 import { resolveBackendUrl } from '../config/backend';
 
@@ -31,7 +32,7 @@ export function shareUrlForToken(token: string): string {
 }
 
 export function parseShareToken(url: string | null | undefined): string | null {
-  if (!url) return null;
+  if (!isCommunitySharingEnabled || !url) return null;
   const marker = '/share/';
   const markerIndex = url.toLowerCase().indexOf(marker);
   if (markerIndex < 0) return null;
@@ -284,6 +285,9 @@ export async function createSharedStudyPack(
   visibility: SharedStudyPackVisibility,
   options: { creatorDisplayName?: string; classId?: string } = {},
 ): Promise<{ link?: SharedStudyPackLink; error?: string }> {
+  if (!isCommunitySharingEnabled && visibility !== 'private') {
+    return { error: 'Public sharing is unavailable in this release.' };
+  }
   if (!isSharingBackendConfigured) return { error: 'Link sharing is not connected yet. Add the StudyBolt backend to create a share link.' };
   try {
     const response = await supabaseRequest('/rest/v1/rpc/upsert_shared_study_pack', {
@@ -334,6 +338,7 @@ function parseMetadata(value: unknown, token: string): SharedStudyPackMetadata {
 }
 
 export async function fetchSharedStudyPack(token: string): Promise<{ preview?: SharedStudyPackPreview; content?: SharedStudyPackContent; error?: string }> {
+  if (!isCommunitySharingEnabled) return { error: 'Shared Study Packs are unavailable in this release.' };
   if (!isSharingBackendConfigured) return { error: 'This share link is not connected to a StudyBolt backend yet.' };
   try {
     const response = await supabaseRequest('/rest/v1/rpc/get_shared_study_pack', {

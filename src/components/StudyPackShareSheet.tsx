@@ -4,6 +4,7 @@ import { Alert, Modal, Platform, Pressable, ScrollView, Share, StyleSheet, Text,
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '../AuthContext';
+import { isCommunitySharingEnabled } from '../config/community';
 import type { CommunityClass, SharedStudyPackLink, SharedStudyPackVisibility, StudyPack } from '../models';
 import { listCommunityClasses } from '../services/community';
 import {
@@ -45,11 +46,11 @@ export function StudyPackShareSheet({ deck, visible, onClose, onRequireAuth }: {
     setBusy(true);
     void loadStoredShareLink(deck.id).then((stored) => {
       setLink(stored);
-      setVisibility(stored?.visibility ?? 'private');
+      setVisibility(isCommunitySharingEnabled ? stored?.visibility ?? 'private' : 'private');
       setClassId(stored?.classId);
       setBusy(false);
     });
-    if (user && isSharingBackendConfigured) {
+    if (isCommunitySharingEnabled && user && isSharingBackendConfigured) {
       void listCommunityClasses({ limit: 8 }).then((classResult) => setClasses(classResult.data.filter((item) => item.joined)));
     } else setClasses([]);
   }, [deck.id, user, visible]);
@@ -158,13 +159,14 @@ export function StudyPackShareSheet({ deck, visible, onClose, onRequireAuth }: {
           <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
             <View style={[styles.privacyCard, { backgroundColor: colors.mintSoft }]}><Icon name="shield-check-outline" size={20} color={colors.mint} /><View style={styles.privacyCopy}><Text style={[styles.privacyTitle, { color: colors.text }]}>Your progress stays private</Text><Text style={[styles.privacyText, { color: colors.textSecondary }]}>Only generated notes, cards, quiz content, and quick review are copied. Source files, history, and mastery are excluded.</Text></View></View>
 
+            {!isCommunitySharingEnabled ? <Notice icon="information-outline" text={link ? 'Sharing is off in this release. Save this Study Pack as private or disable its existing link.' : 'Public sharing and Discover are off in this release.'} tone="neutral" /> : null}
             {!user ? <Notice icon="account-lock-outline" text="Sign in to create and manage sharing." tone="primary" /> : null}
             {!isSharingBackendConfigured ? <Notice icon="cloud-alert-outline" text="Sharing needs the secure StudyBolt backend connection." tone="neutral" /> : null}
             {error ? <Notice icon="alert-circle-outline" text={error} tone="danger" /> : null}
 
             <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>VISIBILITY</Text>
             <View style={styles.visibilityList}>
-              {VISIBILITIES.map((item) => {
+              {VISIBILITIES.filter((item) => isCommunitySharingEnabled || item.id === 'private').map((item) => {
                 const selected = visibility === item.id;
                 return (
                   <Pressable key={item.id} accessibilityRole="radio" accessibilityState={{ checked: selected }} onPress={() => setVisibility(item.id)} style={[styles.visibility, { backgroundColor: selected ? colors.primarySoft : colors.cardStrong, borderColor: selected ? colors.primary : colors.border }]}>

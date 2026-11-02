@@ -21,6 +21,9 @@ import { radius } from '../theme';
 export function PremiumScreen({ onBack, onOpenLegal, onRequireAuth }: { onBack: () => void; onOpenLegal: () => void; onRequireAuth: () => void }) {
   const { colors } = useStudyBolt();
   const { user, getAccessToken } = useAuth();
+  const accountId = useRef(user?.id);
+  accountId.current = user?.id;
+  useEffect(() => { accountId.current = user?.id; return () => { accountId.current = undefined; }; }, [user?.id]);
   const entrance = useRef(new Animated.Value(0)).current;
   const [packages, setPackages] = useState<PurchasesPackage[]>([]);
   const [selectedPackageId, setSelectedPackageId] = useState<string | null>(null);
@@ -33,14 +36,17 @@ export function PremiumScreen({ onBack, onOpenLegal, onRequireAuth }: { onBack: 
   const [notice, setNotice] = useState<string | null>(null);
 
   const refreshQuota = useCallback(async () => {
+    const requestedFor = user?.id;
     try {
       const token = await getAccessToken();
+      if (accountId.current !== requestedFor) return null;
       if (!token) {
         setQuota(null);
         setError('Sign in again to check your secure membership status.');
         return null;
       }
       const result = await fetchTutorQuota(token);
+      if (accountId.current !== requestedFor) return null;
       if (!result.quota) {
         setQuota(null);
         setError(result.error ?? 'StudyBolt could not verify your membership right now.');
@@ -50,11 +56,12 @@ export function PremiumScreen({ onBack, onOpenLegal, onRequireAuth }: { onBack: 
       setError(null);
       return result.quota;
     } catch {
+      if (accountId.current !== requestedFor) return null;
       setQuota(null);
       setError('StudyBolt could not verify your membership right now.');
       return null;
     }
-  }, [getAccessToken]);
+  }, [getAccessToken, user?.id]);
 
   const load = useCallback(async () => {
     if (!user) {
@@ -73,6 +80,7 @@ export function PremiumScreen({ onBack, onOpenLegal, onRequireAuth }: { onBack: 
           if (canUseRevenueCat()) {
             const token = await getAccessToken();
             const status = token ? await syncRevenueCatEntitlement(token) : { error: 'Sign in again to check your subscription.' };
+            if (accountId.current !== user.id) return;
             setSubscriptionSyncReady(isSubscriptionSyncReady(status));
             if (status.error) setError(status.error);
             else if (status.status === 'throttled') setNotice('Subscription verification is still cooling down. Refresh status in a moment before checking out.');
@@ -80,6 +88,7 @@ export function PremiumScreen({ onBack, onOpenLegal, onRequireAuth }: { onBack: 
           await refreshQuota();
         })(),
       ]);
+      if (accountId.current !== user.id) return;
       setPackages(offerResult.packages);
       setSelectedPackageId((current) => offerResult.packages.some((item) => item.identifier === current) ? current : offerResult.packages[0]?.identifier ?? null);
       if (offerResult.error) setError(offerResult.error);
@@ -148,10 +157,13 @@ export function PremiumScreen({ onBack, onOpenLegal, onRequireAuth }: { onBack: 
     setNotice(null);
     try {
       await restoreRevenueCatPurchases(user.id);
+      if (accountId.current !== user.id) return;
       const token = await getAccessToken();
       const syncResult = token ? await syncRevenueCatEntitlement(token) : { error: 'Sign in again to check your subscription.' };
+      if (accountId.current !== user.id) return;
       setSubscriptionSyncReady(isSubscriptionSyncReady(syncResult));
       const verifiedQuota = await refreshQuota();
+      if (accountId.current !== user.id) return;
       if (verifiedQuota?.plan === 'premium') setNotice('Your Premium access has been restored.');
       else if (syncResult.error || syncResult.status === 'throttled') setNotice('Store restore completed. Secure account confirmation is still syncing; refresh status in a moment.');
       else setNotice('Restore complete. No active Premium access was found for this account.');

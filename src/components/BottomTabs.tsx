@@ -5,21 +5,25 @@ import { Animated, I18nManager, Platform, Pressable, StyleSheet, Text, View } fr
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useStudyBolt } from '../StudyBoltContext';
+import { isCommunitySharingEnabled } from '../config/community';
 import { useReducedMotion } from '../hooks/useReducedMotion';
-import { Icon } from './ui';
-import type { IconName } from './ui';
+import { StudyTabGlyph } from './StudyBoltGlyphs';
 
 export type MainTab = 'home' | 'library' | 'planner' | 'discover' | 'stats' | 'profile';
 
-type TabDefinition = { id: MainTab; label: string; icon: IconName; activeIcon: IconName };
+type TabDefinition = { id: MainTab; label: string };
+
+const COMMUNITY_TABS: TabDefinition[] = isCommunitySharingEnabled
+  ? [{ id: 'discover', label: 'Discover' }]
+  : [];
 
 const TABS: TabDefinition[] = [
-  { id: 'home', label: 'Home', icon: 'home-outline', activeIcon: 'home-variant' },
-  { id: 'library', label: 'Library', icon: 'bookshelf', activeIcon: 'book-open-page-variant' },
-  { id: 'planner', label: 'Planner', icon: 'calendar-blank-outline', activeIcon: 'calendar-check' },
-  { id: 'stats', label: 'Stats', icon: 'chart-bar', activeIcon: 'chart-box' },
-  { id: 'discover', label: 'Discover', icon: 'compass-outline', activeIcon: 'compass' },
-  { id: 'profile', label: 'Settings', icon: 'cog-outline', activeIcon: 'cog' },
+  { id: 'home', label: 'Home' },
+  { id: 'library', label: 'Library' },
+  { id: 'planner', label: 'Planner' },
+  { id: 'stats', label: 'Stats' },
+  ...COMMUNITY_TABS,
+  { id: 'profile', label: 'Settings' },
 ];
 
 export const BOTTOM_TAB_BAR_HEIGHT = 66;
@@ -129,28 +133,10 @@ function TabButton({ tab, selected, reducedMotion, onChange }: {
   onChange: (tab: MainTab) => void;
 }) {
   const { colors } = useStudyBolt();
-  const selection = useRef(new Animated.Value(selected ? 1 : 0)).current;
   const press = useRef(new Animated.Value(0)).current;
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
-
-  useEffect(() => {
-    selection.stopAnimation();
-    if (reducedMotion) {
-      selection.setValue(selected ? 1 : 0);
-      return;
-    }
-    const animation = Animated.spring(selection, {
-      toValue: selected ? 1 : 0,
-      damping: 18,
-      stiffness: 260,
-      mass: 0.7,
-      overshootClamping: true,
-      useNativeDriver: USE_NATIVE_DRIVER,
-    });
-    animation.start();
-    return () => animation.stop();
-  }, [reducedMotion, selected, selection]);
+  const [activation, setActivation] = useState(0);
 
   useEffect(() => {
     if (reducedMotion) {
@@ -182,7 +168,10 @@ function TabButton({ tab, selected, reducedMotion, onChange }: {
         if (Platform.OS !== 'web') void Haptics.selectionAsync().catch(() => undefined);
         onChange(tab.id);
       }}
-      onPressIn={() => animatePress(true)}
+      onPressIn={() => {
+        animatePress(true);
+        if (tab.id === 'profile' && !reducedMotion) setActivation((value) => value + 1);
+      }}
       onPressOut={() => animatePress(false)}
       onHoverIn={() => setHovered(true)}
       onHoverOut={() => setHovered(false)}
@@ -205,28 +194,25 @@ function TabButton({ tab, selected, reducedMotion, onChange }: {
         ]}
       />
       <Animated.View style={[styles.tabContent, { transform: [{ scale: press.interpolate({ inputRange: [0, 1], outputRange: [1, 0.93] }) }] }]}>
-        <Animated.View
+        <View
           accessible={false}
           aria-hidden
           accessibilityElementsHidden
           importantForAccessibility="no-hide-descendants"
-          style={[
-            styles.icon,
-            {
-              transform: [
-                { translateY: selection.interpolate({ inputRange: [0, 1], outputRange: [0, -1] }) },
-                { scale: selection.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] }) },
-              ],
-            },
-          ]}
+          style={styles.icon}
         >
-          <Animated.View style={[styles.iconLayer, { opacity: selection.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }) }]}>
-            <Icon name={tab.icon} size={23} color={colors.textSecondary} />
-          </Animated.View>
-          <Animated.View style={[styles.iconLayer, { opacity: selection }]}>
-            <Icon name={tab.activeIcon} size={23} color={colors.primary} />
-          </Animated.View>
-        </Animated.View>
+          <StudyTabGlyph
+            name={tab.id}
+            size={27}
+            active={selected}
+            color={selected ? colors.primary : colors.textSecondary}
+            accent={colors.goldBright}
+            reducedMotion={reducedMotion}
+            mode={colors.mode}
+            interacting={hovered || focused}
+            activation={activation}
+          />
+        </View>
         <Text
           numberOfLines={1}
           maxFontSizeMultiplier={1.2}
@@ -266,7 +252,6 @@ const styles = StyleSheet.create({
   tab: { flex: 1, minHeight: 48, borderRadius: 19, justifyContent: 'center' },
   interactionSurface: { position: 'absolute', left: 2, right: 2, top: 0, bottom: 0, borderRadius: 19, borderWidth: 2 },
   tabContent: { alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 4 },
-  icon: { width: 26, height: 26 },
-  iconLayer: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
+  icon: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
   label: { fontSize: 10, lineHeight: 13, letterSpacing: 0.05 },
 });

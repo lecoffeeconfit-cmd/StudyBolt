@@ -19,6 +19,10 @@ verify_jwt = false
 [functions.delete-account]
 verify_jwt = false
 
+# Scheduler-only endpoint; authenticates a dedicated backend worker secret.
+[functions.process-account-deletions]
+verify_jwt = false
+
 # RevenueCat authenticates this endpoint with its request HMAC signature;
 # individual subscribers are resolved from the signed app_user_id in the body.
 [functions.revenuecat-webhook]

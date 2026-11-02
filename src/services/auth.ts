@@ -7,6 +7,8 @@ import type { Session, User } from '@supabase/supabase-js';
 
 import type { StudyType } from '../models';
 import { resolveBackendUrl } from '../config/backend';
+import { prepareRevenueCatAccountDeletion, releaseRevenueCatDeletionHold } from './subscriptions';
+import { submitAccountDeletion } from './accountDeletionClient';
 
 const AUTH_REDIRECT_URL = 'studybolt://auth/callback';
 const OAUTH_STARTED_AT_KEY = '@studybolt/auth/oauth-started-at';
@@ -37,10 +39,13 @@ export interface AuthResult {
   message?: string;
   error?: string;
   recovery?: boolean;
+  deletionPending?: boolean;
+  sessionCleanupFailed?: boolean;
 }
 
 const supabaseUrl = resolveBackendUrl(process.env.EXPO_PUBLIC_SUPABASE_URL);
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
+const authStorageKey = supabaseUrl ? 'sb-' + new URL(supabaseUrl).hostname.split('.')[0] + '-auth-token' : '';
 
 const hasPlaceholderAnonKey = supabaseAnonKey === 'PASTE_ANON_KEY_HERE';
 export const isAuthConfigured = Boolean(supabaseUrl && supabaseAnonKey && !hasPlaceholderAnonKey);
@@ -53,6 +58,7 @@ export const supabase = isAuthConfigured
       process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
       {
         auth: {
+          storageKey: authStorageKey,
           storage: AsyncStorage,
           autoRefreshToken: true,
           persistSession: true,
@@ -114,6 +120,7 @@ export async function clearAuthSession(): Promise<void> {
   } catch {
     // The local client may already be empty; there is nothing else to clear.
   }
+  if (authStorageKey) await AsyncStorage.multiRemove([authStorageKey, authStorageKey + '-code-verifier', authStorageKey + '-user']);
 }
 
 export async function loadAuthSession(): Promise<AuthSession | null> {
@@ -365,17 +372,16 @@ export async function signOutAccount(session: AuthSession | null): Promise<void>
 export async function deleteRemoteAccount(session: AuthSession): Promise<AuthResult> {
   if (!isAuthConfigured) return configurationError();
   try {
-    const response = await fetch(`${supabaseUrl}/functions/v1/delete-account`, {
+    await prepareRevenueCatAccountDeletion(session.user.id);
+    return await submitAccountDeletion(() => fetch(`${supabaseUrl}/functions/v1/delete-account`, {
       method: 'POST',
       headers: {
         apikey: supabaseAnonKey,
         Authorization: `Bearer ${session.access_token}`,
         'Content-Type': 'application/json',
       },
-    });
-    if (!response.ok) return { error: await readResponseError(response) };
-    await clearAuthSession();
-    return { message: 'Your account and synced data were deleted.' };
+      body: JSON.stringify({ confirmation: 'DELETE_ACCOUNT' }),
+    }), clearAuthSession, () => releaseRevenueCatDeletionHold(session.user.id));
   } catch {
     return { error: 'Could not delete your account. Check your connection and try again.' };
   }

@@ -7,7 +7,7 @@
 - A 1024 × 1024 iOS app icon exists; the app supports iPhone and iPad.
 - Account creation is optional for the local Biology sample, and the app has an in-app account deletion flow.
 - Subscription checkout is gated until HTTPS Privacy Policy and Terms links are configured. The purchase screen shows store price/period, restore, legal links, and subscription management.
-- The account-deletion confirmation tells Premium subscribers to cancel store billing before proceeding. The updated delete-account function first queues RevenueCat customer deletion, then removes private slide-image objects and the Auth account. Configure the scoped API v2 key in the server secret store and exercise retries with a disposable test account before deployment.
+- The updated account-deletion confirmation checks Apple subscription status, links to Apple subscription settings, and allows immediate confirmation while billing is active. Deletion is journaled and retried; Supabase cleanup precedes asynchronously confirmed RevenueCat erasure. Review and complete [the deletion rollout and sandbox verification](account-deletion-audit.md) before release. This source change is not deployed or end-to-end verified.
 - The app declares `ITSAppUsesNonExemptEncryption=false`; confirm the export-compliance answer for the final binary.
 
 ## Must resolve before App Review
@@ -38,7 +38,7 @@ See [`revenuecat-setup-status.md`](revenuecat-setup-status.md) for installed key
 - Configure RevenueCat's `premium` entitlement and current `default` offering with monthly and annual packages. Set the public iOS and Android SDK keys in EAS, the webhook signing secret and entitlement ID in Supabase, and deploy the status-sync/webhook functions.
 - Complete required App Store tax/banking agreements and subscription metadata.
 - Confirm the production UI displays the real store price and period, and exercise sandbox purchase, restore, cancellation, expiration, and account deletion behavior.
-- Create a RevenueCat API v2 secret key scoped only to `customer_information:customers:read_write`, and store it server-side as `REVENUECAT_CUSTOMER_DELETE_API_KEY` with `REVENUECAT_PROJECT_ID`. Never add it to EAS or the app bundle.
+- Configure the full RevenueCat v2 project ID, Customers read/write permission (including reads), backend worker secret, and verified retry schedule as described in the deletion audit. Keep secrets out of EAS and the app bundle.
 
 ### 5. Fill App Store Connect fields
 
@@ -48,7 +48,7 @@ Copy the prepared name, subtitle, promotional text, description, and keywords fr
 
 - Provide a non-expiring demo account for cloud-gated features, or confirm which features can be reviewed through the guest Biology sample.
 - Add concise setup steps, subscription test details, external services, and real device/OS versions to App Review Information.
-- Confirm the deployed Edge Functions and database migrations match this build. The latest code includes a delete-account function change; deploy it.
+- Review the account-deletion migration’s triggers and shared-Auth safeguards before deployment. Deploy the migration, worker, webhook/sync guards, deletion endpoint, and matching app build in the documented order; verify sandbox behavior before production.
 - Build with the production EAS profile, confirm the remote build number and processed binary, and attach that build to version 1.0.0 in App Store Connect.
 - Select manual release after approval if you want a final review gate; otherwise select the intended automatic release option.
 

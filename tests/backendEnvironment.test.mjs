@@ -66,3 +66,21 @@ test('production and development profiles require their matching environment mar
   });
   assert.ok(productionErrors.some((error) => error.includes('must use EXPO_PUBLIC_APP_ENV=production')));
 });
+
+test('production profile accepts the configured production API hosts', () => {
+  assert.deepEqual(validateEasBuildEnvironment({
+    EAS_BUILD_PROFILE: 'production',
+    EXPO_PUBLIC_APP_ENV: 'production',
+    EXPO_PUBLIC_SUPABASE_URL: 'https://studybolt-api.duckdns.org',
+    EXPO_PUBLIC_SUPABASE_ANON_KEY: 'public-test-key',
+    EXPO_PUBLIC_STUDYBOLT_PROCESSOR_URL: 'https://studybolt-api.duckdns.org/functions/v1/studybolt-process-document',
+  }), []);
+});
+
+test('backend deletion secrets are rejected from public build variables', () => {
+  for (const leak of [{ EXPO_PUBLIC_REVENUECAT_IOS_API_KEY: 'sk_private' }, { EXPO_PUBLIC_STUDYBOLT_DELETION_WORKER_SECRET: 'private-worker' }]) {
+    const errors = validateEasBuildEnvironment({ EAS_BUILD_PROFILE: 'development', EXPO_PUBLIC_APP_ENV: 'development', ...leak });
+    assert.ok(errors.some((error) => error.includes('backend-only secret')));
+    assert.ok(!errors.join().includes(Object.values(leak)[0]));
+  }
+});

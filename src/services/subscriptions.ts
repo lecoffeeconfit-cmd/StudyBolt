@@ -1,12 +1,37 @@
-import { Platform } from 'react-native';
+import { Linking, Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Purchases from 'react-native-purchases';
 import type { PurchasesPackage } from 'react-native-purchases';
 
 import { hasApprovedLegalDocuments } from '../config/legal';
 import { resolveBackendUrl } from '../config/backend';
+import { createRevenueCatIdentityQueue } from './revenuecatIdentity';
 
-let lastRevenueCatUserId: string | null | undefined;
-let sdkQueue: Promise<unknown> = Promise.resolve();
+const deletionKey = (id: string) => '@studybolt/deleting-account/' + id;
+const identity = createRevenueCatIdentityQueue(Purchases, async (id) => await AsyncStorage.getItem(deletionKey(id)) === 'true');
+
+export async function prepareRevenueCatAccountDeletion(userId: string): Promise<void> {
+  await AsyncStorage.setItem(deletionKey(userId), 'true');
+  if (canUseRevenueCat()) await identity.detach(userId).catch(() => undefined);
+}
+
+export async function releaseRevenueCatDeletionHold(userId: string): Promise<void> {
+  await AsyncStorage.removeItem(deletionKey(userId));
+}
+
+export async function checkAppleSubscriptionForDeletion(userId: string): Promise<boolean> {
+  if (!canUseRevenueCat()) throw new Error('Subscription status is unavailable.');
+  return withRevenueCatUser(userId, async () => {
+    await Purchases.invalidateCustomerInfoCache();
+    const info = await Purchases.getCustomerInfo();
+    return Object.values(info.subscriptionsByProductIdentifier).some((subscription) => subscription.isActive
+      && ['APP_STORE', 'MAC_APP_STORE'].includes(subscription.store));
+  });
+}
+
+export async function openAppleSubscriptionManagement(): Promise<void> {
+  await Linking.openURL('https://apps.apple.com/account/subscriptions');
+}
 
 export function canUseRevenueCat(): boolean {
   return Platform.OS !== 'web' && Boolean(publicApiKey());
@@ -65,29 +90,8 @@ export async function syncRevenueCatEntitlement(accessToken: string): Promise<{ 
 }
 
 function withRevenueCatUser<T>(userId: string | null, action: () => Promise<T>): Promise<T> {
-  const operation = sdkQueue.then(async () => {
-    const key = publicApiKey();
-    if (Platform.OS === 'web') throw new Error('In-app subscriptions are available in the iOS and Android apps.');
-    if (!key) throw new Error('Premium checkout is not connected to the app stores yet.');
-
-    const configured = await Purchases.isConfigured();
-    if (!userId) {
-      if (configured && lastRevenueCatUserId !== null) await Purchases.logOut();
-      lastRevenueCatUserId = null;
-      return undefined as T;
-    }
-
-    if (!configured) {
-      Purchases.configure({ apiKey: key, appUserID: userId });
-      lastRevenueCatUserId = userId;
-    } else if (lastRevenueCatUserId !== userId) {
-      await Purchases.logIn(userId);
-      lastRevenueCatUserId = userId;
-    }
-    return action();
-  });
-  sdkQueue = operation.then(() => undefined, () => undefined);
-  return operation;
+  if (Platform.OS === 'web') return Promise.reject(new Error('In-app subscriptions are available in the iOS and Android apps.'));
+  return identity.withUser(userId, publicApiKey(), action);
 }
 
 function publicApiKey(): string {
@@ -98,7 +102,7 @@ function publicApiKey(): string {
 
 function usableKey(value: string | undefined): string {
   const key = value?.trim() ?? '';
-  return key && !key.startsWith('PASTE_') ? key : '';
+  return key && !key.startsWith('PASTE_') && !key.startsWith('sk_') ? key : '';
 }
 
 function subscriptionPeriodMonths(period: string | null): number | null {

@@ -1,6 +1,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { studyBoltLegalDocumentsApproved, studyBoltPrivacyPolicyUrl, studyBoltTermsOfServiceUrl } from '../_shared/legal.ts';
 import { fetchRevenueCatEntitlement } from '../_shared/revenuecat.ts';
+import { studyBoltSubscriptionAccountExists } from '../_shared/accountDeletionStore.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -30,6 +31,10 @@ Deno.serve(async (request: Request) => {
   const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
   const { data: { user }, error: authError } = await admin.auth.getUser(token);
   if (authError || !user) return json({ error: 'Your session expired. Sign in again.' }, 401);
+
+  try {
+    if (!await studyBoltSubscriptionAccountExists(admin, user.id)) return json({ error: 'Account deletion is in progress.' }, 409);
+  } catch { return json({ error: 'Account status is temporarily unavailable.' }, 503); }
 
   const { data: acquired, error: throttleError } = await admin.rpc('acquire_studybolt_subscription_sync', { p_user_id: user.id });
   if (throttleError) return json({ error: 'StudyBolt could not check subscription status.' }, 503);

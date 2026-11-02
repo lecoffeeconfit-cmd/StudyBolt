@@ -211,10 +211,10 @@ export function ProfileScreen({ onOpenOnboarding, onOpenAuth, onManageAccount, o
           <Icon name="chevron-right" size={20} color={colors.textMuted} />
         </Pressable>
         {narrationError ? <Text style={[styles.narrationError, { color: colors.danger }]}>{narrationError}</Text> : null}
-        <Pressable accessibilityRole="button" onPress={() => { setNarrationError(null); setNarrationSettingsVisible(true); }} style={({ pressed }) => [styles.narrationButton, { backgroundColor: colors.purple, opacity: pressed ? 0.78 : 1 }]}>
-          <Icon name="tune-variant" size={17} color={colors.primaryText} />
+        <Pressable accessibilityRole="button" accessibilityLabel="Customize narration" onPress={() => { setNarrationError(null); setNarrationSettingsVisible(true); }} style={({ pressed }) => [styles.narrationButton, { backgroundColor: colors.purple, opacity: pressed ? 0.78 : 1 }]}>
+          <View pointerEvents="none" accessible={false} aria-hidden accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.narrationButtonIcon}><Icon name="tune-variant" size={18} color={colors.primaryText} /></View>
           <Text style={[styles.narrationButtonText, { color: colors.primaryText }]}>Customize narration</Text>
-          <Icon name="arrow-top-right" size={16} color={colors.primaryText} />
+          <View pointerEvents="none" accessible={false} aria-hidden accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.narrationButtonIcon}><Icon name="arrow-top-right" size={18} color={colors.primaryText} /></View>
         </Pressable>
       </Card>
 
@@ -499,8 +499,9 @@ const styles = StyleSheet.create({
   narrationSummaryLabel: { fontSize: 7, fontWeight: '900', letterSpacing: 0.7 },
   narrationSummaryValue: { fontSize: 10, fontWeight: '800', marginTop: 3 },
   narrationSummaryDivider: { width: StyleSheet.hairlineWidth, height: 31 },
-  narrationButton: { minHeight: 42, borderRadius: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 10 },
-  narrationButtonText: { fontSize: 11, fontWeight: '900', flex: 1, textAlign: 'center' },
+  narrationButton: { minHeight: 48, borderRadius: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16, paddingVertical: 10, gap: 10, marginTop: 10 },
+  narrationButtonIcon: { width: 24, height: 24, flexShrink: 0, alignItems: 'center', justifyContent: 'center' },
+  narrationButtonText: { fontSize: 12, lineHeight: 18, fontWeight: '800', flex: 1, minWidth: 0, textAlign: 'center' },
   narrationError: { fontSize: 10, lineHeight: 14, marginTop: 9 },
   settingsCard: { paddingVertical: 1 },
   setting: { minHeight: 67, flexDirection: 'row', alignItems: 'center', gap: 12 },

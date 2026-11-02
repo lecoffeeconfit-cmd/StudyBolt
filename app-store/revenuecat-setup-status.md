@@ -1,10 +1,10 @@
 # RevenueCat setup status
 
-Updated 27 October 2026. This records verified configuration, not release approval.
+Updated 29 October 2026. This records verified configuration, not release approval.
 
 ## Installed and verified
 
-- RevenueCat project: `StudyBolt` (`4ff86a20`).
+- RevenueCat project: `StudyBolt` (dashboard `4ff86a20`; REST v2 `proj4ff86a20`).
 - Entitlement: `premium`. Current offering: `default`, with `$rc_monthly` and `$rc_annual` packages.
 - Apple app: `com.lecoffeeconfit.studybolt` (`appa7e4bd232a`). RevenueCat validates the existing purchase and App Store Connect credentials, and reports Apple server notifications configured correctly.
 - Apple products created in the `StudyBolt Premium` subscription group: `studybolt_premium_monthly` (one month) and `studybolt_premium_annual` (one year). Both are attached to Premium and their matching offering packages.
@@ -12,7 +12,7 @@ Updated 27 October 2026. This records verified configuration, not release approv
 - Test Store products match the requested pricing: `studybolt_test_monthly_299` ($2.99/month) and `studybolt_test_annual_1999_7d` ($19.99/year with a one-week free trial). They are attached to Premium and the default offering. The automatically generated products with other prices were made inactive. No Test Store SDK key is installed in release builds.
 - Both public SDK keys are installed in ignored `.env.local` and the EAS `preview` and `production` environments. The local app uses the same account backend as production.
 - Signed webhook: `https://studybolt-api.duckdns.org/functions/v1/revenuecat-webhook`, all events/apps, sandbox and production. RevenueCat's signed dashboard test returned HTTP 200.
-- Server configuration is installed and persisted in Coolify's encrypted environment store. The existing deployment variable `REVENUECAT_SECRET_API_KEY` holds the public Apple SDK key for read-only API v1 subscriber lookups; no privileged RevenueCat API key was created. The webhook signing secret stays on the server.
+- Server configuration is installed and persisted in Coolify's encrypted environment store. The existing deployment variable `REVENUECAT_SECRET_API_KEY` holds the public Apple SDK key for read-only API v1 subscriber lookups; it cannot authorize subscriber deletion. The 29 October dashboard now shows a v2 key named “StudyBolt Account Deletion” with Customers Read & write and no other permissions. Its secret was not revealed. Read-only server checks show the dedicated deletion key/project ID are not installed in the running Edge Function environment, so deletion setup remains incomplete. The webhook signing secret stays on the server.
 - Subscription functions and the monthly PowerPoint allowance migration `20261027000000` are deployed to production.
 - Existing saved Study Packs remain accessible. Free users receive one successful PowerPoint import per UTC calendar month. Active trials and paid memberships bypass this import cap; the existing AI usage budgets still apply.
 
@@ -31,7 +31,7 @@ Updated 27 October 2026. This records verified configuration, not release approv
 3. Supply Google Play service-account credentials for `com.studybolt.app`, create/activate matching subscription base plans and the annual trial, and complete Google notifications setup.
 4. The `preview` environment still needs its intended backend URL/anon key. A separate StudyBolt staging backend was not identified; preview has not been redirected to production.
 5. Complete Apple subscription metadata/review requirements and perform a native sandbox purchase, restore, renewal, trial expiry, cancellation, and refund check in a fresh build. Backend lifecycle simulations do not replace a store purchase test.
-6. Before deploying account-deletion cleanup, create a RevenueCat REST API v2 secret key limited to `customer_information:customers:read_write` and store it in the server's encrypted secret configuration as `REVENUECAT_CUSTOMER_DELETE_API_KEY`, with the public project ID as `REVENUECAT_PROJECT_ID`. The app does not receive this key.
+6. Complete [the account-deletion audit and rollout](account-deletion-audit.md). It requires a backend v2 key with Customers read/write (including customer and alias reads), full v2 project ID `proj4ff86a20`, additive migration, authenticated scheduled worker, and native sandbox tests. The live restore setting observed on 29 October is **Transfer to new App User ID** with no separate sandbox behavior. Review switching to **Keep with original App User ID** using sandbox coverage first; the current setting does not enforce ownership isolation between identified StudyBolt accounts. No live setting was changed.
 
 Published policy links:
 

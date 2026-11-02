@@ -118,10 +118,11 @@ export async function loadStudyBoltState(): Promise<StudyBoltState> {
   }
 }
 
-export async function saveStudyBoltState(state: StudyBoltState): Promise<void> {
-  try {
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch {
-    // Local study data remains in memory if device storage is temporarily unavailable.
-  }
+let pendingStateWrite: Promise<void> = Promise.resolve();
+export function saveStudyBoltState(state: StudyBoltState): Promise<void> {
+  const serialized = JSON.stringify(state);
+  pendingStateWrite = pendingStateWrite.then(() => AsyncStorage.setItem(STORAGE_KEY, serialized)).catch(() => undefined);
+  return pendingStateWrite;
 }
+
+export function flushStudyBoltStateWrites(): Promise<void> { return pendingStateWrite; }

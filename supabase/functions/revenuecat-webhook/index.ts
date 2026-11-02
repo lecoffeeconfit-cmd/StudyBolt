@@ -1,5 +1,6 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { fetchRevenueCatEntitlement } from '../_shared/revenuecat.ts';
+import { studyBoltSubscriptionAccountExists } from '../_shared/accountDeletionStore.ts';
 
 const MAX_BODY_BYTES = 64 * 1024;
 const SIGNATURE_TOLERANCE_SECONDS = 300;
@@ -64,7 +65,10 @@ Deno.serve(async (request: Request) => {
   try {
     // A signed event wakes the integration; the RevenueCat subscriber record
     // is the current source of truth for refunds, grace periods and transfers.
-    const snapshots = await Promise.all(userIds.map(async (userId) => ({
+    const existing = await Promise.all(userIds.map(async (userId) => ({ userId, allowed: await studyBoltSubscriptionAccountExists(admin, userId) })));
+    const activeIds = existing.filter((account) => account.allowed).map((account) => account.userId);
+    if (!activeIds.length) return json({ status: 'ignored', reason: 'deleted_or_deleting_user' });
+    const snapshots = await Promise.all(activeIds.map(async (userId) => ({
       userId,
       state: await fetchRevenueCatEntitlement(userId, entitlementId, revenueCatApiKey),
     })));

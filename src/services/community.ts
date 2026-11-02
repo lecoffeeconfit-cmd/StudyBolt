@@ -1,7 +1,8 @@
 import type { CommunityClass, DiscoverSort, DiscoverStudySet } from '../models';
+import { isCommunitySharingEnabled } from '../config/community';
 import { isAuthConfigured, supabase } from './auth';
 
-export const isCommunityConfigured = isAuthConfigured && Boolean(supabase);
+export const isCommunityConfigured = isCommunitySharingEnabled && isAuthConfigured && Boolean(supabase);
 
 export interface CommunityResult<T> {
   data: T;
@@ -76,6 +77,7 @@ export async function listPublicStudySets({
   limit?: number;
   offset?: number;
 } = {}): Promise<CommunityResult<DiscoverStudySet[]>> {
+  if (!isCommunitySharingEnabled) return { data: [], error: 'Discover is unavailable in this release.' };
   if (!supabase) return unavailable([]);
   try {
     const { data, error } = await supabase.rpc('list_public_study_packs', {
@@ -103,6 +105,7 @@ export async function listCommunityClasses({
   limit?: number;
   offset?: number;
 } = {}): Promise<CommunityResult<CommunityClass[]>> {
+  if (!isCommunitySharingEnabled) return { data: [], error: 'Classes are unavailable in this release.' };
   if (!supabase) return unavailable([]);
   try {
     const { data, error } = await supabase.rpc('list_community_classes', {
@@ -119,6 +122,7 @@ export async function listCommunityClasses({
 }
 
 export async function getCommunityClass(classId: string): Promise<CommunityResult<CommunityClass | null>> {
+  if (!isCommunitySharingEnabled) return { data: null, error: 'Classes are unavailable in this release.' };
   if (!supabase) return unavailable(null);
   try {
     const { data, error } = await supabase.rpc('get_community_class', { p_class_id: classId });
@@ -131,6 +135,7 @@ export async function getCommunityClass(classId: string): Promise<CommunityResul
 }
 
 export async function joinCommunityClass(classId: string): Promise<{ error?: string }> {
+  if (!isCommunitySharingEnabled) return { error: 'Classes are unavailable in this release.' };
   if (!supabase) return { error: 'Connect StudyBolt to Supabase to join a class.' };
   try {
     const { error } = await supabase.rpc('join_community_class', { p_class_id: classId });
@@ -141,6 +146,7 @@ export async function joinCommunityClass(classId: string): Promise<{ error?: str
 }
 
 export async function leaveCommunityClass(classId: string): Promise<{ error?: string }> {
+  if (!isCommunitySharingEnabled) return { error: 'Classes are unavailable in this release.' };
   if (!supabase) return { error: 'Connect StudyBolt to Supabase to manage classes.' };
   try {
     const { error } = await supabase.rpc('leave_community_class', { p_class_id: classId });
@@ -151,7 +157,7 @@ export async function leaveCommunityClass(classId: string): Promise<{ error?: st
 }
 
 export async function incrementSharedPackSave(token: string): Promise<void> {
-  if (!supabase) return;
+  if (!isCommunitySharingEnabled || !supabase) return;
   try {
     await supabase.rpc('increment_shared_pack_save', { p_share_token: token });
   } catch {

@@ -12,9 +12,9 @@ export const StudyPlanIllustration = memo(function StudyPlanIllustration({ dark 
           <Stop offset="1" stopColor="#DAD8FF" stopOpacity="0" />
         </RadialGradient>
         <LinearGradient id={`${id}-cover`} x1="0" y1="0" x2="1" y2="1">
-          <Stop offset="0" stopColor="#378FF5" />
-          <Stop offset="0.55" stopColor="#3459D6" />
-          <Stop offset="1" stopColor="#8053D8" />
+          <Stop offset="0" stopColor="#1678FF" />
+          <Stop offset="0.55" stopColor="#2856C7" />
+          <Stop offset="1" stopColor="#193A8E" />
         </LinearGradient>
         <LinearGradient id={`${id}-left`} x1="0" y1="0" x2="1" y2="0.8">
           <Stop offset="0" stopColor={dark ? '#E7EDFA' : '#FFFEF8'} />
@@ -34,7 +34,7 @@ export const StudyPlanIllustration = memo(function StudyPlanIllustration({ dark 
       </Defs>
       <Ellipse cx="132" cy="80" rx="94" ry="77" fill={`url(#${id}-glow)`} />
       <Ellipse cx="116" cy="166" rx="88" ry="10" fill={dark ? '#080F24' : '#6474CC'} opacity={dark ? 0.3 : 0.12} />
-      <Path d="M26 84C56 77 84 85 112 99C142 81 176 79 202 89L217 145Q220 155 208 159C173 152 143 159 116 172C88 155 54 150 22 153Q12 151 15 140Z" fill="#443AB5" opacity="0.7" />
+      <Path d="M26 84C56 77 84 85 112 99C142 81 176 79 202 89L217 145Q220 155 208 159C173 152 143 159 116 172C88 155 54 150 22 153Q12 151 15 140Z" fill="#1C3D8A" opacity="0.7" />
       <Path d="M25 79C57 74 85 81 113 96C144 79 176 77 203 84L213 141Q216 150 207 152C172 147 139 152 114 166C89 151 54 145 23 147Q15 146 18 137Z" fill={`url(#${id}-cover)`} />
       <Path d="M31 76C62 73 88 84 113 98L113 158C86 141 56 136 26 140Z" fill="#B7C8F1" />
       <Path d="M113 98C142 80 171 75 198 81L206 141C169 135 142 145 113 158Z" fill="#C9C7EA" />
