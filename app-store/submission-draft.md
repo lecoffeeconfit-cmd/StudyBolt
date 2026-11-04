@@ -1,6 +1,6 @@
 # StudyBolt — App Store submission draft
 
-Prepared 26 October 2026 from the current app and repository configuration. This is a copy-ready draft, not a submitted App Store Connect record.
+Updated 2 November 2026 from the current app and repository configuration. This is a copy-ready draft, not a submitted App Store Connect record.
 
 ## App record
 
@@ -41,9 +41,10 @@ StudyBolt organizes course material into clear notes, active-recall flashcards, 
 • Make a study schedule, set reminders, and run focus sessions
 • Track progress by course and topic
 • Keep Study Packs on your device for offline review
-• Share selected generated study content or explore public study sets
 
 Explore a sample Biology Study Pack without uploading a file. Creating a pack from your own material and using signed-in cloud features requires an internet connection. AI help is available on supported devices, with cloud AI requiring sign-in and an internet connection.
+
+Public sharing, shared-pack links, Discover, and community classes are unavailable in the initial release.
 
 AI-generated material can contain errors. Check it against your course materials before relying on it.
 
@@ -57,27 +58,27 @@ For the first App Store release, leave this blank if App Store Connect identifie
 
 ## Fields that need owner-provided details
 
-These cannot be truthfully completed from the app repository alone. I found a separate [StudyBolt legal-pages repository](https://github.com/lecoffeeconfit-cmd/studybolt-legal). Its HTML privacy and terms pages are a useful starting point, but they still contain bracketed placeholders for the AI model-training disclosure, production provider list, operator name, age eligibility, and contact details. I did not confirm a live hosted URL for those files.
+The public [Privacy Policy](https://lecoffeeconfit-cmd.github.io/studybolt-legal/privacypolicy) and [Terms](https://lecoffeeconfit-cmd.github.io/studybolt-legal/termsofservice) now name the individual operator, contact email, California location, and 13+ audience. The legal repository contains no bracketed placeholders. The operator still needs to confirm the policy’s provider-retention, model-training, and deletion-timing statements against production settings and approve the final text.
 
-- **Privacy Policy URL:** finalize the existing policy page or this draft, then publish it at a stable HTTPS URL.
-- **Terms of Use URL:** finalize the existing terms page or this draft and publish it, or select Apple’s standard EULA and use that choice consistently in the app.
-- **Support URL and contact:** publish [`support-page-draft.md`](support-page-draft.md) with a real support email and any required legal business contact details. Apple requires a support page with actual contact information.
+- **Privacy Policy URL:** `https://lecoffeeconfit-cmd.github.io/studybolt-legal/privacypolicy`.
+- **Terms of Use URL:** `https://lecoffeeconfit-cmd.github.io/studybolt-legal/termsofservice`.
+- **Support URL and contact:** the published Privacy Policy has a direct Contact section and email link at `https://lecoffeeconfit-cmd.github.io/studybolt-legal/privacypolicy#contact`. Confirm that URL is suitable for the App Store Support URL, or publish [`support-page-draft.md`](support-page-draft.md) as a dedicated support page.
 - **Copyright:** enter the actual rights holder and year; do not assume the bundle identifier names the rights holder.
-- **Age rating / audience:** answer the current App Store Connect questionnaire based on intended ages and the live user-generated-content features. Do not select Kids unless the app is specifically designed for children and meets that category’s rules.
+- **Age rating / audience:** the published Terms state 13+ and not directed to under-13s. Complete the current App Store Connect questionnaire against the submitted features. Do not select Kids unless the app is specifically designed for children and meets that category’s rules.
 - **Review contact:** enter a person’s name, monitored email, and phone number in international format.
-- **Review login:** provide a non-expiring reviewer account if review of cloud, community, or Premium features requires sign-in. Do not put credentials in this repository.
-- **Store subscription setup:** create the actual product IDs, subscription group, duration, price, localization, and RevenueCat offering; use the same product/entitlement identifiers as the deployed webhook configuration.
+- **Review login:** public sharing, Discover, and classes are disabled in the initial release. Provide a non-expiring reviewer account only if review of cloud or Premium features requires sign-in. Do not put credentials in this repository.
+- **Store subscription setup:** the product IDs, subscription group, entitlement, and RevenueCat offering exist. Both App Store products still show **Missing Metadata**; prices, localizations, annual trial, and sandbox purchase/restore behavior are not ready.
 - **Review device/OS list:** fill in only after the release build has been exercised on the listed devices and OS versions.
 
 ## App Review notes draft
 
-StudyBolt turns a learner’s PDF, PowerPoint, or notes file into an offline-ready Study Pack with notes, flashcards, quizzes, and audio review. It also includes planning, focus sessions, progress insights, widgets, study-set sharing, public Discover/class pages, and optional Premium subscriptions.
+StudyBolt turns a learner’s PDF, PowerPoint, or notes file into an offline-ready Study Pack with notes, flashcards, quizzes, and audio review. It also includes planning, focus sessions, progress insights, and widgets. Public sharing, shared-pack links, Discover, and community classes are disabled in this initial release.
 
-To explore without creating an account, choose the guest/sample path and open the Biology demo. This exercises local study tools without requiring a document upload. To review account-based features, use the non-expiring reviewer credentials supplied in the App Review Information section. File processing, cloud AI, public Discover, class membership, and purchases need a working internet connection and the configured production services. On-device AI is device-dependent; StudyCast narration uses the device’s text-to-speech voices and does not require microphone access.
+To explore without creating an account, choose the guest/sample path and open the Biology demo. This exercises local study tools without requiring a document upload. File processing and cloud AI require sign-in, internet access, and the configured production services. Before upload, the app explains the AI processing and asks the learner to agree. On-device AI is device-dependent; StudyCast narration uses device text-to-speech voices and does not require microphone access.
 
-Premium products are auto-renewing store subscriptions. The app displays the store-provided price and subscription period, provides Restore Purchases and subscription management, and requires published Privacy Policy and Terms links before checkout. Test purchases use the App Store sandbox.
+Premium checkout remains disabled by the legal approval flag. Even after the operator approves the policies, the App Store products need their missing metadata before Premium can be purchased. If checkout remains gated in the review build, reviewers can explore the Biology sample and should not expect to purchase Premium.
 
-**Before pasting these notes:** add the reviewer account details, confirm which cloud features are live in the submitted build, and provide accurate device/OS test information. The public sharing and Discover features also need the moderation controls listed in [`release-checklist.md`](release-checklist.md) before submission.
+**Before pasting these notes:** confirm the release build’s cloud services and legal gate, add reviewer access if needed, and provide the actual device/OS test information.
 
 ## Screenshots
 

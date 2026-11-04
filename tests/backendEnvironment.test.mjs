@@ -9,6 +9,8 @@ test('staging refuses the production Supabase host and processor endpoint', () =
   assert.equal(resolveBackendUrl('https://studybolt-api.duckdns.org'), '');
   assert.equal(resolveProcessorUrl('https://studybolt-api.duckdns.org/functions/v1/studybolt-process-document'), '');
   assert.equal(resolveBackendUrl('https://kbyeyobbhhnafscygiel.supabase.co'), '');
+  assert.equal(resolveBackendUrl('https://studybolt-api.duckdns.org.'), '');
+  assert.equal(resolveProcessorUrl('https://kbyeyobbhhnafscygiel.supabase.co./functions/v1/studybolt-process-document'), '');
 });
 
 test('staging accepts distinct backend URLs and strips a trailing slash', () => {
@@ -48,6 +50,10 @@ test('TestFlight build profile rejects a production marker and production endpoi
   assert.ok(validateEasBuildEnvironment({
     ...validStaging,
     EXPO_PUBLIC_STUDYBOLT_PROCESSOR_URL: 'https://studybolt-api.duckdns.org/functions/v1/studybolt-process-document',
+  }).some((error) => error.includes('known production host')));
+  assert.ok(validateEasBuildEnvironment({
+    ...validStaging,
+    EXPO_PUBLIC_SUPABASE_URL: 'https://kbyeyobbhhnafscygiel.supabase.co.',
   }).some((error) => error.includes('known production host')));
 });
 

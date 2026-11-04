@@ -1,4 +1,6 @@
-# StudyBolt Privacy Policy — draft for publication
+# StudyBolt Privacy Policy — superseded draft
+
+> **Superseded; do not publish this draft.** The current policy is at [studybolt-legal/privacypolicy](https://lecoffeeconfit-cmd.github.io/studybolt-legal/privacypolicy). It was updated after this local draft and contains the operator/contact and age information. Review the published wording against current production settings before approving it.
 
 **Effective date:** [DATE THIS POLICY IS PUBLISHED]  
 **Operator:** [LEGAL NAME / BUSINESS NAME]  

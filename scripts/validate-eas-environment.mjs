@@ -54,7 +54,8 @@ function requireHttpsUrl(value, name, errors, rejectProductionHosts) {
   try {
     const url = new URL(value);
     if (url.protocol !== 'https:') errors.push(`${name} must use HTTPS.`);
-    if (rejectProductionHosts && LIVE_BACKEND_HOSTS.has(url.hostname.toLowerCase())) {
+    // A trailing DNS dot does not change which host receives the request.
+    if (rejectProductionHosts && LIVE_BACKEND_HOSTS.has(url.hostname.toLowerCase().replace(/\.$/, ''))) {
       errors.push(`${name} points to a known production host.`);
     }
   } catch {

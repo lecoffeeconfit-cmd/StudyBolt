@@ -1,6 +1,6 @@
 # RevenueCat setup status
 
-Updated 29 October 2026. This records verified configuration, not release approval.
+Updated 2 November 2026. This records verified configuration, not release approval.
 
 ## Installed and verified
 
@@ -11,6 +11,7 @@ Updated 29 October 2026. This records verified configuration, not release approv
 - Android app configuration: `com.studybolt.app` (`appc576b84854`). Catalog mappings `studybolt_premium_monthly:monthly` and `studybolt_premium_annual:annual` are attached to Premium and their matching packages. Google Play service-account credentials and actual store base plans are still required.
 - Test Store products match the requested pricing: `studybolt_test_monthly_299` ($2.99/month) and `studybolt_test_annual_1999_7d` ($19.99/year with a one-week free trial). They are attached to Premium and the default offering. The automatically generated products with other prices were made inactive. No Test Store SDK key is installed in release builds.
 - Both public SDK keys are installed in ignored `.env.local` and the EAS `preview` and `production` environments. The local app uses the same account backend as production.
+- Dashboard recheck on 2 November: the active `default` offering still contains monthly and annual App Store products, and both show **Missing Metadata**. The project restore policy remains **Transfer to new App User ID**, with sandbox-specific behavior disabled. No RevenueCat settings were changed.
 - Signed webhook: `https://studybolt-api.duckdns.org/functions/v1/revenuecat-webhook`, all events/apps, sandbox and production. RevenueCat's signed dashboard test returned HTTP 200.
 - Server configuration is installed and persisted in Coolify's encrypted environment store. The existing deployment variable `REVENUECAT_SECRET_API_KEY` holds the public Apple SDK key for read-only API v1 subscriber lookups; it cannot authorize subscriber deletion. The 29 October dashboard now shows a v2 key named “StudyBolt Account Deletion” with Customers Read & write and no other permissions. Its secret was not revealed. Read-only server checks show the dedicated deletion key/project ID are not installed in the running Edge Function environment, so deletion setup remains incomplete. The webhook signing secret stays on the server.
 - Subscription functions and the monthly PowerPoint allowance migration `20261027000000` are deployed to production.
@@ -26,8 +27,8 @@ Updated 29 October 2026. This records verified configuration, not release approv
 
 ## Required before checkout can be enabled
 
-1. Upload [`studybolt-app-store-products.csv`](studybolt-app-store-products.csv) to the prepared RevenueCat Product editor. Review and commit the US prices ($2.99 monthly, $19.99 annually), English product descriptions, and annual 7-day free trial. The products currently show **Missing Metadata**; prices and the trial have not yet been applied. The browser file picker did not respond to supported automation attempts.
-2. Complete and approve the published privacy policy and terms. They still contain operator/contact/age/jurisdiction and other placeholders. Keep both legal approval flags false until the documents are finished. The existing gate pauses checkout, cloud document processing, and subscription status sync.
+1. In App Store Connect, set the monthly ($2.99) and annual ($19.99) prices, English product descriptions, and annual 7-day free trial. Both products currently show **Missing Metadata** in RevenueCat; the store metadata is incomplete.
+2. Review and approve the published privacy policy and terms. They now identify the operator, contact, California location, and 13+ audience and contain no template placeholders. Confirm provider retention/model-training statements and deletion timing against production. Keep both legal approval flags false until the operator approves the final wording; the existing gate pauses checkout, cloud document processing, and subscription status sync.
 3. Supply Google Play service-account credentials for `com.studybolt.app`, create/activate matching subscription base plans and the annual trial, and complete Google notifications setup.
 4. The `preview` environment still needs its intended backend URL/anon key. A separate StudyBolt staging backend was not identified; preview has not been redirected to production.
 5. Complete Apple subscription metadata/review requirements and perform a native sandbox purchase, restore, renewal, trial expiry, cancellation, and refund check in a fresh build. Backend lifecycle simulations do not replace a store purchase test.

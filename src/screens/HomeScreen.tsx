@@ -1,4 +1,3 @@
-import * as DocumentPicker from 'expo-document-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -7,8 +6,8 @@ import { Alert, AppState, Platform, Pressable, StyleSheet, Text, useWindowDimens
 import { useStudyBolt } from '../StudyBoltContext';
 import type { ImportAsset, StudyPack, StudyTool } from '../models';
 import type { SmartStudyMode } from '../services/adaptiveStudy';
-import { DOCUMENT_PICKER_TYPE, pageLabel } from '../services/documentTypes';
-import { AUTOMATIC_STUDY_PACK_MATERIALS, StudyBoltProcessingError, validateImportBatch } from '../services/documentProcessor';
+import { pageLabel } from '../services/documentTypes';
+import { AUTOMATIC_STUDY_PACK_MATERIALS } from '../services/documentProcessor';
 import { getHomeUploadStatus } from '../services/homeUpload';
 import {
   DEFAULT_STUDY_TIMER_SETTINGS,
@@ -29,6 +28,7 @@ import type { HomePriority } from '../components/TodaysPlanCard';
 import { TodaysPlanCard } from '../components/TodaysPlanCard';
 import { AddStudyMaterialCard } from '../components/AddStudyMaterialCard';
 import { useAuth } from '../AuthContext';
+import { useStudyMaterialPicker } from '../hooks/useStudyMaterialPicker';
 
 const POMODORO_STORAGE_KEY = '@studybolt/pomodoro-timer/v1';
 
@@ -119,13 +119,7 @@ export function HomeScreen({
   const [profileFocused, setProfileFocused] = useState(false);
   const [now, setNow] = useState(() => new Date());
   const [priority, setPriority] = useState<HomePriority | 'flashcards' | null>(null);
-  const [choosingFiles, setChoosingFiles] = useState(false);
-  const [importError, setImportError] = useState<string | null>(null);
-  const homeMounted = useRef(true);
-  useEffect(() => {
-    homeMounted.current = true;
-    return () => { homeMounted.current = false; };
-  }, []);
+  const { opening: choosingFiles, error: importError, chooseFiles: pickDocument, acceptAssets: acceptImportAssets, isOpening } = useStudyMaterialPicker(onImport);
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 60_000);
     const subscription = AppState.addEventListener('change', (next) => { if (next === 'active') setNow(new Date()); });
@@ -137,48 +131,9 @@ export function HomeScreen({
     now, resumeDeckId: resumeDeck?.id,
     scheduleCard: (deckId, cardId) => getRetentionCardSchedule(academicState, deckId, cardId, state.retentionMode === 'standard' ? 'sm2' : state.retentionMode, now),
   }), [state, academicState, now, resumeDeck?.id]);
-  const importInFlight = useRef(false);
   const today = now.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
   const recentMaterials = (dashboard.decks.length ? dashboard.decks : state.decks).slice().sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, 2);
   const uploadStatus = useMemo(() => getHomeUploadStatus(state.decks, AUTOMATIC_STUDY_PACK_MATERIALS), [state.decks]);
-
-  const acceptImportAssets = (assets: ImportAsset[]) => {
-    setImportError(null);
-    try {
-      validateImportBatch(assets);
-      // Continue through the existing class-name, plan checks and processing route.
-      onImport(assets);
-      return true;
-    } catch (reason) {
-      setImportError(reason instanceof StudyBoltProcessingError ? reason.userMessage : 'These files could not be opened. Please choose them again.');
-      return false;
-    }
-  };
-
-  const pickDocument = async () => {
-    if (importInFlight.current) return;
-    importInFlight.current = true;
-    setChoosingFiles(true);
-    setImportError(null);
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: DOCUMENT_PICKER_TYPE,
-        copyToCacheDirectory: true,
-        multiple: true,
-        // Keep the browser's File object instead of eagerly reading a second
-        // base64 copy into memory before the multipart upload starts.
-        base64: false,
-      });
-      if (result.canceled || !homeMounted.current) return;
-      const assets = result.assets.map((asset) => ({ name: asset.name, uri: asset.uri, mimeType: asset.mimeType, size: asset.size, file: asset.file }));
-      acceptImportAssets(assets);
-    } catch {
-      if (homeMounted.current) setImportError('Couldn’t open files. Check file permissions, then choose files again.');
-    } finally {
-      importInFlight.current = false;
-      if (homeMounted.current) setChoosingFiles(false);
-    }
-  };
 
   const reviewDue = (group: HomeDueReview) => onOpenDeck(group.deck, 'flashcards', group.cardIds);
   const studyWeak = (topic: HomeWeakTopic) => topic.cardIds.length
@@ -245,7 +200,7 @@ export function HomeScreen({
       <AddStudyMaterialCard
         colors={colors}
         onPress={() => { void pickDocument(); }}
-        onDropAssets={(assets) => !importInFlight.current && acceptImportAssets(assets)}
+        onDropAssets={(assets) => !isOpening() && acceptImportAssets(assets)}
         opening={choosingFiles}
         primaryAction={!dashboard.decks.length}
         error={importError}

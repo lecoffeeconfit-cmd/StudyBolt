@@ -31,7 +31,9 @@ function resolveEnvironmentUrl(value: string | undefined): string {
 
   if (getStudyBoltEnvironment() === 'staging') {
     try {
-      const hostname = new URL(candidate).hostname.toLowerCase();
+      // DNS treats a trailing dot as the same fully-qualified host. Normalize
+      // it so a staging URL cannot bypass the production-host deny list.
+      const hostname = new URL(candidate).hostname.toLowerCase().replace(/\.$/, '');
       if (LIVE_BACKEND_HOSTS.has(hostname)) return '';
     } catch {
       // Keep invalid URLs out of staging too; the caller treats an empty value

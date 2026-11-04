@@ -3,6 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { ActivityIndicator, Linking, Platform, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '../AuthContext';
+import { initialState } from '../data/mockStudyPacks';
 import { BottomTabs } from '../components/BottomTabs';
 import { StudyPackGenerationProgress } from '../components/StudyPackGenerationProgress';
 import type { MainTab } from '../components/BottomTabs';
@@ -40,7 +41,8 @@ import { WidgetsScreen } from '../screens/WidgetsScreen';
 import { combineStudyPacks } from '../services/studyPack';
 import { parseShareToken } from '../services/sharing';
 import { syncRevenueCatUser } from '../services/subscriptions';
-import type { StudyPack, StudyTool, StudyType } from '../models';
+import { findOnboardingSample, resolveOnboardingSample } from '../services/onboarding';
+import type { ImportAsset, StudyPack, StudyTool, StudyType } from '../models';
 import type { Route } from './routes';
 
 export function StudyBoltNavigator() {
@@ -65,9 +67,12 @@ export function StudyBoltNavigator() {
   }, []);
 
   const openSample = useCallback(() => {
-    const sample = state.decks.find((deck) => deck.id === 'biology-cells') ?? state.decks[0];
-    if (sample) openDeck(sample);
-  }, [openDeck, state.decks]);
+    const savedSample = findOnboardingSample(state.decks);
+    const sample = resolveOnboardingSample(state.decks, initialState.decks);
+    if (!sample) return;
+    if (!savedSample) addDeck({ ...sample });
+    openDeck(sample, 'flashcards');
+  }, [addDeck, openDeck, state.decks]);
 
   const openFlagged = useCallback(() => setRoute({ type: 'flagged' }), []);
 
@@ -82,15 +87,24 @@ export function StudyBoltNavigator() {
   }, [addDeck, startStudyPackGeneration]);
 
   const finishOnboarding = useCallback(() => {
-    const replayingTour = route.type === 'onboarding';
     completeOnboarding();
-    setRoute({ type: replayingTour ? 'main' : 'auth' });
-  }, [completeOnboarding, route.type]);
+    setRoute({ type: 'main' });
+  }, [completeOnboarding]);
+
+  const importFromOnboarding = useCallback((assets: ImportAsset[]) => {
+    completeOnboarding();
+    setRoute({ type: 'processing', assets });
+  }, [completeOnboarding]);
+
+  const signInFromOnboarding = useCallback(() => {
+    completeOnboarding();
+    setRoute({ type: 'auth' });
+  }, [completeOnboarding]);
 
   const postAuthRoute = useCallback((): Route => pendingRoute ?? (pendingSharedToken ? { type: 'shared', token: pendingSharedToken } : { type: 'main' }), [pendingRoute, pendingSharedToken]);
 
-  const finishAccountOnboarding = useCallback(async (studyType: StudyType) => {
-    const result = await updateProfile({ studyType, onboardingCompleted: true, onboardingRequired: false });
+  const finishAccountOnboarding = useCallback(async (studyType?: StudyType) => {
+    const result = await updateProfile({ ...(studyType ? { studyType } : {}), onboardingCompleted: true, onboardingRequired: false });
     if (!result.error) {
       setRoute(postAuthRoute());
       setPendingSharedToken(null);
@@ -215,13 +229,13 @@ export function StudyBoltNavigator() {
   const showOnboarding = !recoveryMode && !showAccountOnboarding && (route.type === 'onboarding' || (!user && route.type !== 'shared' && !state.hasCompletedOnboarding));
 
   return (
-    <View style={[styles.app, { backgroundColor: colors.background }]}>
+    <View style={[styles.app, showOnboarding && styles.onboardingApp, { backgroundColor: colors.background }]}>
       <StatusBar style={colors.mode === 'dark' ? 'light' : 'dark'} />
       {showAccountOnboarding ? <AccountOnboardingScreen onComplete={finishAccountOnboarding} /> : null}
       {!showOnboarding && !showAccountOnboarding && route.type === 'auth' ? (
         <LoginScreen
           onContinueAsGuest={() => {
-            setRoute(postAuthRoute());
+            setRoute(pendingRoute?.type === 'processing' ? { type: 'main' } : postAuthRoute());
             setPendingSharedToken(null);
             setPendingRoute(null);
           }}
@@ -241,7 +255,7 @@ export function StudyBoltNavigator() {
       ) : null}
       {!showOnboarding && !showAccountOnboarding && route.type === 'feedback' ? <FeedbackScreen key={user?.id ?? 'guest'} onBack={() => setRoute({ type: 'main' })} onRequireAuth={() => { setPendingRoute({ type: 'feedback' }); setRoute({ type: 'auth' }); }} /> : null}
       {!showOnboarding && !showAccountOnboarding && route.type === 'premium' ? <PremiumScreen key={user?.id ?? 'guest'} onBack={() => setRoute({ type: 'main' })} onOpenLegal={() => setRoute({ type: 'legal' })} onRequireAuth={() => setRoute({ type: 'auth' })} /> : null}
-      {showOnboarding ? <OnboardingScreen onComplete={finishOnboarding} onTrySample={trySampleFromOnboarding} /> : null}
+      {showOnboarding ? <OnboardingScreen onComplete={finishOnboarding} onTrySample={trySampleFromOnboarding} onImport={importFromOnboarding} onSignIn={signInFromOnboarding} /> : null}
       {!showOnboarding && !showAccountOnboarding && route.type === 'legal' ? <LegalScreen onBack={() => setRoute({ type: 'main' })} /> : null}
       {!showOnboarding && !showAccountOnboarding && route.type === 'reset-password' ? <ResetPasswordScreen onComplete={() => setRoute({ type: 'main' })} /> : null}
       {!showOnboarding && !showAccountOnboarding && route.type === 'smart-study' ? <SmartStudyScreen initialMode={route.mode} focusDeckId={route.deckId} focusSectionIds={route.sectionIds} onBack={() => setRoute(route.deckId ? { type: 'deck', deckId: route.deckId } : { type: 'main' })} /> : null}
@@ -346,8 +360,8 @@ export function StudyBoltNavigator() {
           onCancel={() => setRoute({ type: 'main' })}
           onSuccess={completeProcessing}
           onTrySample={openSample}
-          onRequireAuth={() => {
-            setPendingRoute(route);
+          onRequireAuth={(enteredClassName) => {
+            setPendingRoute({ ...route, courseName: enteredClassName || route.courseName });
             setRoute({ type: 'auth' });
           }}
         />
@@ -358,6 +372,7 @@ export function StudyBoltNavigator() {
 }
 
 const styles = StyleSheet.create({
+  onboardingApp: { maxWidth: '100%' },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   app: {
     flex: 1,

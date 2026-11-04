@@ -1,4 +1,6 @@
-# StudyBolt Terms of Use — draft for publication
+# StudyBolt Terms of Use — superseded draft
+
+> **Superseded; do not publish this draft.** The current terms are at [studybolt-legal/termsofservice](https://lecoffeeconfit-cmd.github.io/studybolt-legal/termsofservice). They were updated after this local draft and contain the operator/contact and age information. Review the published wording before approving it.
 
 **Effective date:** [DATE THIS TERMS PAGE IS PUBLISHED]  
 **Operator:** [LEGAL NAME / BUSINESS NAME]  

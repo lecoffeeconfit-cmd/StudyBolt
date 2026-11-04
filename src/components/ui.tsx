@@ -300,7 +300,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  primaryButtonText: { fontSize: 16, lineHeight: 20, fontWeight: '800' },
+  primaryButtonText: { fontSize: 16, lineHeight: 20, fontWeight: '800', flexShrink: 1, textAlign: 'center' },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 26, marginBottom: 12 },
   sectionTitle: { fontSize: 18, lineHeight: 23, fontWeight: '800', letterSpacing: -0.3 },
   sectionAction: { fontSize: 13, fontWeight: '700' },

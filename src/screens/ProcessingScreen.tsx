@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Easing, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Animated, Easing, KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon, Pill, PrimaryButton } from '../components/ui';
@@ -12,8 +12,9 @@ import { combineImportedPowerPoints } from '../services/studyPack';
 import { fetchTutorQuota } from '../services/aiTutor';
 import { canUseRevenueCat, syncRevenueCatEntitlement } from '../services/subscriptions';
 import { useAuth } from '../AuthContext';
+import { LEGAL_URLS } from '../config/legal';
 
-export function ProcessingScreen({ assets, courseId, courseName, onCancel, onSuccess, onTrySample, onRequireAuth }: { assets: ImportAsset[]; courseId?: string; courseName?: string; onCancel: () => void; onSuccess: (deck: StudyPack) => void; onTrySample: () => void; onRequireAuth: () => void }) {
+export function ProcessingScreen({ assets, courseId, courseName, onCancel, onSuccess, onTrySample, onRequireAuth }: { assets: ImportAsset[]; courseId?: string; courseName?: string; onCancel: () => void; onSuccess: (deck: StudyPack) => void; onTrySample: () => void; onRequireAuth: (className: string) => void }) {
   const { colors } = useStudyBolt();
   const { getAccessToken } = useAuth();
   const reducedMotion = useReducedMotion();
@@ -28,7 +29,8 @@ export function ProcessingScreen({ assets, courseId, courseName, onCancel, onSuc
   const [authRequired, setAuthRequired] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
   const [className, setClassName] = useState(courseName ?? '');
-  const [started, setStarted] = useState(Boolean(courseName));
+  const [cloudConsent, setCloudConsent] = useState(false);
+  const [started, setStarted] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [phase, setPhase] = useState<DocumentProcessPhase>('validating');
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -51,7 +53,8 @@ export function ProcessingScreen({ assets, courseId, courseName, onCancel, onSuc
 
   useEffect(() => {
     setClassName(courseName ?? '');
-    setStarted(Boolean(courseName));
+    setStarted(false);
+    setCloudConsent(false);
     setError(null);
     setAuthRequired(false);
     setNameError(null);
@@ -82,6 +85,7 @@ export function ProcessingScreen({ assets, courseId, courseName, onCancel, onSuc
       validateImport(asset);
       void getAccessToken()
         .then(async (accessToken) => {
+          if (!mounted) return undefined;
           if (!accessToken) {
             if (mounted) {
               setAuthRequired(true);
@@ -162,6 +166,7 @@ export function ProcessingScreen({ assets, courseId, courseName, onCancel, onSuc
   };
 
   const startProcessing = () => {
+    if (!cloudConsent) return;
     const name = className.trim();
     if (!name) {
       setNameError('Add a class name to continue.');
@@ -221,7 +226,7 @@ export function ProcessingScreen({ assets, courseId, courseName, onCancel, onSuc
               : mustChooseSinglePowerPoint
                 ? <PrimaryButton label="Choose one PowerPoint" icon="file-presentation-box" onPress={onCancel} style={styles.action} />
               : authRequired
-                ? <PrimaryButton label="Sign in to continue" icon="account-outline" onPress={onRequireAuth} style={styles.action} />
+                ? <PrimaryButton label="Sign in to continue" icon="account-outline" onPress={() => onRequireAuth(className.trim())} style={styles.action} />
                 : <PrimaryButton label={assets.length > 1 ? 'Retry this PowerPoint' : 'Try again'} icon="refresh" onPress={retryProcessing} style={styles.action} />}
             <Pressable onPress={onTrySample} style={styles.secondaryAction}>
               <Text style={[styles.secondaryText, { color: colors.primary }]}>Explore the sample Study Pack</Text>
@@ -252,6 +257,24 @@ export function ProcessingScreen({ assets, courseId, courseName, onCancel, onSuc
                 <Icon name="shield-check-outline" color={colors.mint} />
               </View>
             )}
+            <View style={[styles.disclosureCard, { backgroundColor: colors.primarySoft, borderColor: colors.border }]}>
+              <Text style={[styles.disclosure, { color: colors.textSecondary }]}>To build this Study Pack, StudyBolt sends the selected file and class name to its secure server and OpenAI for processing. Don’t upload sensitive or confidential information unless you’re allowed to share it.</Text>
+              <Pressable
+                accessibilityRole="checkbox"
+                accessibilityLabel="I agree to send this study material to StudyBolt and OpenAI for processing"
+                accessibilityState={{ checked: cloudConsent }}
+                onPress={() => setCloudConsent((value) => !value)}
+                style={styles.consentRow}
+              >
+                <View style={[styles.consentCheck, { backgroundColor: cloudConsent ? colors.primary : colors.card, borderColor: cloudConsent ? colors.primary : colors.border }]}>
+                  {cloudConsent ? <Icon name="check" size={14} color={colors.primaryText} /> : null}
+                </View>
+                <Text style={[styles.consentText, { color: colors.text }]}>I understand and agree to cloud processing.</Text>
+              </Pressable>
+              <Pressable accessibilityRole="link" onPress={() => { void Linking.openURL(LEGAL_URLS.privacyPolicy).catch(() => undefined); }} style={styles.privacyLink}>
+                <Text style={[styles.privacyLinkText, { color: colors.primary }]}>Read the Privacy Policy</Text>
+              </Pressable>
+            </View>
             <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Class name</Text>
             <View style={[styles.inputWrap, { backgroundColor: colors.card, borderColor: nameError ? colors.danger : colors.border }]}>
               <Icon name="school-outline" size={19} color={colors.textMuted} />
@@ -268,7 +291,7 @@ export function ProcessingScreen({ assets, courseId, courseName, onCancel, onSuc
               />
             </View>
             {nameError ? <Text style={[styles.nameError, { color: colors.danger }]}>{nameError}</Text> : null}
-            <PrimaryButton label={assets.length > 1 ? 'Build integrated Study Pack' : 'Build my Study Pack'} icon="creation" onPress={startProcessing} style={styles.action} />
+            <PrimaryButton label={assets.length > 1 ? 'Build integrated Study Pack' : 'Build my Study Pack'} icon="creation" onPress={startProcessing} disabled={!cloudConsent} style={styles.action} />
             <Pressable onPress={onCancel} style={styles.secondaryAction}>
               <Text style={[styles.secondaryText, { color: colors.textSecondary }]}>Choose another file</Text>
             </Pressable>
@@ -358,6 +381,13 @@ const styles = StyleSheet.create({
   action: { width: '100%', marginTop: 18 },
   secondaryAction: { padding: 13 },
   secondaryText: { fontSize: 12, fontWeight: '700' },
+  disclosureCard: { width: '100%', borderWidth: StyleSheet.hairlineWidth, borderRadius: 15, padding: 13, marginTop: 13 },
+  disclosure: { fontSize: 11, lineHeight: 16 },
+  consentRow: { flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 11, paddingVertical: 4 },
+  consentCheck: { width: 21, height: 21, borderRadius: 6, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
+  consentText: { flex: 1, fontSize: 11, lineHeight: 16, fontWeight: '700' },
+  privacyLink: { alignSelf: 'flex-start', paddingVertical: 6, marginLeft: 30 },
+  privacyLinkText: { fontSize: 11, fontWeight: '800' },
   privacy: { textAlign: 'center', fontSize: 10 },
 });
 
