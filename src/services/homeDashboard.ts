@@ -7,8 +7,13 @@ export interface HomeDueReview { deck: StudyPack; cardIds: string[]; dueAt: stri
 export interface HomeWeakTopic { deck: StudyPack; sectionId: string; title: string; correct: number; total: number; sessions: number; cardIds: string[] }
 export interface HomeActivity { id: string; at: string; title: string; detail: string; course: string; recovered: number; kind: 'quiz' | 'review' | 'audio' | 'focus' }
 export interface HomeExam { title: string; course: string; date: string; daysRemaining: number; completed: number; total: number; progress: number | null; deckIds: string[]; attentionTopics: string[] }
+export interface HomeTodayProgress {
+  reviewedCards: number; quizSessions: number; correctAnswers: number; totalAnswers: number;
+  completedAudio: number; focusSessions: number; planCompleted: number; planTotal: number; latestAt: string | null;
+}
+export interface HomeRecentMaterial { deck: StudyPack; lastStudiedAt: string | null }
 export interface HomeRecommendation {
-  kind: 'resume' | 'mistakes' | 'due' | 'weak' | 'exam' | 'practice' | 'materials';
+  kind: 'resume' | 'mistakes' | 'due' | 'weak' | 'exam' | 'practice' | 'materials' | 'pack';
   title: string; why: string; actionLabel: string; minutes: number | null;
   deckId?: string; sectionId?: string; cardIds?: string[];
 }
@@ -16,6 +21,7 @@ export interface HomeDashboard {
   decks: StudyPack[]; due: HomeDueReview[]; dueCount: number; weak: HomeWeakTopic[];
   mistakeIds: string[]; activity: HomeActivity[]; exam: HomeExam | null;
   recommendation: HomeRecommendation; accuracy: { correct: number; total: number; sessions: number };
+  today: HomeTodayProgress; recent: HomeRecentMaterial[];
 }
 type ScheduleReader = (deckId: string, cardId: string) => { hasEvidence: boolean; dueAt: string };
 type RecordedAnswer = { deck: StudyPack; answer: QuizAnswerRecord; questionId: string; key: string };
@@ -145,16 +151,59 @@ export function buildHomeDashboard(state: StudyBoltState, options: { now?: Date;
   const latestQuizzes = quizzes.slice(-3);
   const accuracy = { correct: latestQuizzes.flatMap((quiz) => quiz.answers).filter((record) => record.answer.correct).length, total: latestQuizzes.reduce((sum, quiz) => sum + quiz.answers.length, 0), sessions: latestQuizzes.length };
 
+  const sameDay = (value: string) => {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return examCalendarDays(value, now) === 0;
+    const date = new Date(value);
+    return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && date.getDate() === now.getDate();
+  };
+  const todayQuizzes = quizzes.filter(({ event }) => sameDay(event.occurredAt));
+  const todayAnswers = quizzes.flatMap(({ event, answers }) => answers.filter(({ answer }) => sameDay(answer.answeredAt ?? event.occurredAt)));
+  const todayReviews = events.filter((event) => sameDay(event.occurredAt) && event.type === 'flashcard-review'
+    && event.confidence && byDeck.get(event.deckId ?? '')?.flashcards.some((card) => card.id === event.cardId));
+  const completedAudio = events.filter((event) => event.type === 'audio' && sameDay(event.occurredAt) && byDeck.has(event.deckId ?? '') && (event.completionPercent ?? 0) >= 100);
+  const focusSessions = events.filter((event) => event.type === 'focus' && sameDay(event.occurredAt) && (event.durationMinutes ?? 0) > 0);
+  // A plan is personal only when its existing scope resolves to personal material.
+  // Completion is measured against today's dated blocks, never the review backlog.
+  const todayBlocks = scoped.length ? state.plan.days.filter((day) => day.date && sameDay(day.date)).flatMap((day) => day.blocks) : [];
+  const todayEvents = [...todayReviews, ...todayQuizzes.map(({ event }) => event), ...completedAudio, ...focusSessions];
+  const today: HomeTodayProgress = {
+    reviewedCards: new Set(todayReviews.map((event) => JSON.stringify([event.deckId, event.cardId]))).size,
+    quizSessions: todayQuizzes.length,
+    correctAnswers: todayAnswers.filter(({ answer }) => answer.correct).length,
+    totalAnswers: todayAnswers.length,
+    completedAudio: completedAudio.length, focusSessions: focusSessions.length,
+    planCompleted: todayBlocks.filter((block) => block.complete).length, planTotal: todayBlocks.length,
+    latestAt: todayEvents.map((event) => event.occurredAt).sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? null,
+  };
+  const lastStudied = new Map<string, string>();
+  for (const event of events) {
+    const deck = byDeck.get(event.deckId ?? '');
+    const validStudy = deck && (event.type === 'note-review' ? [...deck.notes, ...(deck.detailedNotes ?? [])].some((note) => note.id === event.noteId)
+      : event.type === 'flashcard-review' ? Boolean(event.confidence && deck.flashcards.some((card) => card.id === event.cardId))
+        : ['audio', 'ai-tutor-question', 'exam-completed'].includes(event.type));
+    if (validStudy) lastStudied.set(deck.id, event.occurredAt);
+    for (const record of byEvent.get(event.id)?.answers ?? []) lastStudied.set(record.deck.id, event.occurredAt);
+  }
+  const recent = decks.map((deck) => ({ deck, lastStudiedAt: lastStudied.get(deck.id) ?? null }))
+    .sort((a, b) => (Date.parse(b.lastStudiedAt ?? b.deck.createdAt) || 0) - (Date.parse(a.lastStudiedAt ?? a.deck.createdAt) || 0) || a.deck.id.localeCompare(b.deck.id));
+
   const resume = byDeck.get(options.resumeDeckId ?? '');
   const firstDue = due[0];
   const firstWeak = weak[0];
-  const firstStudy = (exam ? decks.filter((deck) => exam.deckIds.includes(deck.id)) : decks).find((deck) => deck.flashcards.length || deck.notes.length);
+  const firstStudy = recent.map(({ deck }) => deck).filter((deck) => !exam || exam.deckIds.includes(deck.id)).find((deck) => deck.flashcards.length || deck.notes.length);
   let recommendation: HomeRecommendation;
-  if (resume) recommendation = { kind: 'resume', title: `Continue ${resume.title}`, why: 'Your StudyCast has a saved listening position. Pick up where you left off.', actionLabel: 'Resume StudyCast', deckId: resume.id, minutes: null };
+  if (firstWeak) recommendation = { kind: 'weak', title: `Practice ${firstWeak.title}`, why: `Your recorded answers show this topic needs another pass: ${firstWeak.correct} of ${firstWeak.total} correct across ${firstWeak.sessions} sessions.`, actionLabel: 'Start study session', minutes: firstWeak.cardIds.length ? Math.max(5, Math.round(Math.min(8, firstWeak.cardIds.length) * 1.4)) : null, deckId: firstWeak.deck.id, sectionId: firstWeak.sectionId, cardIds: firstWeak.cardIds };
   else if (mistakeIds.length) recommendation = { kind: 'mistakes', title: 'Revisit your missed questions', why: `${mistakeIds.length} repeatedly missed ${mistakeIds.length === 1 ? 'question is' : 'questions are'} ready for another look.`, actionLabel: 'Review missed questions', minutes: null };
   else if (firstDue) recommendation = { kind: 'due', title: `Review ${firstDue.deck.courseName}`, why: `${firstDue.cardIds.length} scheduled ${firstDue.cardIds.length === 1 ? 'review is' : 'reviews are'} due. Start with the oldest.`, actionLabel: 'Start study session', minutes: Math.max(1, Math.ceil(Math.min(10, firstDue.cardIds.length) * 0.75)), deckId: firstDue.deck.id, cardIds: firstDue.cardIds.slice(0, 10) };
-  else if (firstWeak) recommendation = { kind: 'weak', title: `Practice ${firstWeak.title}`, why: `Your recorded answers show this topic needs another pass: ${firstWeak.correct} of ${firstWeak.total} correct across ${firstWeak.sessions} sessions.`, actionLabel: 'Start study session', minutes: firstWeak.cardIds.length ? Math.max(5, Math.round(Math.min(8, firstWeak.cardIds.length) * 1.4)) : null, deckId: firstWeak.deck.id, sectionId: firstWeak.sectionId, cardIds: firstWeak.cardIds };
-  else if (firstStudy) recommendation = { kind: exam ? 'exam' : 'practice', title: exam ? `Prepare for ${exam.title}` : `Build a baseline in ${firstStudy.courseName}`, why: exam ? `Study your selected material before ${exam.date}.` : 'A focused practice session helps you find what to study next.', actionLabel: 'Start study session', minutes: firstStudy.flashcards.length ? Math.max(5, Math.round(Math.min(8, firstStudy.flashcards.length) * 1.4)) : null, deckId: firstStudy.id };
+  else if (exam && firstStudy) recommendation = { kind: 'exam', title: `Prepare for ${exam.title}`, why: `Study your selected material before ${exam.date}.`, actionLabel: 'Start study session', minutes: firstStudy.flashcards.length ? Math.max(5, Math.round(Math.min(8, firstStudy.flashcards.length) * 1.4)) : null, deckId: firstStudy.id };
+  else if (resume) recommendation = { kind: 'resume', title: `Continue ${resume.title}`, why: 'Your StudyCast has a saved listening position. Pick up where you left off.', actionLabel: 'Resume StudyCast', deckId: resume.id, minutes: null };
+  else if (firstStudy) recommendation = { kind: 'practice', title: `Build a baseline in ${firstStudy.courseName}`, why: 'A focused practice session helps you find what to study next.', actionLabel: 'Start study session', minutes: firstStudy.flashcards.length ? Math.max(5, Math.round(Math.min(8, firstStudy.flashcards.length) * 1.4)) : null, deckId: firstStudy.id };
+  else if (decks.length) {
+    const pack = recent[0]!.deck;
+    const failed = Object.values(pack.generation?.materials ?? {}).some((material) => material.status === 'failed');
+    const pending = Object.values(pack.generation?.materials ?? {}).some((material) => material.status === 'queued' || material.status === 'generating');
+    recommendation = { kind: 'pack', title: failed ? 'Pick up your Study Pack' : pending ? 'Your study tools are taking shape' : 'Explore your Study Pack', why: failed ? 'Open your pack to see what is ready and retry the tools that need another try.' : pending ? 'Open your pack to follow progress and use each tool as it becomes ready.' : 'Open your pack to see which study tools are available.', actionLabel: 'View Study Pack', deckId: pack.id, minutes: null };
+  }
   else recommendation = { kind: 'materials', title: 'Start with your course material', why: 'Add a lecture, PDF, or your own notes. Your next step will be built from what you are learning.', actionLabel: 'Choose study material', minutes: null };
-  return { decks, due, dueCount: due.reduce((sum, group) => sum + group.cardIds.length, 0), weak, mistakeIds, activity, exam, recommendation, accuracy };
+  return { decks, due, dueCount: due.reduce((sum, group) => sum + group.cardIds.length, 0), weak, mistakeIds, activity, exam, recommendation, accuracy, today, recent };
 }

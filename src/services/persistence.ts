@@ -3,8 +3,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { ExamAttempt, FlaggedItem, LibrarySort, QuizQuestionCount, RetentionMode, StudyBoltState, StudyClass, StudyPack, StudyPlan } from '../models';
 import { initialState } from '../data/mockStudyPacks';
 import { ensureDistinctNoteLayers } from './noteLayers';
+import { createAccountStateStorage } from './accountStorage';
 
-const STORAGE_KEY = '@studybolt/state/v1';
+const accountStateStorage = createAccountStateStorage(AsyncStorage);
 const QUIZ_COUNTS: QuizQuestionCount[] = [5, 10, 15, 20, 30];
 const LIBRARY_SORTS: LibrarySort[] = ['default', 'recent', 'oldest', 'alphabetical'];
 
@@ -76,12 +77,14 @@ function withPlanDates(plan: StudyPlan): StudyPlan {
   };
 }
 
-export async function loadStudyBoltState(): Promise<StudyBoltState> {
+export async function loadStudyBoltState(userId?: string): Promise<StudyBoltState> {
+  // A storage failure must not become an empty library that autosave can write
+  // over the student's existing data. Let the provider offer a safe retry.
+  const raw = await accountStateStorage.read(userId);
   try {
-    const raw = await AsyncStorage.getItem(STORAGE_KEY);
-    if (!raw) return initialState;
+    if (raw === null) return initialState;
     const parsed = JSON.parse(raw) as Partial<StudyBoltState>;
-    if (!Array.isArray(parsed.decks)) return initialState;
+    if (!Array.isArray(parsed.decks)) throw new Error('Invalid saved library');
     const storedRetentionMode = (parsed as unknown as { retentionMode?: RetentionMode | 'personalized' }).retentionMode;
     const decks = (parsed.decks as Array<StudyPack & { detailedNotes?: StudyPack['detailedNotes'] }>).map((deck) => ({
       ...deck,
@@ -114,15 +117,13 @@ export async function loadStudyBoltState(): Promise<StudyBoltState> {
       conceptMastery: Array.isArray(parsed.conceptMastery) ? parsed.conceptMastery.slice(-2_000) : [],
     };
   } catch {
-    return initialState;
+    throw new Error('The saved study library could not be read.');
   }
 }
 
-let pendingStateWrite: Promise<void> = Promise.resolve();
-export function saveStudyBoltState(state: StudyBoltState): Promise<void> {
+export function saveStudyBoltState(state: StudyBoltState, userId?: string): Promise<void> {
   const serialized = JSON.stringify(state);
-  pendingStateWrite = pendingStateWrite.then(() => AsyncStorage.setItem(STORAGE_KEY, serialized)).catch(() => undefined);
-  return pendingStateWrite;
+  return accountStateStorage.write(serialized, userId).catch(() => undefined);
 }
 
-export function flushStudyBoltStateWrites(): Promise<void> { return pendingStateWrite; }
+export function flushStudyBoltStateWrites(): Promise<void> { return accountStateStorage.flush(); }

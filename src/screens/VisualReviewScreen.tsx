@@ -1,3 +1,4 @@
+import { useReducedMotion } from '../hooks/useReducedMotion';
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,6 +11,7 @@ import { analyzeVisualWithAi, createVisualCardSuggestion } from '../services/aiT
 import { immediateVisualImageUri, resolveStoredVisualImageUri, usefulVisuals } from '../services/visuals';
 
 export function VisualReviewScreen({ deckId, onBack }: { deckId: string; onBack: () => void }) {
+  const reducedMotion = useReducedMotion();
   const { colors, state, updateDeck } = useStudyBolt();
   const { getAccessToken } = useAuth();
   const insets = useSafeAreaInsets();
@@ -240,26 +242,26 @@ export function VisualReviewScreen({ deckId, onBack }: { deckId: string; onBack:
         <PrimaryButton label="Back to Study Pack" icon="arrow-left" onPress={onBack} style={styles.backButton} />
       </ScrollView>
 
-      <Modal visible={Boolean(previewVisual)} transparent animationType="fade" onRequestClose={() => setPreviewVisual(null)}>
+      <Modal visible={Boolean(previewVisual)} transparent animationType={reducedMotion ? 'none' : 'fade'} onRequestClose={() => setPreviewVisual(null)}>
         <View style={styles.previewRoot}>
-          <Pressable accessibilityLabel="Close visual preview" style={StyleSheet.absoluteFill} onPress={() => setPreviewVisual(null)} />
+          <Pressable accessibilityRole="button" accessibilityLabel="Close visual preview" style={StyleSheet.absoluteFill} onPress={() => setPreviewVisual(null)} />
           <View style={[styles.previewSheet, { backgroundColor: colors.backgroundRaised, borderColor: colors.border }]}>
             <View style={styles.previewHeader}>
               <View style={{ flex: 1 }}><Text style={[styles.previewTitle, { color: colors.text }]}>{previewVisual?.slideTitle || 'Visual preview'}</Text><Text style={[styles.previewMeta, { color: colors.textMuted }]}>Source: Slide {previewVisual?.slideNumber}</Text></View>
-              <Pressable accessibilityLabel="Close" hitSlop={10} onPress={() => setPreviewVisual(null)}><Icon name="close" color={colors.textMuted} /></Pressable>
+              <Pressable accessibilityRole="button" accessibilityLabel="Close" hitSlop={10} onPress={() => setPreviewVisual(null)}><Icon name="close" color={colors.textMuted} /></Pressable>
             </View>
             {previewVisual ? <VisualImage visual={previewVisual} height={420} /> : null}
           </View>
         </View>
       </Modal>
 
-      <Modal visible={Boolean(cardVisual)} transparent animationType="slide" onRequestClose={() => setCardVisual(null)}>
+      <Modal visible={Boolean(cardVisual)} transparent animationType={reducedMotion ? 'none' : 'slide'} onRequestClose={() => setCardVisual(null)}>
         <View style={styles.cardModalRoot}>
-          <Pressable accessibilityLabel="Close visual card editor" style={StyleSheet.absoluteFill} onPress={() => setCardVisual(null)} />
+          <Pressable accessibilityRole="button" accessibilityLabel="Close visual card editor" style={StyleSheet.absoluteFill} onPress={() => setCardVisual(null)} />
           <View style={[styles.cardSheet, { backgroundColor: colors.backgroundRaised, borderColor: colors.border }]}>
             <View style={styles.previewHeader}>
               <View style={{ flex: 1 }}><Text style={[styles.previewTitle, { color: colors.text }]}>Create visual card</Text><Text style={[styles.previewMeta, { color: colors.textMuted }]}>Review and edit before adding</Text></View>
-              <Pressable accessibilityLabel="Close" hitSlop={10} onPress={() => setCardVisual(null)}><Icon name="close" color={colors.textMuted} /></Pressable>
+              <Pressable accessibilityRole="button" accessibilityLabel="Close" hitSlop={10} onPress={() => setCardVisual(null)}><Icon name="close" color={colors.textMuted} /></Pressable>
             </View>
             <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
               {cardVisual ? <VisualImage visual={cardVisual} height={170} /> : null}
@@ -271,10 +273,10 @@ export function VisualReviewScreen({ deckId, onBack }: { deckId: string; onBack:
                   <EditorField label="ANSWER" value={answer} onChangeText={setAnswer} colors={colors} />
                   <EditorField label="CONCEPT" value={concept} onChangeText={setConcept} colors={colors} singleLine />
                   <PrimaryButton label="Add to flashcards" icon="plus" onPress={addCard} disabled={!question.trim() || !answer.trim()} style={styles.addCardButton} />
-                  <Pressable onPress={() => setCardVisual(null)} style={styles.cancelButton}><Text style={[styles.cancelText, { color: colors.textSecondary }]}>Cancel</Text></Pressable>
+                  <Pressable accessibilityRole="button" onPress={() => setCardVisual(null)} style={styles.cancelButton}><Text style={[styles.cancelText, { color: colors.textSecondary }]}>Cancel</Text></Pressable>
                 </>
               ) : null}
-              {!cardBusy && cardError ? <Pressable onPress={() => setCardVisual(null)} style={styles.cancelButton}><Text style={[styles.cancelText, { color: colors.textSecondary }]}>Cancel</Text></Pressable> : null}
+              {!cardBusy && cardError ? <Pressable accessibilityRole="button" onPress={() => setCardVisual(null)} style={styles.cancelButton}><Text style={[styles.cancelText, { color: colors.textSecondary }]}>Cancel</Text></Pressable> : null}
             </ScrollView>
           </View>
         </View>
@@ -349,49 +351,49 @@ const styles = StyleSheet.create({
   intro: { borderRadius: 18, padding: 16, flexDirection: 'row', gap: 12 },
   introCopy: { flex: 1, gap: 5 },
   title: { fontSize: 20, fontWeight: '900' },
-  description: { fontSize: 13, lineHeight: 19 },
+  description: { fontSize: 14, lineHeight: 21 },
   reviewHint: { borderRadius: 14, padding: 12, flexDirection: 'row', gap: 9, alignItems: 'center' },
-  reviewHintText: { flex: 1, fontSize: 11, lineHeight: 16 },
+  reviewHintText: { flex: 1, fontSize: 14, lineHeight: 21 },
   batchAction: { minHeight: 36, justifyContent: 'center', paddingHorizontal: 5 },
-  batchActionText: { fontSize: 11, fontWeight: '900' },
+  batchActionText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   visualCard: { padding: 12, gap: 13 },
   imageFrame: { width: '100%', borderRadius: 14, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
   image: { width: '100%', height: '100%' },
   noImage: { gap: 7, paddingHorizontal: 20 },
-  noImageText: { fontSize: 12, fontWeight: '700', textAlign: 'center' },
+  noImageText: { fontSize: 14, lineHeight: 21, fontWeight: '700', textAlign: 'center' },
   visualCopy: { gap: 9 },
   visualTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  visualType: { fontSize: 11, textTransform: 'capitalize' },
+  visualType: { fontSize: 14, lineHeight: 21, textTransform: 'capitalize' },
   visualTitle: { fontSize: 17, fontWeight: '900' },
-  reviewReason: { fontSize: 12, lineHeight: 17 },
-  interpretation: { fontSize: 12, lineHeight: 17 },
-  errorText: { fontSize: 11, lineHeight: 16, fontWeight: '700' },
+  reviewReason: { fontSize: 14, lineHeight: 21 },
+  interpretation: { fontSize: 14, lineHeight: 21 },
+  errorText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   visualActions: { flexDirection: 'row', gap: 9, alignItems: 'center' },
   cardButton: { flex: 1, minHeight: 44 },
   secondaryButton: { minHeight: 44, paddingHorizontal: 13, borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center' },
-  secondaryButtonText: { fontSize: 12, fontWeight: '800' },
+  secondaryButtonText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   skipButton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 4 },
-  skipButtonText: { fontSize: 12, fontWeight: '800' },
+  skipButtonText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   emptyCard: { padding: 28, alignItems: 'center', gap: 9 },
   emptyTitle: { fontSize: 18, fontWeight: '900' },
-  emptyText: { fontSize: 13, textAlign: 'center', lineHeight: 19 },
+  emptyText: { fontSize: 14, textAlign: 'center', lineHeight: 21 },
   previewRoot: { flex: 1, justifyContent: 'center', padding: 20, backgroundColor: 'rgba(13,18,38,0.65)' },
   previewSheet: { width: '100%', maxWidth: 620, alignSelf: 'center', borderRadius: 22, borderWidth: StyleSheet.hairlineWidth, padding: 14, gap: 14 },
   previewHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 12 },
   previewTitle: { fontSize: 20, lineHeight: 25, fontWeight: '900' },
-  previewMeta: { fontSize: 11, marginTop: 3 },
+  previewMeta: { fontSize: 12, lineHeight: 18, marginTop: 3 },
   cardModalRoot: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(13,18,38,0.45)' },
   cardSheet: { width: '100%', maxWidth: 560, maxHeight: '90%', alignSelf: 'center', borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: StyleSheet.hairlineWidth, padding: 20, paddingTop: 16 },
   suggestionLoading: { minHeight: 110, alignItems: 'center', justifyContent: 'center', gap: 10 },
-  suggestionText: { fontSize: 12 },
+  suggestionText: { fontSize: 14, lineHeight: 21 },
   cardError: { borderRadius: 14, padding: 12, marginTop: 13, flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
-  cardErrorText: { flex: 1, fontSize: 12, lineHeight: 17, fontWeight: '700' },
+  cardErrorText: { flex: 1, fontSize: 14, lineHeight: 21, fontWeight: '700' },
   editorField: { marginTop: 13 },
-  editorLabel: { fontSize: 8, fontWeight: '900', letterSpacing: 0.8, marginBottom: 6 },
-  editorInput: { minHeight: 47, borderRadius: 14, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, fontSize: 12 },
+  editorLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 0.8, marginBottom: 6 },
+  editorInput: { minHeight: 47, borderRadius: 14, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, lineHeight: 22 },
   editorInputMultiline: { minHeight: 82, textAlignVertical: 'top' },
   addCardButton: { marginTop: 18 },
   cancelButton: { minHeight: 48, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
-  cancelText: { fontSize: 13, fontWeight: '800' },
+  cancelText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   backButton: { minHeight: 48, marginTop: 2 },
 });

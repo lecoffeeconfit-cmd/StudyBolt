@@ -16,7 +16,7 @@ import {
   subscribeToStudyTimerSettings,
   type StudyTimerSettings,
 } from '../services/studyTimer';
-import { Card, Header, Icon, Pill, Screen, SectionHeader } from '../components/ui';
+import { Card, Header, Icon, Pill, Screen } from '../components/ui';
 import { SubjectIcon } from '../components/SubjectIcon';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import { findHomeAudioResume } from '../services/homeStudy';
@@ -114,8 +114,8 @@ export function HomeScreen({
   onOpenProfile: () => void;
 }) {
   const { colors, state, setTheme } = useStudyBolt();
-  const { user } = useAuth();
-  const avatarInitial = user?.email?.[0]?.toUpperCase();
+  const { user, profile } = useAuth();
+  const avatarInitial = (profile?.displayName || user?.email)?.[0]?.toUpperCase();
   const [profileFocused, setProfileFocused] = useState(false);
   const [now, setNow] = useState(() => new Date());
   const [priority, setPriority] = useState<HomePriority | 'flashcards' | null>(null);
@@ -132,7 +132,9 @@ export function HomeScreen({
     scheduleCard: (deckId, cardId) => getRetentionCardSchedule(academicState, deckId, cardId, state.retentionMode === 'standard' ? 'sm2' : state.retentionMode, now),
   }), [state, academicState, now, resumeDeck?.id]);
   const today = now.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
-  const recentMaterials = (dashboard.decks.length ? dashboard.decks : state.decks).slice().sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, 2);
+  const recentMaterials = dashboard.decks.length ? dashboard.recent.slice(0, 2) : state.decks.filter((deck) => deck.fileType === 'demo').slice(0, 2).map((deck) => ({ deck, lastStudiedAt: null }));
+  const firstName = profile?.displayName?.trim().split(/\s+/)[0];
+  const greeting = now.getHours() < 12 ? 'Good morning' : now.getHours() < 18 ? 'Good afternoon' : 'Good evening';
   const uploadStatus = useMemo(() => getHomeUploadStatus(state.decks, AUTOMATIC_STUDY_PACK_MATERIALS), [state.decks]);
 
   const reviewDue = (group: HomeDueReview) => onOpenDeck(group.deck, 'flashcards', group.cardIds);
@@ -146,6 +148,7 @@ export function HomeScreen({
     if (next.kind === 'materials') return pickDocument();
     if (next.kind === 'mistakes') return onOpenMistakes(dashboard.mistakeIds);
     if (!deck) return onOpenLibrary();
+    if (next.kind === 'pack') return onOpenDeck(deck);
     if (next.kind === 'resume') return onOpenDeck(deck, 'audio');
     if (next.kind === 'due') return onOpenDeck(deck, 'flashcards', next.cardIds);
     if (next.kind === 'weak' && next.sectionId) {
@@ -191,8 +194,8 @@ export function HomeScreen({
           <Icon name="lightning-bolt" size={12} color={colors.goldText} />
           <Text style={[styles.date, { color: colors.textSecondary }]}>{today.toUpperCase()}</Text>
         </View>
-        <Text style={[styles.title, { color: colors.text }]}>{dashboard.decks.length ? 'Make progress today' : 'Your next step starts here'}</Text>
-        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{!dashboard.decks.length ? 'Bring your material. Make it easier to practice.' : dashboard.exam ? 'Build toward your next exam, one focused step at a time.' : 'Pick up your next useful study step.'}</Text>
+        <Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>{firstName ? `${greeting}, ${firstName}` : 'Your study space'}</Text>
+        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{!dashboard.decks.length ? 'Start with one class. Build a routine that works for you.' : dashboard.exam ? 'One focused step toward your next exam.' : 'A clear next step, built from your learning.'}</Text>
       </View>
 
       <TodaysPlanCard dashboard={dashboard} colors={colors} onStartSession={startRecommended} onOpenPriority={setPriority} onOpenPlan={onOpenPlanner} />
@@ -208,9 +211,18 @@ export function HomeScreen({
         onOpenPack={(deck) => onOpenDeck(deck)}
       />
 
+      <RecentLearningCard activity={dashboard.activity} today={dashboard.today} onOpenStats={onOpenStats} onStart={() => { void startRecommended(); }} />
+
+      <View style={styles.sectionHeading}><Text accessibilityRole="header" style={[styles.sectionHeadingText, { color: colors.text }]}>{dashboard.decks.length ? 'Continue studying' : 'Try the sample materials'}</Text><Pressable accessibilityRole="button" accessibilityLabel="Open study library" onPress={onOpenLibrary} style={styles.libraryLink}><Text style={[styles.libraryLinkText, { color: colors.mode === 'dark' ? colors.primary : '#075BC6' }]}>Library</Text><Icon name="chevron-right" size={18} color={colors.primary} /></Pressable></View>
+      <View style={styles.deckList}>
+        {!recentMaterials.length ? <Text style={[styles.emptyMaterials, { color: colors.textSecondary }]}>Your Study Packs will appear here after you import materials.</Text> : null}
+        {recentMaterials.map(({ deck, lastStudiedAt }) => <RecentDeck key={deck.id} deck={deck} lastStudiedAt={lastStudiedAt} onPress={() => onOpenDeck(deck)} />)}
+      </View>
+      {resumeDeck && dashboard.recommendation.kind !== 'resume' ? <Card onPress={() => onOpenDeck(resumeDeck, 'audio')} accessibilityLabel={`Resume StudyCast, ${resumeDeck.title}, from your saved position`} style={styles.resumeCard}><View style={[styles.resumeIcon, { backgroundColor: colors.primarySoft }]}><Icon name="headphones" color={colors.primary} /></View><View style={styles.resumeCopy}><Text style={[styles.resumeTitle, { color: colors.text }]}>Continue listening</Text><Text style={[styles.resumeSubtitle, { color: colors.textSecondary }]}>{resumeDeck.title} · Saved position</Text></View><Icon name="play-circle-outline" color={colors.primary} /></Card> : null}
+
       <UpcomingExamCard exam={dashboard.exam} onOpenPlan={onOpenPlanner} />
 
-      <Text accessibilityRole="header" style={[styles.sectionLabel, { color: colors.text }]}>Quick start</Text>
+      <Text accessibilityRole="header" style={[styles.sectionLabel, { color: colors.text }]}>Study tools</Text>
       <View style={styles.quickActions}>
         <QuickAction icon="clipboard-check-outline" label="Practice Test" detail="Test what you know" color={colors.primary} background={colors.primarySoft} onPress={practice} />
         <QuickAction icon="book-alert-outline" label="Review Mistakes" detail="Retry missed questions" color={colors.purple} background={colors.purpleSoft} onPress={() => setPriority('mistakes')} />
@@ -221,15 +233,9 @@ export function HomeScreen({
         <Pressable accessibilityRole="button" onPress={() => dashboard.decks.length ? onStartStudy('cram', { deckId: dashboard.decks[0]!.id }) : void pickDocument()} style={styles.moreTool}><Icon name="fire" color={colors.goldText} size={17} /><Text style={[styles.moreToolText, { color: colors.textSecondary }]}>Cram review</Text></Pressable>
         <Pressable accessibilityRole="button" onPress={onOpenFlagged} style={styles.moreTool}><Icon name="flag-outline" color={colors.purple} size={17} /><Text style={[styles.moreToolText, { color: colors.textSecondary }]}>Saved items</Text></Pressable>
       </View>
-      <RecentLearningCard activity={dashboard.activity} onOpenStats={onOpenStats} onStart={() => { void startRecommended(); }} />
       <Text accessibilityRole="header" style={[styles.sectionLabel, { color: colors.text }]}>Make room to focus</Text>
       <PomodoroTimerCard />
-      <SectionHeader title={dashboard.decks.length ? 'Recent materials' : 'Explore sample materials'} action="Library" onAction={onOpenLibrary} />
-      <View style={styles.deckList}>
-        {!recentMaterials.length ? <Text style={[styles.emptyMaterials, { color: colors.textSecondary }]}>Your Study Packs will appear here after you import materials.</Text> : null}
-        {recentMaterials.map((deck) => <RecentDeck key={deck.id} deck={deck} onPress={() => onOpenDeck(deck)} />)}
-      </View>
-      <Text style={[styles.localNote, { color: colors.textSecondary }]}>Your saved study material and learning activity are available offline. AI features may require a connection.</Text>
+      <Text style={[styles.localNote, { color: colors.textSecondary }]}>Study Packs and learning activity are stored on this device. Saved material is available offline; cloud AI needs a connection.</Text>
       <HomePrioritySheet kind={priority} dashboard={dashboard} onClose={() => setPriority(null)} onDue={reviewDue} onWeak={studyWeak} onMistakes={() => onOpenMistakes(dashboard.mistakeIds)} onFlashcards={(deck) => onOpenDeck(deck, 'flashcards')} onPractice={practice} />
     </Screen>
   );
@@ -455,8 +461,9 @@ function PomodoroTimerCard() {
 function QuickAction({ icon, label, detail, color, background, onPress }: { icon: Parameters<typeof Icon>[0]['name']; label: string; detail: string; color: string; background: string; onPress: () => void }) {
   const { colors } = useStudyBolt();
   const reducedMotion = useReducedMotion();
+  const { width, fontScale } = useWindowDimensions();
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={`${label}. ${detail}`} onPress={onPress} style={({ pressed }) => [styles.quickAction, { backgroundColor: colors.card, borderColor: colors.border }, pressed && (reducedMotion ? { opacity: 0.78 } : styles.pressed)]}>
+    <Pressable accessibilityRole="button" accessibilityLabel={`${label}. ${detail}`} onPress={onPress} style={({ pressed }) => [styles.quickAction, (width < 370 || fontScale >= 1.3) && { flexBasis: '100%' }, { backgroundColor: colors.card, borderColor: colors.border }, pressed && (reducedMotion ? { opacity: 0.78 } : styles.pressed)]}>
       <View style={[styles.quickActionIcon, { backgroundColor: background }]}><Icon name={icon} size={20} color={color} /></View>
       <Text style={[styles.quickActionLabel, { color: colors.text }]}>{label}</Text>
       <Text style={[styles.quickActionDetail, { color: colors.textSecondary }]}>{detail}</Text>
@@ -464,21 +471,21 @@ function QuickAction({ icon, label, detail, color, background, onPress }: { icon
   );
 }
 
-function RecentDeck({ deck, onPress }: { deck: StudyPack; onPress: () => void }) {
+function RecentDeck({ deck, lastStudiedAt, onPress }: { deck: StudyPack; lastStudiedAt: string | null; onPress: () => void }) {
   const { colors } = useStudyBolt();
   return (
-    <Card onPress={onPress} style={[styles.deckCard, styles.flatCard]}>
+    <Card onPress={onPress} accessibilityLabel={`${deck.fileType === 'demo' ? 'Open sample' : 'Resume'} ${deck.title}, ${deck.courseName}`} style={[styles.deckCard, styles.flatCard]}>
       <SubjectIcon subject={deck.courseName} emoji={deck.emoji} size={52} />
       <View style={styles.deckCopy}>
         <View style={styles.deckTitleRow}>
-          <Text numberOfLines={1} style={[styles.deckTitle, { color: colors.text }]}>{deck.courseName}</Text>
-          <Pill label={deck.fileType === 'demo' ? 'Sample' : 'Study pack'} tone="blue" />
+          <Text numberOfLines={2} style={[styles.deckTitle, { color: colors.text }]}>{deck.title}</Text>
+          {deck.fileType === 'demo' ? <Pill label="Sample" tone="neutral" /> : null}
         </View>
-        <Text numberOfLines={1} style={[styles.deckSubtitle, { color: colors.textSecondary }]}>{deck.title}</Text>
+        <Text numberOfLines={2} style={[styles.deckSubtitle, { color: colors.textSecondary }]}>{deck.courseName}</Text>
         <View style={styles.deckMetaRow}>
           <Text style={[styles.deckMeta, { color: colors.textSecondary }]}>{deck.pageCount} {pageLabel(deck.fileType)}</Text>
           <View style={[styles.dot, { backgroundColor: colors.textMuted }]} />
-          <Text style={[styles.deckMeta, { color: colors.textSecondary }]}>Available offline</Text>
+          <Text style={[styles.deckMeta, { color: colors.textSecondary }]}>{lastStudiedAt ? `Last studied ${new Date(lastStudiedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : deck.fileType === 'demo' ? 'Explore the tools' : 'Ready to open'}</Text>
         </View>
       </View>
       <Icon name="chevron-right" size={24} color={colors.textMuted} />
@@ -490,18 +497,18 @@ const styles = StyleSheet.create({
   moreTools: { flexDirection: 'row', flexWrap: 'wrap', gap: 16, marginTop: 6 },
   moreTool: { flexDirection: 'row', alignItems: 'center', minHeight: 44, gap: 6 },
   moreToolText: { fontSize: 12, lineHeight: 18, fontWeight: '600' },
-  localNote: { fontSize: 10, lineHeight: 16, marginTop: 18 },
+  localNote: { fontSize: 12, lineHeight: 19, marginTop: 18 },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   roundButton: { width: 44, height: 44, borderRadius: 22, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center' },
   avatarButton: { width: 44, height: 44, borderRadius: 22, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   avatar: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
   avatarText: { fontSize: 14, fontWeight: '800', color: '#12775E' },
-  heroCopy: { marginTop: 14, marginBottom: 16 },
+  heroCopy: { marginTop: 6, marginBottom: 18 },
   dateRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginBottom: 7 },
-  date: { fontSize: 9, fontWeight: '900', letterSpacing: 1.15 },
+  date: { fontSize: 12, lineHeight: 18, fontWeight: '600', letterSpacing: 0.4 },
   eyebrow: { fontSize: 10, fontWeight: '900', letterSpacing: 1.2, marginBottom: 8 },
-  title: { fontSize: 28, lineHeight: 33, fontWeight: '900', letterSpacing: -0.9 },
-  subtitle: { marginTop: 5, fontSize: 13, lineHeight: 18, maxWidth: 500 },
+  title: { fontSize: 27, lineHeight: 35, fontWeight: '800', letterSpacing: -0.65 },
+  subtitle: { marginTop: 5, fontSize: 14, lineHeight: 21, maxWidth: 500 },
   examCard: { minHeight: 62, borderRadius: 15, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 },
   examIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   examTitle: { fontSize: 11, fontWeight: '900' },
@@ -526,11 +533,15 @@ const styles = StyleSheet.create({
   pomodoroStop: { width: 44, height: 44, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   pomodoroAction: { width: 44, height: 44, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   sectionLabel: { fontSize: 17, fontWeight: '800', letterSpacing: -0.2, marginTop: 22 },
+  sectionHeading: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 20, marginBottom: 8 },
+  sectionHeadingText: { flex: 1, fontSize: 18, lineHeight: 25, fontWeight: '700' },
+  libraryLink: { minHeight: 44, paddingLeft: 6, flexDirection: 'row', alignItems: 'center', gap: 1 },
+  libraryLinkText: { fontSize: 14, lineHeight: 21, fontWeight: '600' },
   quickActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
   quickAction: { flexBasis: '48%', flexGrow: 1, minHeight: 74, borderRadius: 15, borderWidth: StyleSheet.hairlineWidth, padding: 10, paddingLeft: 50, justifyContent: 'center' },
   quickActionIcon: { position: 'absolute', left: 10, width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  quickActionLabel: { fontSize: 13, lineHeight: 19, fontWeight: '900' },
-  quickActionDetail: { fontSize: 11, lineHeight: 16, marginTop: 2 },
+  quickActionLabel: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  quickActionDetail: { fontSize: 12, lineHeight: 18, marginTop: 2 },
   pressed: { opacity: 0.78, transform: [{ scale: 0.985 }] },
   promise: { marginTop: 14, minHeight: 58, borderRadius: 16, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, gap: 11 },
   promiseIcon: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
@@ -540,10 +551,10 @@ const styles = StyleSheet.create({
   flatCard: { shadowOpacity: 0, elevation: 0 },
   deckCopy: { flex: 1, minWidth: 0 },
   deckTitleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
-  deckTitle: { flex: 1, fontSize: 14, fontWeight: '800' },
-  deckSubtitle: { fontSize: 12, marginTop: 2 },
-  deckMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 5 },
-  deckMeta: { fontSize: 10 },
+  deckTitle: { flex: 1, fontSize: 16, lineHeight: 23, fontWeight: '700' },
+  deckSubtitle: { fontSize: 14, lineHeight: 21, marginTop: 2 },
+  deckMetaRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 5 },
+  deckMeta: { fontSize: 12, lineHeight: 19 },
   dot: { width: 3, height: 3, borderRadius: 2 },
   miniProgress: { marginTop: 7 },
   tipCard: { marginTop: 22 },

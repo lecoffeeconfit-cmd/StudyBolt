@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { ActivityIndicator, Linking, Platform, StyleSheet, Text, View } from 'react-native';
+import { Linking, Platform, StyleSheet, Text, View } from 'react-native';
+import { StudyBoltLoading } from '../components/StudyBoltLoading';
 
 import { useAuth } from '../AuthContext';
 import { initialState } from '../data/mockStudyPacks';
@@ -220,7 +221,7 @@ export function StudyBoltNavigator() {
     return (
       <View style={[styles.loading, { backgroundColor: colors.background }]}>
         <StatusBar style={colors.mode === 'dark' ? 'light' : 'dark'} />
-        <ActivityIndicator color={colors.primary} />
+        <StudyBoltLoading colors={colors} message="Opening your study space…" />
       </View>
     );
   }

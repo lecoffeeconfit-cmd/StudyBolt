@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
+import { StudyBoltLoading } from '../components/StudyBoltLoading';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '../AuthContext';
@@ -77,9 +78,7 @@ export function SharedStudyPackScreen({
   if (loading) {
     return (
       <View style={[styles.state, { backgroundColor: colors.background, paddingTop: insets.top + 40 }]}>
-        <View style={[styles.loadingIcon, { backgroundColor: colors.primarySoft }]}><ActivityIndicator color={colors.primary} size="small" /></View>
-        <Text style={[styles.stateTitle, { color: colors.text }]}>Opening shared Study Pack</Text>
-        <Text style={[styles.stateText, { color: colors.textSecondary }]}>Fetching the study material securely…</Text>
+        <StudyBoltLoading colors={colors} message="Opening shared Study Pack…" detail="Fetching the study material securely." />
         <View style={styles.skeletons}><View style={[styles.skeleton, { backgroundColor: colors.cardStrong }]} /><View style={[styles.skeleton, styles.skeletonLarge, { backgroundColor: colors.cardStrong }]} /></View>
       </View>
     );
@@ -117,7 +116,7 @@ const styles = StyleSheet.create({
   loadingIcon: { width: 66, height: 66, borderRadius: 22, alignItems: 'center', justifyContent: 'center', marginBottom: 19 },
   errorIcon: { width: 76, height: 76, borderRadius: 26, alignItems: 'center', justifyContent: 'center', marginBottom: 19 },
   stateTitle: { fontSize: 22, lineHeight: 28, fontWeight: '900', letterSpacing: -0.5, textAlign: 'center' },
-  stateText: { maxWidth: 330, fontSize: 13, lineHeight: 20, textAlign: 'center', marginTop: 7 },
+  stateText: { maxWidth: 330, fontSize: 14, lineHeight: 21, textAlign: 'center', marginTop: 7 },
   stateButton: { minWidth: 210, marginTop: 24 },
   skeletons: { width: '100%', gap: 12, marginTop: 35 },
   skeleton: { height: 24, borderRadius: 9 },

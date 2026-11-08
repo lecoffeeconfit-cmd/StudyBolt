@@ -1,3 +1,4 @@
+import { useReducedMotion } from '../hooks/useReducedMotion';
 import React, { useEffect, useRef } from 'react';
 import { Animated, Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
@@ -30,16 +31,18 @@ const DOCUMENTS: Array<{
 
 export function LegalScreen({ onBack }: { onBack: () => void }) {
   const { colors } = useStudyBolt();
+  const reducedMotion = useReducedMotion();
   const entrance = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    if (reducedMotion) { entrance.setValue(1); return; }
     Animated.spring(entrance, {
       toValue: 1,
       damping: 18,
       stiffness: 150,
       useNativeDriver: Platform.OS !== 'web',
     }).start();
-  }, [entrance]);
+  }, [entrance, reducedMotion]);
 
   const openDocument = (id: LegalDocument) => {
     const url = LEGAL_URLS[id];
@@ -64,7 +67,7 @@ export function LegalScreen({ onBack }: { onBack: () => void }) {
             const url = LEGAL_URLS[document.id];
             const ready = Boolean(url);
             return (
-              <Pressable
+              <Pressable aria-disabled={!ready}
                 key={document.id}
                 accessibilityRole="button"
                 accessibilityState={{ disabled: !ready }}
@@ -107,19 +110,19 @@ const styles = StyleSheet.create({
   hero: { flexDirection: 'row', alignItems: 'center', gap: 13, paddingVertical: 17 },
   heroIcon: { width: 52, height: 52, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   heroTitle: { fontSize: 16, fontWeight: '900', letterSpacing: -0.2 },
-  heroCopy: { fontSize: 11, lineHeight: 16, marginTop: 4 },
-  sectionLabel: { fontSize: 10, fontWeight: '900', letterSpacing: 1.1, marginTop: 20, marginBottom: 10 },
+  heroCopy: { fontSize: 14, lineHeight: 21, marginTop: 4 },
+  sectionLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 1.1, marginTop: 20, marginBottom: 10 },
   documents: { gap: 11 },
   documentCard: { minHeight: 123, borderRadius: radius.md, borderWidth: StyleSheet.hairlineWidth, padding: 14, flexDirection: 'row', alignItems: 'flex-start', gap: 11, shadowOffset: { width: 0, height: 7 }, shadowOpacity: 0.05, shadowRadius: 14, elevation: 2 },
   documentIcon: { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   documentCopy: { flex: 1, minWidth: 0 },
   documentTitle: { fontSize: 14, fontWeight: '900' },
-  documentDescription: { fontSize: 11, lineHeight: 16, marginTop: 4 },
+  documentDescription: { fontSize: 14, lineHeight: 21, marginTop: 4 },
   documentStatus: { alignSelf: 'flex-start', borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 5, marginTop: 9 },
-  documentStatusText: { fontSize: 9, fontWeight: '900' },
+  documentStatusText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   noteCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginTop: 22 },
   noteIcon: { width: 35, height: 35, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  noteTitle: { fontSize: 12, fontWeight: '900' },
-  noteCopy: { fontSize: 10, lineHeight: 15, marginTop: 3 },
+  noteTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  noteCopy: { fontSize: 14, lineHeight: 21, marginTop: 3 },
   code: { fontWeight: '900' },
 });

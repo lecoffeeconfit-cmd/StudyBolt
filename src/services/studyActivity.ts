@@ -2,6 +2,7 @@ import type { StudyEvent } from '../models';
 
 const STUDY_EVENT_TYPES = new Set<StudyEvent['type']>([
   'note-review',
+  'note-reading',
   'flashcard-review',
   'quiz',
   'audio',

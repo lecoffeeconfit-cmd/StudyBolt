@@ -13,7 +13,7 @@ import type { ImportAsset, LibrarySort, StudyClass, StudyEvent, StudyPack } from
 import { calculateCourseMastery, calculateMastery } from '../services/mastery';
 import { DOCUMENT_PICKER_TYPE, getImportDocumentType, pageLabel } from '../services/documentTypes';
 import { getStudyEventMinutes } from '../services/studyActivity';
-import { radius } from '../theme';
+import { radius , typography } from '../theme';
 
 const CLASS_COLORS = ['#39BFA3', '#F26D8B', '#418DFF', '#F3A633', '#7D5CFF', '#11A7A2'];
 
@@ -111,7 +111,7 @@ function ClassMasteryProgress({ value, courseName, reducedMotion }: { value: num
   return (
     <View
       accessibilityRole="progressbar"
-      accessibilityLabel={`Estimated mastery for ${courseName}`}
+      accessibilityLabel={`Study progress estimate for ${courseName}`}
       accessibilityValue={{ min: 0, max: 100, now: value }}
       aria-valuemin={0}
       aria-valuemax={100}
@@ -409,10 +409,11 @@ export function LibraryScreen({
         {visibleCourses.length ? (
           <View style={styles.courseList}>
             {visibleCourses.map(({ course, decks, visibleDecks }) => {
-              const courseMastery = decks.length ? calculateCourseMastery(decks) : 0;
+              const personalDecks = decks.filter((deck) => deck.fileType !== 'demo');
+              const courseMastery = personalDecks.length ? calculateCourseMastery(personalDecks) : 0;
               const collapsed = normalizedSearch ? false : collapsedCourseIds.includes(course.id);
               const lastStudied = studyHistory.latestByCourse.get(course.id);
-              const courseMeta = `${decks.length} study ${decks.length === 1 ? 'pack' : 'packs'}${lastStudied ? ` · Last studied ${formatLastStudied(lastStudied)}` : ''}`;
+              const courseMeta = `${decks.length} study ${decks.length === 1 ? 'pack' : 'packs'}${!personalDecks.length && decks.length ? ' · Samples' : lastStudied ? ` · Last studied ${formatLastStudied(lastStudied)}` : ''}`;
               return (
                 <View key={course.id} style={[styles.classGroup, { backgroundColor: colors.cardStrong, borderColor: `${course.color}38` }]}>
                   <View style={[styles.classAccent, { backgroundColor: course.color }]} />
@@ -438,16 +439,16 @@ export function LibraryScreen({
 
                   <View style={styles.masteryArea}>
                     <View style={styles.masteryLabelRow}>
-                      <Text style={[styles.masteryLabel, { color: colors.textSecondary }]}>{decks.length ? `Estimated mastery — ${courseMastery}%` : 'Ready for your first study pack'}</Text>
+                      <Text style={[styles.masteryLabel, { color: colors.textSecondary }]}>{personalDecks.length ? `Study progress · ${courseMastery}%` : decks.length ? 'Sample materials · explore the study tools' : 'Ready for your first study pack'}</Text>
                       <Pressable
                         accessibilityRole="button"
-                        accessibilityLabel={`About ${course.name}${decks.length ? ' and estimated mastery' : ''}`}
+                        accessibilityLabel={`About ${course.name}${personalDecks.length ? ' and study progress' : ''}`}
                         hitSlop={8}
                         onPress={() => setInspectedCourseId(course.id)}
                         style={({ pressed }) => [styles.classInfoButton, pressed && styles.deckRowPressed]}
                       ><Icon name="information-outline" size={17} color={colors.textSecondary} /></Pressable>
                     </View>
-                    {decks.length ? <ClassMasteryProgress value={courseMastery} courseName={course.name} reducedMotion={reducedMotion} /> : null}
+                    {personalDecks.length ? <ClassMasteryProgress value={courseMastery} courseName={course.name} reducedMotion={reducedMotion} /> : null}
                   </View>
 
                   <CollapsibleClassBody expanded={!collapsed} reducedMotion={reducedMotion}>
@@ -514,7 +515,7 @@ export function LibraryScreen({
                                     <Text numberOfLines={2} style={[styles.deckTitle, { color: colors.text }]}>{deck.title}</Text>
                                     <Text numberOfLines={2} style={[styles.deckMeta, { color: colors.textSecondary }]}>
                                       <Text style={[styles.deckKind, { color: colors.textSecondary }]}>{fileVisual.label}</Text>
-                                      {` · ${deck.pageCount} ${pageLabel(deck.fileType)} · ${calculateMastery(deck).overall}% mastered`}
+                                      {` · ${deck.pageCount} ${pageLabel(deck.fileType)}${deck.fileType === 'demo' ? ' · Sample' : ` · ${calculateMastery(deck).overall}% study progress`}`}
                                     </Text>
                                   </View>
                                   <Icon name={selecting ? 'checkbox-multiple-marked-outline' : 'chevron-right'} size={19} color={isSelected ? colors.primary : colors.textMuted} />
@@ -549,7 +550,7 @@ export function LibraryScreen({
             <Text style={[styles.emptyLibraryTitle, { color: colors.text }]}>{normalizedSearch ? 'No library matches' : 'Your library is ready'}</Text>
             <Text style={[styles.emptyLibraryText, { color: colors.textSecondary }]}>{normalizedSearch ? 'Try a class name, study-pack title, or source file name.' : 'Create a class, then add slides, PDFs, or notes.'}</Text>
             {normalizedSearch ? (
-              <Pressable onPress={() => setSearchQuery('')} style={styles.emptyLibraryAction}><Text style={[styles.emptyLibraryActionText, { color: colors.primary }]}>Clear search</Text></Pressable>
+              <Pressable accessibilityRole="button" onPress={() => setSearchQuery('')} style={styles.emptyLibraryAction}><Text style={[styles.emptyLibraryActionText, { color: colors.primary }]}>Clear search</Text></Pressable>
             ) : (
               <PrimaryButton label="Create your first class" icon="plus" onPress={() => setCreatingClass(true)} style={styles.emptyLibraryButton} />
             )}
@@ -559,7 +560,7 @@ export function LibraryScreen({
 
       <Modal visible={choosingSort} transparent animationType={reducedMotion ? 'none' : 'slide'} onRequestClose={() => setChoosingSort(false)}>
         <View style={[styles.modalRoot, { backgroundColor: colors.mode === 'dark' ? 'rgba(0,0,0,0.68)' : 'rgba(17,28,78,0.32)' }]}>
-          <Pressable accessibilityLabel="Close sort options" onPress={() => setChoosingSort(false)} style={StyleSheet.absoluteFill} />
+          <Pressable accessibilityRole="button" accessibilityLabel="Close sort options" onPress={() => setChoosingSort(false)} style={StyleSheet.absoluteFill} />
           <View role="dialog" aria-modal accessibilityViewIsModal accessibilityLabel="Sort your library" style={[styles.sortSheet, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow, paddingBottom: Math.max(insets.bottom, 18) }]}>
             <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
             <View style={styles.sheetHeadingRow}>
@@ -568,7 +569,7 @@ export function LibraryScreen({
                 <Text style={[styles.sheetTitle, { color: colors.text }]}>Sort your library</Text>
                 <Text style={[styles.sheetSubtitle, { color: colors.textSecondary }]}>Choose how classes and study packs are arranged.</Text>
               </View>
-              <Pressable accessibilityLabel="Close" onPress={() => setChoosingSort(false)} hitSlop={10}><Icon name="close" size={22} color={colors.textMuted} /></Pressable>
+              <Pressable accessibilityRole="button" accessibilityLabel="Close" onPress={() => setChoosingSort(false)} hitSlop={10}><Icon name="close" size={22} color={colors.textMuted} /></Pressable>
             </View>
 
             <View style={styles.sortOptions}>
@@ -629,8 +630,8 @@ export function LibraryScreen({
                     <Text style={[styles.detailsText, { color: colors.textSecondary }]}>Created {formatClassAddedDate(inspectedCourse.course.createdAt)}</Text>
                   </View>
                 ) : null}
-                <Text style={[styles.detailsHeading, { color: colors.text }]}>Estimated mastery{inspectedCourse.decks.length ? ` — ${calculateCourseMastery(inspectedCourse.decks)}%` : ''}</Text>
-                <Text style={[styles.detailsText, { color: colors.textSecondary }]}>{inspectedCourse.decks.length ? 'Class mastery is the rounded average of the existing mastery scores of its study packs.' : 'Create your first study pack to see an estimated mastery score.'}</Text>
+                <Text style={[styles.detailsHeading, { color: colors.text }]}>About study progress</Text>
+                <Text style={[styles.detailsText, { color: colors.textSecondary }]}>The class progress bar averages the existing study estimates of your own Study Packs. Bundled samples are excluded. Add your course material to start tracking personal progress.</Text>
                 <Text style={[styles.detailsText, { color: colors.textSecondary }]}>Each pack combines reviewed notes (25%), flashcard confidence (35%), and its latest quiz score (40%). Known flashcards count fully, learning cards count half, and new cards count zero.</Text>
                 <Text style={[styles.detailsText, { color: colors.textSecondary }]}>Once a cumulative test is recorded, the weights are notes 20%, flashcards 30%, latest quiz 20%, and latest test 30%.</Text>
                 <Text style={[styles.detailsNote, { color: colors.textSecondary, backgroundColor: colors.cardStrong }]}>This is a study estimate, not a predicted exam grade. “Last studied” uses recorded study activity, rather than the date a pack was created or opened.</Text>
@@ -642,7 +643,7 @@ export function LibraryScreen({
 
       <Modal visible={creatingClass} transparent animationType={reducedMotion ? 'none' : 'slide'} onRequestClose={closeClassModal}>
         <KeyboardAvoidingView style={[styles.modalRoot, { backgroundColor: colors.mode === 'dark' ? 'rgba(0,0,0,0.68)' : 'rgba(17,28,78,0.32)' }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <Pressable accessibilityLabel="Close new class dialog" onPress={closeClassModal} style={StyleSheet.absoluteFill} />
+          <Pressable accessibilityRole="button" accessibilityLabel="Close new class dialog" onPress={closeClassModal} style={StyleSheet.absoluteFill} />
           <View role="dialog" aria-modal accessibilityViewIsModal accessibilityLabel="Create a class" style={[styles.sheet, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow, paddingBottom: Math.max(insets.bottom, 16) }]}>
             <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
             <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} bounces={false}>
@@ -652,7 +653,7 @@ export function LibraryScreen({
                   <Text style={[styles.sheetTitle, { color: colors.text }]}>Create a class</Text>
                   <Text style={[styles.sheetSubtitle, { color: colors.textSecondary }]}>Give your next set of notes a home.</Text>
                 </View>
-                <Pressable accessibilityLabel="Close" onPress={closeClassModal} hitSlop={10}><Icon name="close" size={22} color={colors.textMuted} /></Pressable>
+                <Pressable accessibilityRole="button" accessibilityLabel="Close" onPress={closeClassModal} hitSlop={10}><Icon name="close" size={22} color={colors.textMuted} /></Pressable>
               </View>
 
               <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Class name</Text>
@@ -674,7 +675,7 @@ export function LibraryScreen({
 
               <Text style={[styles.inputLabel, styles.optionLabel, { color: colors.textSecondary }]}>Choose a subject icon</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.iconOptions}>
-                <Pressable
+                <Pressable aria-pressed={selectedEmoji === null}
                   accessibilityRole="button"
                   accessibilityLabel={`Automatically choose an icon from class name, currently ${suggestedIcon.label}`}
                   accessibilityState={{ selected: selectedEmoji === null }}
@@ -687,7 +688,7 @@ export function LibraryScreen({
                 {SUBJECT_ICONS.map((icon) => {
                   const active = selectedEmoji === icon.emoji;
                   return (
-                    <Pressable key={icon.id} accessibilityRole="button" accessibilityLabel={`Use ${icon.label} icon`} accessibilityState={{ selected: active }} onPress={() => setSelectedEmoji(icon.emoji)} style={[styles.iconOption, { backgroundColor: active ? colors.primarySoft : colors.backgroundRaised, borderColor: active ? colors.primary : colors.border }]}>
+                    <Pressable aria-pressed={active} key={icon.id} accessibilityRole="button" accessibilityLabel={`Use ${icon.label} icon`} accessibilityState={{ selected: active }} onPress={() => setSelectedEmoji(icon.emoji)} style={[styles.iconOption, { backgroundColor: active ? colors.primarySoft : colors.backgroundRaised, borderColor: active ? colors.primary : colors.border }]}>
                       <SubjectIcon emoji={icon.emoji} size={40} animated={false} />
                       <Text numberOfLines={1} style={[styles.iconOptionLabel, { color: active ? colors.primary : colors.textSecondary }]}>{icon.label}</Text>
                     </Pressable>
@@ -725,30 +726,30 @@ const styles = StyleSheet.create({
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   newClassButton: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   selectButton: { minHeight: 44, paddingHorizontal: 13, paddingVertical: 10, borderRadius: 14, justifyContent: 'center' },
-  selectText: { fontSize: 12, fontWeight: '700' },
-  title: { fontSize: 28, lineHeight: 33, fontWeight: '900', letterSpacing: -0.9, marginTop: 11 },
-  subtitle: { fontSize: 12, lineHeight: 17, marginTop: 4 },
+  selectText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  title: { ...typography.pageTitle,  marginTop: 11 },
+  subtitle: { fontSize: 16, lineHeight: 24, marginTop: 4 },
   searchField: { minHeight: 48, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, paddingLeft: 13, paddingRight: 4, flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 15 },
-  searchInput: { flex: 1, minWidth: 0, minHeight: 46, paddingVertical: 10, fontSize: 13 },
+  searchInput: { flex: 1, minWidth: 0, minHeight: 46, paddingVertical: 10, fontSize: 15, lineHeight: 22 },
   clearSearch: { width: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   continueRow: { minHeight: 76, borderRadius: radius.md, borderWidth: StyleSheet.hairlineWidth, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 11, marginTop: 14 },
   continueIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  continueLabel: { fontSize: 11, lineHeight: 15, fontWeight: '700' },
+  continueLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700' },
   continueTitle: { fontSize: 14, lineHeight: 19, fontWeight: '700', marginTop: 2 },
-  continueMeta: { fontSize: 11, lineHeight: 16, marginTop: 3 },
+  continueMeta: { fontSize: 12, lineHeight: 18, marginTop: 3 },
   reviewBanner: { marginTop: 18 },
   reviewBannerRow: { flexDirection: 'row', alignItems: 'center', gap: 11 },
   reviewTitle: { fontSize: 14, fontWeight: '800' },
-  reviewSubtitle: { fontSize: 11, marginTop: 3 },
+  reviewSubtitle: { fontSize: 16, lineHeight: 24, marginTop: 3 },
   reviewButton: { minHeight: 48, marginTop: 14 },
   libraryToolbar: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 20, marginBottom: 12 },
   sectionTitle: { fontSize: 18, lineHeight: 23, fontWeight: '800', letterSpacing: -0.3 },
   toolbarActions: { flexGrow: 1, flexShrink: 1, flexBasis: 240, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 8 },
   savedButton: { minHeight: 44, borderWidth: StyleSheet.hairlineWidth, borderRadius: radius.pill, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 11 },
-  savedButtonText: { fontSize: 11, fontWeight: '800' },
+  savedButtonText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   sortButton: { minHeight: 44, maxWidth: 180, flexShrink: 1, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 11, borderRadius: radius.pill },
   sortButtonPressed: { opacity: 0.82 },
-  sortButtonText: { flexShrink: 1, fontSize: 11, fontWeight: '800' },
+  sortButtonText: { flexShrink: 1, fontSize: 14, lineHeight: 21, fontWeight: '700' },
   courseList: { gap: 14 },
   classGroup: { position: 'relative', borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
   classAccent: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 4 },
@@ -757,10 +758,10 @@ const styles = StyleSheet.create({
   courseHeaderMain: { flexDirection: 'row', alignItems: 'center', gap: 11 },
   courseHeaderCopy: { flex: 1, minWidth: 0 },
   courseName: { fontSize: 17, lineHeight: 23, fontWeight: '800' },
-  courseMeta: { fontSize: 11, lineHeight: 16, marginTop: 4 },
+  courseMeta: { fontSize: 12, lineHeight: 18, marginTop: 4 },
   masteryArea: { paddingLeft: 17, paddingRight: 14, paddingBottom: 12 },
   masteryLabelRow: { minHeight: 36, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 5 },
-  masteryLabel: { flex: 1, fontSize: 12, lineHeight: 17, fontWeight: '600' },
+  masteryLabel: { flex: 1, fontSize: 12, lineHeight: 18, fontWeight: '600' },
   classInfoButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 12 },
   masteryTrack: { height: 5, borderRadius: 3, overflow: 'hidden' },
   masteryFill: { height: 5, borderRadius: 3 },
@@ -769,13 +770,13 @@ const styles = StyleSheet.create({
   speedReviewRow: { minHeight: 54, borderRadius: 14, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 11, paddingVertical: 8, marginBottom: 10 },
   speedReviewIcon: { width: 32, height: 32, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   speedReviewCopy: { flex: 1, minWidth: 0 },
-  speedReviewTitle: { fontSize: 12, fontWeight: '900' },
-  speedReviewSubtitle: { fontSize: 11, lineHeight: 15, marginTop: 2 },
+  speedReviewTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  speedReviewSubtitle: { fontSize: 16, lineHeight: 24, marginTop: 2 },
   emptyClassCard: { minHeight: 68, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 11, padding: 12 },
   emptyClassIcon: { width: 39, height: 39, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   emptyClassCopy: { flex: 1 },
-  emptyClassTitle: { fontSize: 13, fontWeight: '800' },
-  emptyClassSubtitle: { fontSize: 10, lineHeight: 15, marginTop: 3 },
+  emptyClassTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  emptyClassSubtitle: { fontSize: 16, lineHeight: 24, marginTop: 3 },
   addSlidesButton: { width: 44, height: 44, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   deckList: { borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
   deckRow: { minHeight: 72, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 11 },
@@ -786,16 +787,16 @@ const styles = StyleSheet.create({
   deckCopy: { flex: 1, minWidth: 0 },
   deckTitle: { fontSize: 14, lineHeight: 19, fontWeight: '700' },
   deckKind: { fontWeight: '700' },
-  deckMeta: { fontSize: 11, lineHeight: 16, marginTop: 4 },
+  deckMeta: { fontSize: 12, lineHeight: 18, marginTop: 4 },
   addPackRow: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 8, marginTop: 5 },
   addPackIcon: { width: 27, height: 27, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
-  addPackText: { fontSize: 12, fontWeight: '700' },
+  addPackText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   emptyLibrary: { minHeight: 210, borderRadius: 19, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center', padding: 22 },
   emptyLibraryIcon: { width: 48, height: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
   emptyLibraryTitle: { fontSize: 16, fontWeight: '900' },
-  emptyLibraryText: { maxWidth: 280, fontSize: 11, lineHeight: 16, textAlign: 'center', marginTop: 5 },
+  emptyLibraryText: { maxWidth: 280, fontSize: 14, lineHeight: 21, textAlign: 'center', marginTop: 5 },
   emptyLibraryAction: { paddingHorizontal: 16, paddingVertical: 11, marginTop: 6 },
-  emptyLibraryActionText: { fontSize: 12, fontWeight: '900' },
+  emptyLibraryActionText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   emptyLibraryButton: { width: '100%', minHeight: 48, marginTop: 16 },
   flatCard: { shadowOpacity: 0, elevation: 0 },
   modalRoot: { flex: 1, justifyContent: 'flex-end' },
@@ -805,36 +806,36 @@ const styles = StyleSheet.create({
   sortOptionPressed: { opacity: 0.8 },
   sortOptionIcon: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   sortOptionCopy: { flex: 1 },
-  sortOptionTitle: { fontSize: 13, lineHeight: 17, fontWeight: '900' },
-  sortOptionDescription: { fontSize: 10, lineHeight: 14, marginTop: 2 },
+  sortOptionTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  sortOptionDescription: { fontSize: 14, lineHeight: 21, marginTop: 2 },
   radio: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   detailsSheet: { maxHeight: '85%' },
   detailsContent: { gap: 14, paddingTop: 18, paddingBottom: 10 },
   detailsDateRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   detailsHeading: { fontSize: 16, lineHeight: 22, fontWeight: '700', marginTop: 3 },
-  detailsText: { flexShrink: 1, fontSize: 13, lineHeight: 20 },
-  detailsNote: { fontSize: 12, lineHeight: 18, padding: 12, borderRadius: 12 },
+  detailsText: { flexShrink: 1, fontSize: 14, lineHeight: 21 },
+  detailsNote: { fontSize: 14, lineHeight: 21, padding: 12, borderRadius: 12 },
   sheet: { width: '100%', maxWidth: 560, maxHeight: '94%', alignSelf: 'center', borderTopLeftRadius: 27, borderTopRightRadius: 27, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 22, paddingTop: 10, paddingBottom: 16, shadowOffset: { width: 0, height: -8 }, shadowOpacity: 0.18, shadowRadius: 24, elevation: 16 },
   sheetHandle: { width: 42, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 18 },
   sheetHeadingRow: { flexDirection: 'row', alignItems: 'center', gap: 11 },
   sheetIcon: { width: 46, height: 46, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   sheetHeadingCopy: { flex: 1 },
   sheetTitle: { fontSize: 21, fontWeight: '900', letterSpacing: -0.5 },
-  sheetSubtitle: { fontSize: 12, marginTop: 3 },
-  inputLabel: { fontSize: 11, lineHeight: 14, fontWeight: '800', marginTop: 20, marginBottom: 7, marginLeft: 2 },
+  sheetSubtitle: { fontSize: 16, lineHeight: 24, marginTop: 3 },
+  inputLabel: { fontSize: 15, lineHeight: 22, fontWeight: '700', marginTop: 20, marginBottom: 7, marginLeft: 2 },
   inputWrap: { minHeight: 54, borderRadius: radius.md, borderWidth: 1, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 10 },
   input: { flex: 1, minWidth: 0, height: 52, fontSize: 14 },
-  errorText: { fontSize: 11, marginTop: 6, marginLeft: 2 },
+  errorText: { fontSize: 14, lineHeight: 21, marginTop: 6, marginLeft: 2 },
   optionLabel: { marginTop: 16 },
   optionRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   iconOptions: { gap: 8, paddingVertical: 3 },
   iconOption: { width: 70, minHeight: 72, borderRadius: 15, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', gap: 4, padding: 5 },
-  iconOptionLabel: { fontSize: 9, fontWeight: '700' },
+  iconOptionLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700' },
   colorOption: { width: 31, height: 31, borderRadius: 16, borderWidth: 1 },
   previewCard: { minHeight: 65, borderRadius: 16, borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 12, marginTop: 19 },
-  previewTitle: { fontSize: 13, fontWeight: '900' },
-  previewMeta: { fontSize: 10, marginTop: 3 },
+  previewTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  previewMeta: { fontSize: 12, lineHeight: 18, marginTop: 3 },
   createButton: { minHeight: 52, marginTop: 15 },
   cancelButton: { alignItems: 'center', paddingVertical: 12 },
-  cancelText: { fontSize: 12, fontWeight: '800' },
+  cancelText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
 });

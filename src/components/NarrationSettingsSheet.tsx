@@ -132,10 +132,10 @@ export function NarrationSettingsSheet({
   const opacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.72, 1] });
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType={reducedMotion ? 'none' : 'slide'} onRequestClose={onClose}>
       <View style={[styles.modalRoot, { backgroundColor: colors.mode === 'dark' ? 'rgba(0,0,0,0.72)' : 'rgba(17,28,78,0.38)' }]}>
-        <Pressable accessibilityLabel="Close narration settings" onPress={onClose} style={StyleSheet.absoluteFill} />
-        <View style={[styles.sheet, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow, paddingBottom: Math.max(insets.bottom, 18) }]}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Close narration settings" onPress={onClose} style={StyleSheet.absoluteFill} />
+        <View role="dialog" aria-modal accessibilityViewIsModal accessibilityLabel="Narration settings" style={[styles.sheet, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow, paddingBottom: Math.max(insets.bottom, 18) }]}>
           <View style={[styles.handle, { backgroundColor: colors.border }]} />
           <View style={styles.heading}>
             <View style={[styles.headingIcon, { backgroundColor: colors.purpleSoft }]}><Icon name="headphones" size={22} color={colors.purple} /></View>
@@ -143,7 +143,7 @@ export function NarrationSettingsSheet({
               <Text style={[styles.title, { color: colors.text }]}>Narration</Text>
               <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Make StudyBolt sound like you</Text>
             </View>
-            <Pressable accessibilityLabel="Close" hitSlop={10} onPress={onClose} style={styles.close}><Icon name="close" size={22} color={colors.textMuted} /></Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel="Close" hitSlop={10} onPress={onClose} style={styles.close}><Icon name="close" size={22} color={colors.textMuted} /></Pressable>
           </View>
 
           <View style={[styles.previewCard, { backgroundColor: colors.primarySoft }]}>
@@ -162,7 +162,7 @@ export function NarrationSettingsSheet({
             {(['language', 'voice'] as const).map((item) => {
               const active = tab === item;
               return (
-                <Pressable key={item} accessibilityRole="tab" accessibilityState={{ selected: active }} onPress={() => { setTab(item); setSearch(''); }} style={[styles.segment, active && { backgroundColor: colors.card, shadowColor: colors.shadow }]}>
+                <Pressable aria-selected={active} key={item} accessibilityRole="tab" accessibilityState={{ selected: active }} onPress={() => { setTab(item); setSearch(''); }} style={[styles.segment, active && { backgroundColor: colors.card, shadowColor: colors.shadow }]}>
                   <Icon name={item === 'language' ? 'translate' : 'account-voice'} size={16} color={active ? colors.primary : colors.textMuted} />
                   <Text style={[styles.segmentText, { color: active ? colors.primary : colors.textMuted }]}>{item === 'language' ? 'Language' : 'Voice'}</Text>
                 </Pressable>
@@ -244,7 +244,7 @@ function OptionRow({ title, detail, active, color, textColor, mutedColor, border
 }) {
   return (
     <View style={[styles.optionRow, { borderBottomColor: borderColor }]}>
-      <Pressable accessibilityRole="radio" accessibilityState={{ selected: active }} onPress={onSelect} style={styles.optionSelect}>
+      <Pressable aria-checked={active} accessibilityRole="radio" accessibilityState={{ checked: active }} onPress={onSelect} style={styles.optionSelect}>
         <View style={[styles.radio, { borderColor: active ? color : borderColor }]}>{active ? <View style={[styles.radioDot, { backgroundColor: color }]} /> : null}</View>
         <View style={styles.optionCopy}><Text numberOfLines={1} style={[styles.optionTitle, { color: textColor }]}>{title}</Text><Text numberOfLines={1} style={[styles.optionDetail, { color: mutedColor }]}>{detail}</Text></View>
       </Pressable>
@@ -266,35 +266,35 @@ const styles = StyleSheet.create({
   headingIcon: { width: 44, height: 44, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   headingCopy: { flex: 1 },
   title: { fontSize: 19, fontWeight: '900', letterSpacing: -0.4 },
-  subtitle: { fontSize: 10, marginTop: 2 },
-  close: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
+  subtitle: { fontSize: 16, lineHeight: 24, marginTop: 2 },
+  close: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   previewCard: { minHeight: 78, borderRadius: 19, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 11, marginBottom: 13 },
   previewOrb: { width: 44, height: 44, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   previewCopy: { flex: 1, minWidth: 0 },
-  previewLabel: { fontSize: 8, fontWeight: '900', letterSpacing: 0.8 },
-  previewVoice: { fontSize: 13, fontWeight: '800', marginTop: 2 },
-  previewLanguage: { fontSize: 10, marginTop: 2 },
-  previewButton: { width: 38, height: 38, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  previewLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 0.8 },
+  previewVoice: { fontSize: 14, lineHeight: 21, fontWeight: '700', marginTop: 2 },
+  previewLanguage: { fontSize: 14, lineHeight: 21, marginTop: 2 },
+  previewButton: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   segmented: { minHeight: 44, borderRadius: 15, padding: 4, flexDirection: 'row', gap: 4, marginBottom: 11 },
   segment: { flex: 1, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
-  segmentText: { fontSize: 11, fontWeight: '800' },
-  search: { minHeight: 43, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 13, fontSize: 12, marginBottom: 10 },
+  segmentText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  search: { minHeight: 43, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 13, fontSize: 14, lineHeight: 21, marginBottom: 10 },
   list: { flexGrow: 0, flexShrink: 1, minHeight: 115 },
   listContent: { paddingBottom: 5 },
   loading: { marginVertical: 22 },
-  listLabel: { fontSize: 8, fontWeight: '900', letterSpacing: 0.85 },
+  listLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 0.85 },
   voiceListHeading: { minHeight: 30, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   changeLanguage: { flexDirection: 'row', alignItems: 'center', gap: 1 },
-  changeLanguageText: { fontSize: 10, fontWeight: '800' },
+  changeLanguageText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   optionRow: { minHeight: 57, flexDirection: 'row', alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth },
   optionSelect: { flex: 1, minWidth: 0, minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 11 },
   radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   radioDot: { width: 10, height: 10, borderRadius: 5 },
   optionCopy: { flex: 1, minWidth: 0 },
-  optionTitle: { fontSize: 12, fontWeight: '800' },
-  optionDetail: { fontSize: 9, marginTop: 3 },
-  rowPreview: { width: 32, height: 32, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginLeft: 7 },
+  optionTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  optionDetail: { fontSize: 14, lineHeight: 21, marginTop: 3 },
+  rowPreview: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginLeft: 7 },
   emptyState: { minHeight: 76, flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 7 },
-  emptyText: { flex: 1, fontSize: 10, lineHeight: 15 },
-  footnote: { fontSize: 9, lineHeight: 14, paddingTop: 10, paddingBottom: 4 },
+  emptyText: { flex: 1, fontSize: 14, lineHeight: 21 },
+  footnote: { fontSize: 14, lineHeight: 21, paddingTop: 10, paddingBottom: 4 },
 });

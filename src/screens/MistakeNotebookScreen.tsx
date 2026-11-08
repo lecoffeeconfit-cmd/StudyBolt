@@ -117,7 +117,7 @@ function MistakeCard({
 function Action({ icon, label, active, onPress }: { icon: IconName; label: string; active: boolean; onPress: () => void }) {
   const { colors } = useStudyBolt();
   return (
-    <Pressable onPress={onPress} style={[styles.action, { backgroundColor: active ? colors.primarySoft : colors.cardStrong, borderColor: active ? colors.primary : colors.border }]}>
+    <Pressable accessibilityRole="button" onPress={onPress} style={[styles.action, { backgroundColor: active ? colors.primarySoft : colors.cardStrong, borderColor: active ? colors.primary : colors.border }]}>
       <Icon name={icon} size={16} color={active ? colors.primary : colors.textMuted} />
       <Text style={[styles.actionText, { color: active ? colors.primary : colors.textSecondary }]}>{label}</Text>
     </Pressable>
@@ -138,31 +138,31 @@ const styles = StyleSheet.create({
   hero: { borderRadius: 20, padding: 17, flexDirection: 'row', alignItems: 'center', gap: 13 },
   heroIcon: { width: 52, height: 52, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   heroTitle: { fontSize: 16, fontWeight: '900' },
-  heroText: { fontSize: 10, lineHeight: 15, marginTop: 4 },
+  heroText: { fontSize: 14, lineHeight: 21, marginTop: 4 },
   summaryRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
   summary: { flex: 1, borderWidth: StyleSheet.hairlineWidth, borderRadius: 15, paddingVertical: 12, alignItems: 'center' },
   summaryValue: { fontSize: 20, fontWeight: '900' },
-  summaryLabel: { fontSize: 8, marginTop: 2, textAlign: 'center' },
+  summaryLabel: { fontSize: 12, lineHeight: 18, marginTop: 2, textAlign: 'center' },
   headingRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 25, marginBottom: 12 },
   heading: { fontSize: 19, fontWeight: '900' },
-  headingHint: { fontSize: 9, marginTop: 3 },
+  headingHint: { fontSize: 16, lineHeight: 24, marginTop: 3 },
   list: { gap: 11 },
   mistakeCard: { padding: 17 },
   cardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   missBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 8, paddingVertical: 6, borderRadius: 9 },
-  missText: { fontSize: 9, fontWeight: '900' },
-  course: { fontSize: 8, fontWeight: '700', marginTop: 13 },
+  missText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  course: { fontSize: 14, lineHeight: 21, fontWeight: '700', marginTop: 13 },
   prompt: { fontSize: 16, lineHeight: 22, fontWeight: '800', marginTop: 6 },
   actions: { flexDirection: 'row', gap: 7, marginTop: 15 },
   action: { flex: 1, minHeight: 42, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center', gap: 2 },
-  actionText: { fontSize: 8, fontWeight: '800' },
+  actionText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   detail: { borderRadius: 13, padding: 12, marginTop: 10 },
   detailHeading: { flexDirection: 'row', gap: 6, alignItems: 'center' },
-  detailLabel: { fontSize: 8, fontWeight: '900', letterSpacing: 0.7 },
-  detailText: { fontSize: 11, lineHeight: 16, marginTop: 6 },
+  detailLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 0.7 },
+  detailText: { fontSize: 14, lineHeight: 21, marginTop: 6 },
   quizButton: { minHeight: 47, marginTop: 11 },
   empty: { alignItems: 'center', paddingVertical: 38 },
   emptyIcon: { width: 62, height: 62, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   emptyTitle: { fontSize: 17, fontWeight: '900', marginTop: 14 },
-  emptyText: { fontSize: 11, lineHeight: 16, textAlign: 'center', maxWidth: 270, marginTop: 5 },
+  emptyText: { fontSize: 14, lineHeight: 21, textAlign: 'center', maxWidth: 270, marginTop: 5 },
 });

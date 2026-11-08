@@ -1,3 +1,4 @@
+import { useReducedMotion } from '../hooks/useReducedMotion';
 import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Animated, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
@@ -9,6 +10,7 @@ import { radius } from '../theme';
 import { checkAppleSubscriptionForDeletion, openAppleSubscriptionManagement } from '../services/subscriptions';
 
 export function AccountScreen({ onBack, onSignedOut, onDeleted }: { onBack: () => void; onSignedOut: () => void; onDeleted: () => void }) {
+  const reducedMotion = useReducedMotion();
   const { colors, resetLocalData } = useStudyBolt();
   const { user, changeEmail, forgotPassword, signOut, deleteAccount } = useAuth();
   const [email, setEmail] = useState(user?.email ?? '');
@@ -22,13 +24,14 @@ export function AccountScreen({ onBack, onSignedOut, onDeleted }: { onBack: () =
   const entrance = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    if (reducedMotion) { entrance.setValue(1); return; }
     Animated.spring(entrance, {
       toValue: 1,
       damping: 18,
       stiffness: 150,
       useNativeDriver: Platform.OS !== 'web',
     }).start();
-  }, [entrance]);
+  }, [entrance, reducedMotion]);
 
   const saveEmail = async () => {
     const cleanEmail = email.trim().toLowerCase();
@@ -152,14 +155,14 @@ export function AccountScreen({ onBack, onSignedOut, onDeleted }: { onBack: () =
                 <Text style={[styles.dangerCopy, { color: colors.textSecondary }]}>Permanently removes your account and synced data. This cannot be undone.</Text>
               </View>
             </View>
-            <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busy) }} disabled={Boolean(busy)} onPress={() => void confirmDeletion()} style={[styles.deleteButton, { borderColor: colors.danger }]}>
+            <Pressable aria-disabled={Boolean(busy)} accessibilityRole="button" accessibilityState={{ disabled: Boolean(busy) }} disabled={Boolean(busy)} onPress={() => void confirmDeletion()} style={[styles.deleteButton, { borderColor: colors.danger }]}>
               <Text style={[styles.deleteLabel, { color: colors.danger }]}>Delete my account</Text>
             </Pressable>
           </Card>
         </Animated.View>
       </Screen>
 
-      <Modal visible={confirmingDelete} transparent animationType="fade" onRequestClose={() => { if (busy !== 'delete') setConfirmingDelete(false); }}>
+      <Modal visible={confirmingDelete} transparent animationType={reducedMotion ? 'none' : 'fade'} onRequestClose={() => { if (busy !== 'delete') setConfirmingDelete(false); }}>
         <View style={styles.modalBackdrop}>
           <View accessibilityViewIsModal style={[styles.modalCard, { maxHeight: '90%', backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow }]}>
             <ScrollView style={{ width: '100%' }} contentContainerStyle={{ alignItems: 'center' }}>
@@ -186,7 +189,7 @@ export function AccountScreen({ onBack, onSignedOut, onDeleted }: { onBack: () =
         </View>
       </Modal>
 
-      <Modal visible={confirmingSignOut} transparent animationType="fade" onRequestClose={() => setConfirmingSignOut(false)}>
+      <Modal visible={confirmingSignOut} transparent animationType={reducedMotion ? 'none' : 'fade'} onRequestClose={() => setConfirmingSignOut(false)}>
         <View style={styles.modalBackdrop}>
           <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow }]}>
             <View style={[styles.modalIcon, { backgroundColor: colors.primarySoft }]}><Icon name="logout-variant" size={30} color={colors.primary} /></View>
@@ -229,35 +232,35 @@ const styles = StyleSheet.create({
   avatar: { width: 50, height: 50, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   avatarText: { fontSize: 20, fontWeight: '900' },
   identityTitle: { fontSize: 14, fontWeight: '900' },
-  identityEmail: { fontSize: 11, marginTop: 3 },
+  identityEmail: { fontSize: 14, lineHeight: 21, marginTop: 3 },
   securePill: { borderRadius: radius.pill, paddingHorizontal: 9, paddingVertical: 6, flexDirection: 'row', gap: 4, alignItems: 'center' },
-  secureText: { fontSize: 9, fontWeight: '900' },
+  secureText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   notice: { borderRadius: 14, marginTop: 10, paddingHorizontal: 13, paddingVertical: 11, flexDirection: 'row', alignItems: 'center', gap: 9 },
-  noticeText: { flex: 1, fontSize: 11, lineHeight: 16, fontWeight: '700' },
+  noticeText: { flex: 1, fontSize: 14, lineHeight: 21, fontWeight: '700' },
   formCard: { gap: 12 },
-  helper: { fontSize: 10, lineHeight: 15 },
+  helper: { fontSize: 14, lineHeight: 21 },
   cardButton: { minHeight: 48 },
   actionCard: { paddingVertical: 2 },
   accountAction: { minHeight: 67, flexDirection: 'row', alignItems: 'center', gap: 11 },
   actionIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  actionTitle: { fontSize: 13, fontWeight: '800' },
-  actionDetail: { fontSize: 10, marginTop: 3 },
+  actionTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  actionDetail: { fontSize: 14, lineHeight: 21, marginTop: 3 },
   separator: { height: StyleSheet.hairlineWidth },
   dangerCard: { marginBottom: 10 },
   dangerTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 11 },
   dangerIcon: { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   dangerTitle: { fontSize: 14, fontWeight: '900' },
-  dangerCopy: { fontSize: 10, lineHeight: 15, marginTop: 3 },
+  dangerCopy: { fontSize: 14, lineHeight: 21, marginTop: 3 },
   deleteButton: { minHeight: 46, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center', marginTop: 14 },
-  deleteLabel: { fontSize: 13, fontWeight: '900' },
+  deleteLabel: { fontSize: 13, lineHeight: 19, fontWeight: '700' },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(3, 7, 20, 0.62)', paddingHorizontal: 24, alignItems: 'center', justifyContent: 'center' },
   modalCard: { width: '100%', maxWidth: 430, borderRadius: radius.lg, borderWidth: StyleSheet.hairlineWidth, padding: 22, alignItems: 'center', shadowOffset: { width: 0, height: 15 }, shadowOpacity: 0.24, shadowRadius: 30, elevation: 12 },
   modalIcon: { width: 60, height: 60, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   modalTitle: { fontSize: 21, fontWeight: '900', letterSpacing: -0.5, marginTop: 15 },
-  modalCopy: { fontSize: 12, lineHeight: 18, textAlign: 'center', marginTop: 7 },
+  modalCopy: { fontSize: 14, lineHeight: 21, textAlign: 'center', marginTop: 7 },
   modalDelete: { width: '100%', minHeight: 50, borderRadius: 15, alignItems: 'center', justifyContent: 'center', marginTop: 20 },
   modalSignOut: { width: '100%', minHeight: 50, borderRadius: 15, alignItems: 'center', justifyContent: 'center', marginTop: 20 },
   modalDeleteText: { fontSize: 14, fontWeight: '900' },
   modalCancel: { minHeight: 42, justifyContent: 'center', marginTop: 4 },
-  modalCancelText: { fontSize: 12, fontWeight: '800' },
+  modalCancelText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
 });

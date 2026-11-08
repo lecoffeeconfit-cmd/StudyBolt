@@ -1,4 +1,4 @@
-import { ColorSchemeName } from 'react-native';
+import type { ColorSchemeName } from 'react-native';
 
 import type { ThemePreference } from './models';
 
@@ -38,8 +38,8 @@ const light: AppColors = {
   cardStrong: '#F0F5FF',
   text: '#111C4E',
   textSecondary: '#536080',
-  textMuted: '#8C96AF',
-  primary: '#1678FF',
+  textMuted: '#5E6D87',
+  primary: '#1268D9',
   primarySoft: '#E9F2FF',
   primaryText: '#FFFFFF',
   gold: '#C47C00',
@@ -47,13 +47,13 @@ const light: AppColors = {
   goldSoft: '#FFF4C2',
   goldText: '#8A5A00',
   onGold: '#382500',
-  mint: '#19B88A',
+  mint: '#127E63',
   mintSoft: '#E3F8F2',
   border: '#E4EAF4',
   shadow: '#243B76',
-  danger: '#EB5A68',
-  warning: '#F5A524',
-  purple: '#7D5CFF',
+  danger: '#BE364D',
+  warning: '#966100',
+  purple: '#6846CF',
   purpleSoft: '#EFEAFF',
   tabBar: '#FFFFFF',
 };
@@ -110,3 +110,15 @@ export const radius = {
   xl: 30,
   pill: 999,
 };
+
+/** Shared text roles; keep platform fonts and system text scaling. */
+export const typography = {
+  pageTitle: { fontSize: 28, lineHeight: 36, fontWeight: '800', letterSpacing: -0.65 },
+  sectionTitle: { fontSize: 18, lineHeight: 25, fontWeight: '700', letterSpacing: -0.2 },
+  cardTitle: { fontSize: 16, lineHeight: 23, fontWeight: '700' },
+  body: { fontSize: 15, lineHeight: 23 },
+  secondary: { fontSize: 14, lineHeight: 21 },
+  caption: { fontSize: 12, lineHeight: 18 },
+  control: { fontSize: 15, lineHeight: 22, fontWeight: '600' },
+  metric: { fontSize: 28, lineHeight: 36, fontWeight: '800', fontVariant: ['tabular-nums'] },
+} as const;

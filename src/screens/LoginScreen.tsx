@@ -84,7 +84,7 @@ export function LoginScreen({
     const animation = Animated.loop(Animated.sequence([
       Animated.timing(bob, { toValue: 1, duration: 2400, easing: Easing.inOut(Easing.sin), useNativeDriver: Platform.OS !== 'web' }),
       Animated.timing(bob, { toValue: 0, duration: 2400, easing: Easing.inOut(Easing.sin), useNativeDriver: Platform.OS !== 'web' }),
-    ]));
+    ]), { iterations: 2 });
     animation.start();
     return () => animation.stop();
   }, [bob, reducedMotion]);
@@ -184,7 +184,7 @@ export function LoginScreen({
       >
         <View style={styles.topBar}>
           <BoltLogo compact />
-          <Pressable accessibilityRole="button" onPress={onContinueAsGuest} hitSlop={9} style={styles.closeButton}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Close sign-in and continue as guest" onPress={onContinueAsGuest} hitSlop={9} style={styles.closeButton}>
             <Icon name="close" size={22} color={colors.textSecondary} />
           </Pressable>
         </View>
@@ -353,7 +353,7 @@ function ProviderButton({ label, icon, onPress, loading }: { label: string; icon
 const styles = StyleSheet.create({
   screen: { flexGrow: 1, width: '100%', maxWidth: 480, alignSelf: 'center', paddingHorizontal: 20 },
   topBar: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  closeButton: { width: 42, height: 42, alignItems: 'flex-end', justifyContent: 'center' },
+  closeButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   hero: { height: 156, borderRadius: radius.xl, borderWidth: StyleSheet.hairlineWidth, marginTop: 12, marginBottom: 24, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   heroGlow: { position: 'absolute', width: 174, height: 174, borderRadius: 87 },
   heroGlowBlue: { top: -107, left: -55 },
@@ -375,24 +375,24 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: 14, lineHeight: 20, marginTop: 5 },
   notice: { minHeight: 48, borderRadius: 14, marginTop: 16, paddingHorizontal: 13, paddingVertical: 10, flexDirection: 'row', alignItems: 'flex-start', gap: 9 },
   noticeBody: { flex: 1, gap: 8 },
-  noticeText: { fontSize: 11, lineHeight: 16, fontWeight: '700' },
+  noticeText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   confirmationHelp: { gap: 4 },
   resendButton: { alignSelf: 'flex-start', minHeight: 30, flexDirection: 'row', alignItems: 'center', gap: 5 },
-  resendText: { fontSize: 12, lineHeight: 16, fontWeight: '900' },
-  folderHint: { fontSize: 10, lineHeight: 14 },
+  resendText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  folderHint: { fontSize: 14, lineHeight: 21 },
   providers: { gap: 9, marginTop: 19 },
   providerButton: { minHeight: 52, borderRadius: radius.md, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
   providerLabel: { fontSize: 14, fontWeight: '800' },
   divider: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 18 },
   dividerLine: { flex: 1, height: StyleSheet.hairlineWidth },
-  dividerText: { fontSize: 9, fontWeight: '900', letterSpacing: 0.8 },
+  dividerText: { fontSize: 14, lineHeight: 21, fontWeight: '700', letterSpacing: 0.8 },
   fields: { gap: 13 },
   forgotButton: { alignSelf: 'flex-end', minHeight: 35, justifyContent: 'center' },
-  forgotText: { fontSize: 12, fontWeight: '800' },
+  forgotText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   submit: { marginTop: 8 },
   switchRow: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', gap: 5, marginTop: 19 },
-  switchPrompt: { fontSize: 12 },
-  switchAction: { fontSize: 12, fontWeight: '900' },
+  switchPrompt: { fontSize: 14, lineHeight: 21 },
+  switchAction: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   guestButton: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, marginTop: 5 },
-  guestText: { fontSize: 11, fontWeight: '700' },
+  guestText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
 });

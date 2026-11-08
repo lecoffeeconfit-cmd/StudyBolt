@@ -1,3 +1,5 @@
+import { useReducedMotion } from '../hooks/useReducedMotion';
+import { typography } from '../theme';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Platform, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 
@@ -70,6 +72,7 @@ function formatPlanDayDate(value?: string): string | null {
 }
 
 export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: string; onFocusApplied?: () => void }) {
+  const reducedMotion = useReducedMotion();
   const { colors, recordStudyEvent, state, setPlan, setFocusMinutes } = useStudyBolt();
   const [notice, setNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
   const [examDate, setExamDate] = useState(() => toDateInputValue(state.plan.targetDate));
@@ -85,12 +88,13 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
     : state.decks.filter((deck) => deck.courseId === scope.id), [state.decks]);
 
   useEffect(() => {
+    if (reducedMotion) { entrance.setValue(1); return; }
     Animated.timing(entrance, {
       toValue: 1,
       duration: 350,
       useNativeDriver: Platform.OS !== 'web',
     }).start();
-  }, [entrance]);
+  }, [entrance, reducedMotion]);
 
   useEffect(() => {
     const adjusted = rebalanceMissedStudyPlan(state.plan);
@@ -123,7 +127,7 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
 
   const selectedDecks = useMemo(() => decksForScope(state.plan.scope), [decksForScope, state.plan.scope]);
   const subject = state.plan.scope.type === 'deck'
-    ? selectedDecks[0]?.title ?? 'your PowerPoint'
+    ? selectedDecks[0]?.title ?? 'your Study Pack'
     : state.classes.find((item) => item.id === state.plan.scope.id)?.name ?? selectedDecks[0]?.courseName ?? 'your class';
   const estimates = useMemo(
     () => estimateStudyMinutesByModality(selectedDecks, state.quizQuestionCount),
@@ -257,9 +261,9 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
         <Card style={[styles.planSummary, styles.flatCard, { backgroundColor: colors.mode === 'dark' ? colors.primarySoft : '#EEF4FF' }]}>
           <View style={styles.summaryTop}>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.summaryEyebrow, { color: colors.mode === 'dark' ? '#8FB5EE' : colors.primary }]}>YOUR ROUTE</Text>
+              <Text style={[styles.summaryEyebrow, { color: colors.mode === 'dark' ? '#8FB5EE' : colors.primary }]}>{selectedDecks.length > 0 && selectedDecks.every((deck) => deck.fileType === 'demo') ? 'SAMPLE ROUTE' : 'YOUR ROUTE'}</Text>
               <Text style={[styles.summaryTitle, { color: colors.mode === 'dark' ? '#EDF1F5' : colors.text }]}>{subject}</Text>
-              <Text style={[styles.summaryDetail, { color: colors.mode === 'dark' ? '#C1CAD3' : colors.textSecondary }]}>{selectedDecks.length} PowerPoint{selectedDecks.length === 1 ? '' : 's'} · {remainingPlanDays === null ? 'set a test date' : `${remainingPlanDays}-day plan`}</Text>
+              <Text style={[styles.summaryDetail, { color: colors.mode === 'dark' ? '#C1CAD3' : colors.textSecondary }]}>{selectedDecks.length} Study Pack{selectedDecks.length === 1 ? '' : 's'} · {remainingPlanDays === null ? 'set a test date' : `${remainingPlanDays}-day plan`}</Text>
             </View>
             <View style={[styles.timeBubble, { backgroundColor: colors.mode === 'dark' ? '#FFFFFF14' : colors.card }]}>
               <Text style={[styles.timeValue, { color: colors.mode === 'dark' ? '#EDF1F5' : colors.text }]}>{formatMinutes(totalMinutes)}</Text>
@@ -268,7 +272,7 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
           </View>
           <View style={styles.summaryMetrics}>
             <Text style={[styles.summaryMetric, { color: colors.mode === 'dark' ? '#C6CED6' : colors.textSecondary }]}>≈ {formatMinutes(Math.ceil(totalMinutes / activeDayCount))}/study day</Text>
-            <Text style={[styles.summaryMetric, { color: colors.mode === 'dark' ? '#C6CED6' : colors.textSecondary }]}>{mastery}% mastery</Text>
+            <Text style={[styles.summaryMetric, { color: colors.mode === 'dark' ? '#C6CED6' : colors.textSecondary }]}>{mastery}% study estimate</Text>
           </View>
           <ProgressBar progress={planProgress} color={colors.mint} />
           <Text style={[styles.progressLabel, { color: colors.mode === 'dark' ? '#AAB6C2' : colors.textMuted }]}>{planProgress}% complete</Text>
@@ -284,9 +288,9 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
           </View>
           <View style={[styles.examSelection, { backgroundColor: colors.mode === 'dark' ? '#FFFFFF0C' : '#FFFFFF' }]}>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.selectionEyebrow, { color: colors.textMuted }]}>{state.plan.scope.type === 'deck' ? 'ONE POWERPOINT' : 'ENTIRE CLASS'}</Text>
+              <Text style={[styles.selectionEyebrow, { color: colors.textMuted }]}>{state.plan.scope.type === 'deck' ? 'ONE STUDY PACK' : 'ENTIRE CLASS'}</Text>
               <Text numberOfLines={1} style={[styles.selectionTitle, { color: colors.text }]}>{subject}</Text>
-              <Text style={[styles.selectionDetail, { color: colors.textMuted }]}>{selectedDecks.length} selected PowerPoint{selectedDecks.length === 1 ? '' : 's'}</Text>
+              <Text style={[styles.selectionDetail, { color: colors.textMuted }]}>{selectedDecks.length} selected Study Pack{selectedDecks.length === 1 ? '' : 's'}</Text>
             </View>
             <Pressable
               accessibilityRole="button"
@@ -347,7 +351,7 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
           ) : null}
         </Card>
 
-        <Pressable
+        <Pressable aria-expanded={editingPlan}
           accessibilityRole="button"
           accessibilityState={{ expanded: editingPlan }}
           onPress={() => setEditingPlan((value) => !value)}
@@ -365,9 +369,9 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
           {(['deck', 'course'] as const).map((type) => {
             const selected = state.plan.scope.type === type;
             return (
-              <Pressable key={type} onPress={() => chooseScopeType(type)} style={[styles.segment, selected && { backgroundColor: colors.card }]}>
+              <Pressable accessibilityRole="radio" aria-checked={selected} accessibilityState={{ checked: selected }} key={type} onPress={() => chooseScopeType(type)} style={[styles.segment, selected && { backgroundColor: colors.card }]}>
                 <Icon name={type === 'deck' ? 'file-powerpoint-box' : 'bookshelf'} size={18} color={selected ? colors.primary : colors.textMuted} />
-                <Text style={[styles.segmentText, { color: selected ? colors.text : colors.textMuted }]}>{type === 'deck' ? 'One PowerPoint' : 'Entire class'}</Text>
+                <Text style={[styles.segmentText, { color: selected ? colors.text : colors.textMuted }]}>{type === 'deck' ? 'One Study Pack' : 'Entire class'}</Text>
               </Pressable>
             );
           })}
@@ -377,10 +381,10 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
           {(state.plan.scope.type === 'deck' ? state.decks : state.classes).map((item) => {
             const id = item.id;
             const label = 'title' in item ? item.title : item.name;
-            const detail = 'pageCount' in item ? `${item.courseName} · ${item.pageCount} slides` : `${state.decks.filter((deck) => deck.courseId === item.id).length} PowerPoints`;
+            const detail = 'pageCount' in item ? `${item.courseName} · ${item.pageCount} slides` : `${state.decks.filter((deck) => deck.courseId === item.id).length} Study Packs`;
             const selected = state.plan.scope.id === id;
             return (
-              <Pressable key={id} onPress={() => applyPlan({ type: state.plan.scope.type, id })} style={[styles.scopeChoice, { backgroundColor: selected ? colors.primarySoft : colors.card, borderColor: selected ? colors.primary : colors.border }]}>
+              <Pressable accessibilityRole="radio" aria-checked={selected} accessibilityState={{ checked: selected }} key={id} onPress={() => applyPlan({ type: state.plan.scope.type, id })} style={[styles.scopeChoice, { backgroundColor: selected ? colors.primarySoft : colors.card, borderColor: selected ? colors.primary : colors.border }]}>
                 <SubjectIcon subject={'courseName' in item ? item.courseName : item.name} emoji={item.emoji} size={40} />
                 <View style={{ flex: 1 }}>
                   <Text numberOfLines={1} style={[styles.scopeTitle, { color: colors.text }]}>{label}</Text>
@@ -397,7 +401,7 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
           {DURATIONS.map((duration) => {
             const selected = state.plan.durationDays === duration.days;
             return (
-              <Pressable key={duration.days} onPress={() => applyPlan(state.plan.scope, duration.days)} style={[styles.duration, { backgroundColor: selected ? colors.primary : colors.card, borderColor: selected ? colors.primary : colors.border }]}>
+              <Pressable accessibilityRole="radio" aria-checked={selected} accessibilityState={{ checked: selected }} key={duration.days} onPress={() => applyPlan(state.plan.scope, duration.days)} style={[styles.duration, { backgroundColor: selected ? colors.primary : colors.card, borderColor: selected ? colors.primary : colors.border }]}>
                 <Text style={[styles.durationLabel, { color: selected ? colors.primaryText : colors.text }]}>{duration.label}</Text>
                 <Text style={[styles.durationDetail, { color: selected ? colors.primaryText : colors.textMuted, opacity: selected ? 0.72 : 1 }]}>{duration.detail}</Text>
               </Pressable>
@@ -417,7 +421,7 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
           {RECOMMENDED_MODALITIES.map((modality, index) => {
             const selected = state.plan.modalities.includes(modality);
             return (
-              <Pressable key={modality} onPress={() => toggleModality(modality)} style={[styles.modality, { backgroundColor: colors.card, borderColor: selected ? colors.primary : colors.border }]}>
+              <Pressable accessibilityRole="checkbox" aria-checked={selected} accessibilityState={{ checked: selected }} key={modality} onPress={() => toggleModality(modality)} style={[styles.modality, { backgroundColor: colors.card, borderColor: selected ? colors.primary : colors.border }]}>
                 <View style={[styles.modalityOrder, { backgroundColor: selected ? colors.primarySoft : colors.cardStrong }]}>
                   <Text style={[styles.modalityOrderText, { color: selected ? colors.primary : colors.textMuted }]}>{index + 1}</Text>
                 </View>
@@ -455,7 +459,7 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
                 {day.blocks.length ? (
                   <View style={styles.blockList}>
                     {day.blocks.map((block) => (
-                      <Pressable key={block.id} onPress={() => toggleBlock(day.id, block.id)} style={[styles.block, { backgroundColor: block.complete ? colors.mintSoft : colors.cardStrong }]}>
+                      <Pressable accessibilityRole="checkbox" aria-checked={block.complete} accessibilityState={{ checked: block.complete }} key={block.id} onPress={() => toggleBlock(day.id, block.id)} style={[styles.block, { backgroundColor: block.complete ? colors.mintSoft : colors.cardStrong }]}>
                         <Icon name={block.complete ? 'check-circle' : MODALITY_ICONS[block.modality]} size={17} color={block.complete ? colors.mint : colors.primary} />
                         <Text style={[styles.blockLabel, { color: block.complete ? colors.textMuted : colors.textSecondary, textDecorationLine: block.complete ? 'line-through' : 'none' }]}>{block.label}</Text>
                         <Text style={[styles.blockMinutes, { color: colors.textMuted }]}>{block.minutes} min</Text>
@@ -488,7 +492,7 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
           </View>
         ) : null}
 
-        <Pressable
+        <Pressable aria-expanded={showTimer}
           accessibilityRole="button"
           accessibilityState={{ expanded: showTimer }}
           onPress={() => setShowTimer((value) => !value)}
@@ -541,7 +545,7 @@ function FocusTimer({ focusMinutes, onRecord }: { focusMinutes: number; onRecord
     <Card style={[styles.timerCard, styles.flatCard, { backgroundColor: colors.purpleSoft }]}>
       <View style={[styles.timerModes, { backgroundColor: colors.mode === 'dark' ? '#18202A' : colors.card }]}>
         {(['focus', 'break'] as const).map((item) => (
-          <Pressable key={item} onPress={() => switchMode(item)} style={[styles.timerMode, mode === item && { backgroundColor: colors.purple }]}>
+          <Pressable accessibilityRole="button" key={item} onPress={() => switchMode(item)} style={[styles.timerMode, mode === item && { backgroundColor: colors.purple }]}>
             <Text style={[styles.timerModeText, { color: mode === item ? colors.primaryText : colors.textSecondary }]}>{item === 'focus' ? 'Focus' : 'Short Break'}</Text>
           </Pressable>
         ))}
@@ -570,67 +574,67 @@ function formatMinutes(minutes: number): string {
 }
 
 const styles = StyleSheet.create({
-  title: { fontSize: 28, lineHeight: 33, fontWeight: '900', letterSpacing: -0.9, marginTop: 13 },
-  subtitle: { fontSize: 13, lineHeight: 18, marginTop: 4 },
+  title: { ...typography.pageTitle, marginTop: 13 },
+  subtitle: { fontSize: 16, lineHeight: 24, marginTop: 4 },
   planControls: { marginTop: 2 },
   editPlanButton: { minHeight: 48, borderRadius: 14, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 10 },
-  editPlanText: { flex: 1, fontSize: 12, fontWeight: '800' },
+  editPlanText: { flex: 1, fontSize: 14, lineHeight: 21, fontWeight: '700' },
   controlPressed: { opacity: 0.76, transform: [{ scale: 0.99 }] },
   segmented: { flexDirection: 'row', borderRadius: 16, padding: 4, gap: 4 },
   segment: { flex: 1, minHeight: 44, borderRadius: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
-  segmentText: { fontSize: 12, fontWeight: '800' },
+  segmentText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   choiceList: { gap: 8, marginTop: 10 },
   scopeChoice: { minHeight: 62, borderRadius: 16, borderWidth: 1, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 11 },
-  scopeTitle: { fontSize: 13, fontWeight: '800' },
-  scopeDetail: { fontSize: 10, marginTop: 3 },
+  scopeTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  scopeDetail: { fontSize: 14, lineHeight: 21, marginTop: 3 },
   examModeCard: { padding: 15 },
   examCard: { marginTop: 15, borderWidth: 1, shadowOpacity: 0, elevation: 0 },
   examModeHeading: { flexDirection: 'row', alignItems: 'center', gap: 11 },
   examModeIcon: { width: 43, height: 43, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   examModeTitle: { fontSize: 14, fontWeight: '900' },
-  examModeText: { fontSize: 11, lineHeight: 16, marginTop: 4 },
+  examModeText: { fontSize: 14, lineHeight: 21, marginTop: 4 },
   examSelection: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14, paddingHorizontal: 11, paddingVertical: 9, marginTop: 14 },
-  selectionEyebrow: { fontSize: 8, fontWeight: '900', letterSpacing: 0.8 },
-  selectionTitle: { fontSize: 12, fontWeight: '800', marginTop: 3 },
-  selectionDetail: { fontSize: 9, marginTop: 2 },
-  changeSelection: { minHeight: 34, borderRadius: 10, paddingHorizontal: 9, flexDirection: 'row', alignItems: 'center', gap: 2 },
-  changeSelectionText: { fontSize: 10, fontWeight: '800' },
-  dateFieldLabel: { fontSize: 9, fontWeight: '900', letterSpacing: 0.8, marginTop: 14 },
-  examNameInput: { minHeight: 44, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, fontSize: 12, marginTop: 6 },
+  selectionEyebrow: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 0.8 },
+  selectionTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700', marginTop: 3 },
+  selectionDetail: { fontSize: 14, lineHeight: 21, marginTop: 2 },
+  changeSelection: { minHeight: 44, borderRadius: 10, paddingHorizontal: 9, flexDirection: 'row', alignItems: 'center', gap: 2 },
+  changeSelectionText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  dateFieldLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 0.8, marginTop: 14 },
+  examNameInput: { minHeight: 44, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, fontSize: 15, lineHeight: 22, marginTop: 6 },
   examDateRow: { flexDirection: 'row', gap: 8, marginTop: 6 },
   dateInputWrap: { flex: 1, minWidth: 0, minHeight: 46, borderWidth: 1, borderRadius: 12, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  examDateInput: { flex: 1, minWidth: 0, height: 42, paddingHorizontal: 0, fontSize: 12, fontWeight: '700' },
+  examDateInput: { flex: 1, minWidth: 0, height: 42, paddingHorizontal: 0, fontSize: 15, lineHeight: 22, fontWeight: '700' },
   examDateButton: { minHeight: 46, minWidth: 96, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 11 },
-  examDateButtonText: { fontSize: 10, fontWeight: '900' },
-  dateHelper: { fontSize: 10, lineHeight: 14, marginTop: 7 },
+  examDateButtonText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  dateHelper: { fontSize: 14, lineHeight: 21, marginTop: 7 },
   examNotice: { marginTop: 10, borderRadius: 12, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 7 },
-  examNoticeText: { flex: 1, fontSize: 10, lineHeight: 14 },
-  quickDeadlineLabel: { fontSize: 8, fontWeight: '900', letterSpacing: 0.9, marginTop: 15, marginBottom: 8 },
+  examNoticeText: { flex: 1, fontSize: 14, lineHeight: 21 },
+  quickDeadlineLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 0.9, marginTop: 15, marginBottom: 8 },
   durationGrid: { flexDirection: 'row', gap: 7 },
   duration: { flex: 1, minHeight: 58, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
-  durationLabel: { fontSize: 13, fontWeight: '900' },
-  durationDetail: { fontSize: 9, marginTop: 3 },
+  durationLabel: { fontSize: 13, lineHeight: 19, fontWeight: '700' },
+  durationDetail: { fontSize: 14, lineHeight: 21, marginTop: 3 },
   recommendation: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12 },
-  recommendationTitle: { fontSize: 12, fontWeight: '800' },
-  recommendationText: { fontSize: 10, lineHeight: 15, marginTop: 2 },
+  recommendationTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  recommendationText: { fontSize: 14, lineHeight: 21, marginTop: 2 },
   modalityList: { gap: 8, marginTop: 9 },
   modality: { minHeight: 60, borderRadius: 15, borderWidth: 1, paddingHorizontal: 11, flexDirection: 'row', alignItems: 'center', gap: 9 },
   modalityOrder: { width: 25, height: 25, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  modalityOrderText: { fontSize: 10, fontWeight: '900' },
-  modalityTitle: { fontSize: 12, fontWeight: '800' },
-  modalityDetail: { fontSize: 9, marginTop: 2 },
-  modalityMinutes: { fontSize: 10, fontWeight: '800' },
+  modalityOrderText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  modalityTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  modalityDetail: { fontSize: 14, lineHeight: 21, marginTop: 2 },
+  modalityMinutes: { fontSize: 12, lineHeight: 18, fontWeight: '700' },
   planSummary: { marginTop: 16, padding: 17 },
   summaryTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  summaryEyebrow: { color: '#8FB5EE', fontSize: 9, fontWeight: '900', letterSpacing: 1.2 },
+  summaryEyebrow: { color: '#8FB5EE', fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 1.2 },
   summaryTitle: { color: '#EDF1F5', fontSize: 18, lineHeight: 23, fontWeight: '900', marginTop: 4 },
-  summaryDetail: { color: '#C1CAD3', fontSize: 10, marginTop: 4 },
+  summaryDetail: { color: '#C1CAD3', fontSize: 14, lineHeight: 21, marginTop: 4 },
   timeBubble: { minWidth: 78, height: 65, borderRadius: 18, backgroundColor: '#FFFFFF14', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 },
   timeValue: { color: '#EDF1F5', fontSize: 17, fontWeight: '900' },
-  timeLabel: { color: '#AAB6C2', fontSize: 8, marginTop: 2 },
+  timeLabel: { color: '#AAB6C2', fontSize: 12, lineHeight: 18, marginTop: 2 },
   summaryMetrics: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 16, marginBottom: 10 },
-  summaryMetric: { color: '#C6CED6', fontSize: 9, fontWeight: '700' },
-  progressLabel: { color: '#AAB6C2', fontSize: 9, marginTop: 8 },
+  summaryMetric: { color: '#C6CED6', fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  progressLabel: { color: '#AAB6C2', fontSize: 12, lineHeight: 18, marginTop: 8 },
   timeline: { gap: 0 },
   timelineRow: { flexDirection: 'row' },
   timelineRail: { width: 36, alignItems: 'center' },
@@ -639,29 +643,29 @@ const styles = StyleSheet.create({
   dayCard: { flex: 1, marginBottom: 11 },
   dayHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
   dayTitle: { fontSize: 14, fontWeight: '800' },
-  daySubtitle: { fontSize: 10, marginTop: 3 },
+  daySubtitle: { fontSize: 16, lineHeight: 24, marginTop: 3 },
   blockList: { marginTop: 12, gap: 7 },
   block: { minHeight: 38, borderRadius: 11, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  blockLabel: { flex: 1, fontSize: 11, fontWeight: '600' },
-  blockMinutes: { fontSize: 9 },
+  blockLabel: { flex: 1, fontSize: 12, lineHeight: 18, fontWeight: '600' },
+  blockMinutes: { fontSize: 12, lineHeight: 18 },
   reminderCard: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 8 },
   reminderIcon: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   reminderCopy: { flex: 1 },
-  reminderTitle: { fontSize: 13, fontWeight: '800' },
-  reminderText: { fontSize: 10, marginTop: 3, lineHeight: 14 },
+  reminderTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  reminderText: { fontSize: 14, marginTop: 3, lineHeight: 21 },
   notice: { marginTop: 9, borderRadius: 13, padding: 11, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  noticeText: { flex: 1, fontSize: 10, lineHeight: 14 },
+  noticeText: { flex: 1, fontSize: 14, lineHeight: 21 },
   timerToggle: { minHeight: 64, borderRadius: 16, flexDirection: 'row', alignItems: 'center', gap: 11, padding: 11, marginTop: 18 },
   timerToggleIcon: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
-  timerToggleTitle: { fontSize: 13, fontWeight: '800' },
-  timerToggleText: { fontSize: 10, marginTop: 3 },
+  timerToggleTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  timerToggleText: { fontSize: 14, lineHeight: 21, marginTop: 3 },
   timerCard: { padding: 18, marginTop: 8 },
   timerModes: { flexDirection: 'row', gap: 8, alignSelf: 'center', backgroundColor: '#18202A', borderRadius: 14, padding: 4 },
   timerMode: { paddingHorizontal: 15, paddingVertical: 8, borderRadius: 11 },
-  timerModeText: { fontSize: 11, fontWeight: '800' },
+  timerModeText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   timerCenter: { alignItems: 'center', paddingVertical: 24 },
   timerValue: { fontSize: 50, lineHeight: 56, fontWeight: '300', letterSpacing: -1 },
-  timerLabel: { fontSize: 11, marginTop: 4 },
+  timerLabel: { fontSize: 12, lineHeight: 18, marginTop: 4 },
   timerButton: { marginTop: 18, backgroundColor: '#8D6BFF' },
   flatCard: { shadowOpacity: 0, elevation: 0 },
 });

@@ -1,3 +1,5 @@
+import { useReducedMotion } from '../hooks/useReducedMotion';
+import { typography } from '../theme';
 import React, { useEffect, useState } from 'react';
 import { Linking, Modal, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -107,8 +109,8 @@ export function ProfileScreen({ onOpenOnboarding, onOpenAuth, onManageAccount, o
         <View style={styles.syncRow}>
           <View style={[styles.syncIcon, { backgroundColor: colors.primary }]}><Icon name="cloud-sync" color={colors.primaryText} size={22} /></View>
           <View style={{ flex: 1 }}>
-            <Text style={[styles.syncTitle, { color: colors.text }]}>{user ? 'Account & security' : 'Save materials everywhere'}</Text>
-            <Text style={[styles.syncText, { color: colors.textSecondary }]}>{user ? 'Change your email, reset your password, or manage your account.' : 'Sign in to keep your account and future synced materials protected.'}</Text>
+            <Text style={[styles.syncTitle, { color: colors.text }]}>{user ? 'Account & security' : 'Your study space'}</Text>
+            <Text style={[styles.syncText, { color: colors.textSecondary }]}>{user ? 'Change your email, reset your password, or manage your account.' : 'Study Packs stay on this device. Sign in for cloud tools and membership access.'}</Text>
           </View>
         </View>
         <PrimaryButton label={user ? 'Manage account' : 'Sign in or create account'} icon={user ? 'shield-account-outline' : 'login'} onPress={user ? onManageAccount : onOpenAuth} style={styles.syncButton} />
@@ -136,10 +138,10 @@ export function ProfileScreen({ onOpenOnboarding, onOpenAuth, onManageAccount, o
               {STUDY_TYPE_OPTIONS.map((option) => {
                 const selected = profile?.studyType === option.id;
                 return (
-                  <Pressable
+                  <Pressable aria-checked={selected}
                     key={option.id}
                     accessibilityRole="radio"
-                    accessibilityState={{ selected }}
+                    accessibilityState={{ checked: selected }}
                     disabled={studyTypeBusy}
                     onPress={() => {
                       setStudyTypeBusy(true);
@@ -175,7 +177,7 @@ export function ProfileScreen({ onOpenOnboarding, onOpenAuth, onManageAccount, o
           {THEMES.map((theme) => {
             const selected = state.theme === theme.id;
             return (
-              <Pressable
+              <Pressable accessibilityRole="button"
                 key={theme.id}
                 onPress={() => setTheme(theme.id)}
                 style={[styles.themeOption, { backgroundColor: selected ? colors.primarySoft : colors.card, borderColor: selected ? colors.primary : colors.border }]}
@@ -247,10 +249,10 @@ export function ProfileScreen({ onOpenOnboarding, onOpenAuth, onManageAccount, o
           {RETENTION_OPTIONS.map((option) => {
             const selected = state.retentionMode === option.id;
             return (
-              <Pressable
+              <Pressable aria-checked={selected}
                 key={option.id}
                 accessibilityRole="radio"
-                accessibilityState={{ selected }}
+                accessibilityState={{ checked: selected }}
                 onPress={() => setRetentionMode(option.id)}
                 style={[styles.retentionOption, { backgroundColor: selected ? colors.card : 'transparent', borderColor: selected ? colors.primary : colors.border }]}
               >
@@ -361,6 +363,7 @@ function StudyTimerSettingsSheet({
   onClose: () => void;
 }) {
   const { colors } = useStudyBolt();
+  const reducedMotion = useReducedMotion();
   const insets = useSafeAreaInsets();
   const adjustMinutes = (field: 'focusMinutes' | 'breakMinutes', amount: number) => {
     const min = field === 'focusMinutes' ? 5 : 1;
@@ -369,15 +372,15 @@ function StudyTimerSettingsSheet({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType={reducedMotion ? 'none' : 'slide'} onRequestClose={onClose}>
       <View style={[styles.timerModalRoot, { backgroundColor: colors.mode === 'dark' ? 'rgba(0,0,0,0.72)' : 'rgba(17,28,78,0.34)' }]}>
-        <Pressable accessibilityLabel="Close study timer settings" onPress={onClose} style={StyleSheet.absoluteFill} />
-        <View style={[styles.timerSheet, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow, paddingBottom: Math.max(insets.bottom, 20) }]}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Close study timer settings" onPress={onClose} style={StyleSheet.absoluteFill} />
+        <View role="dialog" aria-modal accessibilityViewIsModal accessibilityLabel="Study timer settings" style={[styles.timerSheet, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow, paddingBottom: Math.max(insets.bottom, 20) }]}>
           <View style={[styles.timerHandle, { backgroundColor: colors.border }]} />
           <View style={styles.timerHeading}>
             <View style={[styles.timerHeadingIcon, { backgroundColor: colors.purpleSoft }]}><Icon name="timer-outline" size={23} color={colors.purple} /></View>
             <View style={{ flex: 1 }}><Text style={[styles.timerSheetTitle, { color: colors.text }]}>Study timer</Text><Text style={[styles.timerSheetSubtitle, { color: colors.textSecondary }]}>Used by the timer button on Home</Text></View>
-            <Pressable accessibilityLabel="Close" hitSlop={10} onPress={onClose} style={styles.timerClose}><Icon name="close" size={22} color={colors.textMuted} /></Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel="Close" hitSlop={10} onPress={onClose} style={styles.timerClose}><Icon name="close" size={22} color={colors.textMuted} /></Pressable>
           </View>
 
           <Text style={[styles.timerSectionLabel, { color: colors.textMuted }]}>STUDY METHOD</Text>
@@ -386,10 +389,10 @@ function StudyTimerSettingsSheet({
               const selected = draft.method === preset.id;
               const icon: IconName = preset.id === 'quick-sprint' ? 'flash-outline' : preset.id === 'deep-focus' ? 'brain' : 'timer-outline';
               return (
-                <Pressable
+                <Pressable aria-checked={selected}
                   key={preset.id}
                   accessibilityRole="radio"
-                  accessibilityState={{ selected }}
+                  accessibilityState={{ checked: selected }}
                   onPress={() => onChange({ ...draft, method: preset.id, focusMinutes: preset.focusMinutes, breakMinutes: preset.breakMinutes })}
                   style={({ pressed }) => [styles.timerPreset, { backgroundColor: selected ? colors.purpleSoft : colors.cardStrong, borderColor: selected ? colors.purple : colors.border, opacity: pressed ? 0.75 : 1 }]}
                 >
@@ -411,10 +414,10 @@ function StudyTimerSettingsSheet({
             {TIMER_ALARM_OPTIONS.map((option) => {
               const selected = draft.alarmMode === option.id;
               return (
-                <Pressable
+                <Pressable aria-checked={selected}
                   key={option.id}
                   accessibilityRole="radio"
-                  accessibilityState={{ selected }}
+                  accessibilityState={{ checked: selected }}
                   onPress={() => onChange({ ...draft, alarmMode: option.id })}
                   style={({ pressed }) => [styles.timerAlarm, { backgroundColor: selected ? colors.primarySoft : colors.cardStrong, borderColor: selected ? colors.primary : colors.border, opacity: pressed ? 0.75 : 1 }]}
                 >
@@ -440,9 +443,9 @@ function TimerDurationControl({ label, value, step, onAdjust }: { label: string;
     <View style={[styles.timerDuration, { backgroundColor: colors.cardStrong, borderColor: colors.border }]}>
       <Text style={[styles.timerDurationLabel, { color: colors.textMuted }]}>{label.toUpperCase()}</Text>
       <View style={styles.timerStepper}>
-        <Pressable accessibilityLabel={`Decrease ${label.toLowerCase()} time`} onPress={() => onAdjust(-step)} style={[styles.timerStepButton, { backgroundColor: colors.card }]}><Icon name="minus" size={17} color={colors.primary} /></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Decrease ${label.toLowerCase()} time`} onPress={() => onAdjust(-step)} style={[styles.timerStepButton, { backgroundColor: colors.card }]}><Icon name="minus" size={17} color={colors.primary} /></Pressable>
         <View style={styles.timerDurationValue}><Text style={[styles.timerDurationNumber, { color: colors.text }]}>{value}</Text><Text style={[styles.timerDurationUnit, { color: colors.textMuted }]}>min</Text></View>
-        <Pressable accessibilityLabel={`Increase ${label.toLowerCase()} time`} onPress={() => onAdjust(step)} style={[styles.timerStepButton, { backgroundColor: colors.card }]}><Icon name="plus" size={17} color={colors.primary} /></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Increase ${label.toLowerCase()} time`} onPress={() => onAdjust(step)} style={[styles.timerStepButton, { backgroundColor: colors.card }]}><Icon name="plus" size={17} color={colors.primary} /></Pressable>
       </View>
     </View>
   );
@@ -462,96 +465,96 @@ function Setting({ icon, title, detail, last = false, onPress }: { icon: IconNam
   );
   const style = [styles.setting, !last && { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }];
   if (!onPress) return <View style={style}>{content}</View>;
-  return <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [style, pressed && { opacity: 0.65 }]}>{content}</Pressable>;
+  return <Pressable accessibilityRole="button" accessibilityLabel={`${title}. ${detail}`} onPress={onPress} style={({ pressed }) => [style, pressed && { opacity: 0.65 }]}>{content}</Pressable>;
 }
 
 const styles = StyleSheet.create({
   profileTop: { alignItems: 'center', paddingVertical: 17 },
   avatar: { width: 70, height: 70, borderRadius: 35, alignItems: 'center', justifyContent: 'center' },
   avatarText: { fontSize: 26, fontWeight: '900' },
-  title: { fontSize: 24, fontWeight: '900', marginTop: 12, letterSpacing: -0.6 },
-  subtitle: { fontSize: 12, marginTop: 3 },
+  title: { ...typography.pageTitle,  marginTop: 12, },
+  subtitle: { fontSize: 16, lineHeight: 24, marginTop: 3 },
   syncCard: { marginTop: 6 },
   syncRow: { flexDirection: 'row', gap: 12, alignItems: 'center' },
   syncIcon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   syncTitle: { fontSize: 14, fontWeight: '800' },
-  syncText: { fontSize: 11, lineHeight: 16, marginTop: 3 },
+  syncText: { fontSize: 14, lineHeight: 21, marginTop: 3 },
   syncButton: { minHeight: 46, marginTop: 14 },
   studyTypeCard: { padding: 14 },
   studyTypeQuestion: { fontSize: 14, fontWeight: '900' },
-  studyTypeHint: { fontSize: 10, lineHeight: 15, marginTop: 3 },
+  studyTypeHint: { fontSize: 14, lineHeight: 21, marginTop: 3 },
   studyTypeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 13 },
-  studyTypeOption: { width: '48%', minHeight: 48, borderRadius: 13, borderWidth: 1, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 7 },
-  studyTypeLabel: { flex: 1, fontSize: 10, lineHeight: 13, fontWeight: '800' },
-  studyTypeNotice: { fontSize: 10, lineHeight: 14, fontWeight: '700', marginTop: 10 },
+  studyTypeOption: { width: '48%', minHeight: 48, paddingVertical: 8, borderRadius: 13, borderWidth: 1, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 7 },
+  studyTypeLabel: { flex: 1, fontSize: 12, lineHeight: 18, fontWeight: '700' },
+  studyTypeNotice: { fontSize: 14, lineHeight: 21, fontWeight: '700', marginTop: 10 },
   themeCard: { padding: 12 },
   themeOptions: { flexDirection: 'row', gap: 8 },
   themeOption: { flex: 1, borderRadius: 13, borderWidth: 1, alignItems: 'center', paddingVertical: 13, gap: 5 },
-  themeLabel: { fontSize: 11, fontWeight: '800' },
-  themeHint: { fontSize: 10, lineHeight: 15, marginTop: 12, paddingHorizontal: 3 },
+  themeLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700' },
+  themeHint: { fontSize: 14, lineHeight: 21, marginTop: 12, paddingHorizontal: 3 },
   narrationCard: { padding: 13 },
   narrationTop: { flexDirection: 'row', alignItems: 'center', gap: 11 },
   narrationIcon: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  narrationTitle: { fontSize: 13, fontWeight: '900' },
-  narrationSubtitle: { fontSize: 10, lineHeight: 15, marginTop: 3 },
+  narrationTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  narrationSubtitle: { fontSize: 16, lineHeight: 24, marginTop: 3 },
   narrationSummary: { minHeight: 59, flexDirection: 'row', alignItems: 'center', borderRadius: 14, paddingHorizontal: 11, gap: 10, marginTop: 13 },
   narrationSummaryCopy: { flex: 1, minWidth: 0, paddingVertical: 9 },
-  narrationSummaryLabel: { fontSize: 7, fontWeight: '900', letterSpacing: 0.7 },
-  narrationSummaryValue: { fontSize: 10, fontWeight: '800', marginTop: 3 },
+  narrationSummaryLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 0.7 },
+  narrationSummaryValue: { fontSize: 14, lineHeight: 21, fontWeight: '700', marginTop: 3 },
   narrationSummaryDivider: { width: StyleSheet.hairlineWidth, height: 31 },
   narrationButton: { minHeight: 48, borderRadius: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16, paddingVertical: 10, gap: 10, marginTop: 10 },
   narrationButtonIcon: { width: 24, height: 24, flexShrink: 0, alignItems: 'center', justifyContent: 'center' },
-  narrationButtonText: { fontSize: 12, lineHeight: 18, fontWeight: '800', flex: 1, minWidth: 0, textAlign: 'center' },
-  narrationError: { fontSize: 10, lineHeight: 14, marginTop: 9 },
+  narrationButtonText: { fontSize: 14, lineHeight: 21, fontWeight: '700', flex: 1, minWidth: 0, textAlign: 'center' },
+  narrationError: { fontSize: 14, lineHeight: 21, marginTop: 9 },
   settingsCard: { paddingVertical: 1 },
   setting: { minHeight: 67, flexDirection: 'row', alignItems: 'center', gap: 12 },
   settingIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  settingTitle: { fontSize: 13, fontWeight: '700' },
-  settingDetail: { fontSize: 10, marginTop: 3 },
-  footer: { textAlign: 'center', fontSize: 11, fontWeight: '700', marginTop: 26 },
+  settingTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  settingDetail: { fontSize: 14, lineHeight: 21, marginTop: 3 },
+  footer: { textAlign: 'center', fontSize: 14, lineHeight: 21, fontWeight: '700', marginTop: 26 },
   evidenceCard: { paddingVertical: 1 },
   evidenceRow: { minHeight: 88, flexDirection: 'row', alignItems: 'center', gap: 11 },
   evidenceIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  evidenceTitle: { fontSize: 12, fontWeight: '800' },
-  evidenceText: { fontSize: 10, lineHeight: 14, marginTop: 2 },
-  evidenceSource: { fontSize: 9, fontWeight: '700', marginTop: 4 },
+  evidenceTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  evidenceText: { fontSize: 14, lineHeight: 21, marginTop: 2 },
+  evidenceSource: { fontSize: 12, lineHeight: 18, fontWeight: '700', marginTop: 4 },
   retentionCard: { padding: 14 },
   retentionTop: { flexDirection: 'row', alignItems: 'center', gap: 11 },
   retentionIcon: { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
-  retentionTitle: { fontSize: 13, fontWeight: '800' },
-  retentionText: { fontSize: 10, lineHeight: 14, marginTop: 3 },
+  retentionTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  retentionText: { fontSize: 14, lineHeight: 21, marginTop: 3 },
   retentionOptions: { flexDirection: 'row', gap: 7, marginTop: 14 },
   retentionOption: { flex: 1, minHeight: 67, borderRadius: 13, borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, paddingVertical: 8, gap: 2 },
-  retentionOptionLabel: { fontSize: 10, fontWeight: '900' },
-  retentionOptionDetail: { fontSize: 8, fontWeight: '700' },
-  retentionHint: { fontSize: 10, lineHeight: 15, marginTop: 11, paddingHorizontal: 2 },
-  retentionEvidence: { fontSize: 9, lineHeight: 14, marginTop: 7, paddingHorizontal: 2 },
+  retentionOptionLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700' },
+  retentionOptionDetail: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  retentionHint: { fontSize: 14, lineHeight: 21, marginTop: 11, paddingHorizontal: 2 },
+  retentionEvidence: { fontSize: 14, lineHeight: 21, marginTop: 7, paddingHorizontal: 2 },
   timerModalRoot: { flex: 1, justifyContent: 'flex-end' },
   timerSheet: { width: '100%', maxWidth: 560, alignSelf: 'center', borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 18, paddingTop: 10, paddingBottom: 20, shadowOffset: { width: 0, height: -8 }, shadowOpacity: 0.16, shadowRadius: 24, elevation: 12 },
   timerHandle: { width: 42, height: 4, borderRadius: 4, alignSelf: 'center', marginBottom: 15 },
   timerHeading: { flexDirection: 'row', alignItems: 'center', gap: 11 },
   timerHeadingIcon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   timerSheetTitle: { fontSize: 19, fontWeight: '900', letterSpacing: -0.4 },
-  timerSheetSubtitle: { fontSize: 10, marginTop: 2 },
-  timerClose: { width: 34, height: 34, alignItems: 'flex-end', justifyContent: 'center' },
-  timerSectionLabel: { fontSize: 9, fontWeight: '900', letterSpacing: 0.8, marginTop: 18, marginBottom: 8 },
+  timerSheetSubtitle: { fontSize: 16, lineHeight: 24, marginTop: 2 },
+  timerClose: { width: 44, height: 44, alignItems: 'flex-end', justifyContent: 'center' },
+  timerSectionLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 0.8, marginTop: 18, marginBottom: 8 },
   timerPresetRow: { flexDirection: 'row', gap: 7 },
   timerPreset: { flex: 1, minHeight: 82, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5, gap: 4 },
-  timerPresetTitle: { fontSize: 9, lineHeight: 12, fontWeight: '900', textAlign: 'center' },
-  timerPresetDetail: { fontSize: 8, fontWeight: '700' },
+  timerPresetTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700', textAlign: 'center' },
+  timerPresetDetail: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   timerDurationRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
   timerDuration: { flex: 1, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, padding: 10 },
-  timerDurationLabel: { fontSize: 8, fontWeight: '900', letterSpacing: 0.7, marginBottom: 7 },
+  timerDurationLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 0.7, marginBottom: 7 },
   timerStepper: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 },
-  timerStepButton: { width: 31, height: 31, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  timerStepButton: { width: 44, height: 44, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   timerDurationValue: { alignItems: 'center', minWidth: 38 },
   timerDurationNumber: { fontSize: 17, fontWeight: '900', fontVariant: ['tabular-nums'] },
-  timerDurationUnit: { fontSize: 8, fontWeight: '700' },
+  timerDurationUnit: { fontSize: 12, lineHeight: 18, fontWeight: '700' },
   timerAlarmRow: { flexDirection: 'row', gap: 7 },
   timerAlarm: { flex: 1, minHeight: 75, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5, gap: 3 },
-  timerAlarmTitle: { fontSize: 9, fontWeight: '900' },
-  timerAlarmDetail: { fontSize: 7, lineHeight: 10, textAlign: 'center' },
-  timerNote: { fontSize: 9, lineHeight: 13, marginTop: 11 },
-  timerError: { fontSize: 9, lineHeight: 13, fontWeight: '700', marginTop: 8 },
+  timerAlarmTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  timerAlarmDetail: { fontSize: 14, lineHeight: 21, textAlign: 'center' },
+  timerNote: { fontSize: 14, lineHeight: 21, marginTop: 11 },
+  timerError: { fontSize: 14, lineHeight: 21, fontWeight: '700', marginTop: 8 },
   timerSave: { minHeight: 46, marginTop: 13 },
 });

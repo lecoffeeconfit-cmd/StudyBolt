@@ -142,6 +142,7 @@ export interface QuizAnswerRecord {
 
 export type StudyEventType =
   | 'note-review'
+  | 'note-reading'
   | 'flashcard-review'
   | 'quiz'
   | 'audio'

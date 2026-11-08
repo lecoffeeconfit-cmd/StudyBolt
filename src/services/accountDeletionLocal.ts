@@ -26,7 +26,8 @@ export async function clearStudyBoltLocalAccountData(userId?: string): Promise<v
       }).catch((error) => { errors.push(error); });
     }
   }
-  const keys = studyBoltLocalAccountKeys(await AsyncStorage.getAllKeys());
+  const legacyOwner = userId ? await AsyncStorage.getItem('@studybolt/state/legacy-owner') : undefined;
+  const keys = studyBoltLocalAccountKeys(await AsyncStorage.getAllKeys(), userId, legacyOwner);
   if (keys.length) await AsyncStorage.multiRemove(keys);
   if (errors.length) throw new Error('Some local files or reminders could not be cleared.');
 }

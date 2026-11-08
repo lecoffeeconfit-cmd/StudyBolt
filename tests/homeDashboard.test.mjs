@@ -62,12 +62,14 @@ test('origin IDs join repeated generated question variants without double counti
   const result = build(state({ activityEvents: [quiz('one', 20, [answer('variant1', false, { originQuestionId: 'q1' })]), quiz('two', 21, [answer('variant2', false, { originQuestionId: 'q1' })])] }));
   assert.deepEqual(result.mistakeIds, ['bio:q1']); assert.equal(result.recommendation.kind, 'mistakes');
 });
-test('recommendations follow resume, mistakes, due, weak, exam, practice, materials', () => {
+test('quiz evidence and due work precede exam preparation, audio continuation and general practice', () => {
   const source = state({ activityEvents: [review(20), quiz('one', 20, [answer('q1', false)]), quiz('two', 21, [answer('q1', false)])], plan: plan({ exam: { date: '2026-10-30' } }) });
-  assert.equal(build(source, { resumeDeckId: 'bio' }).recommendation.kind, 'resume');
+  assert.equal(build(source, { resumeDeckId: 'bio' }).recommendation.kind, 'mistakes');
   assert.equal(build(source).recommendation.kind, 'mistakes');
   assert.equal(build(state({ activityEvents: [review(20)] })).recommendation.kind, 'due');
   assert.equal(build(state({ plan: plan({ exam: { date: '2026-10-30' } }) })).recommendation.kind, 'exam');
+  assert.equal(build(state({ plan: plan({ exam: { date: '2026-10-30' } }) }), { resumeDeckId: 'bio' }).recommendation.kind, 'exam');
+  assert.equal(build(state(), { resumeDeckId: 'bio' }).recommendation.kind, 'resume');
   assert.equal(build(state()).recommendation.kind, 'practice');
   assert.equal(build(state({ decks: [] })).recommendation.kind, 'materials');
 });
@@ -97,4 +99,88 @@ test('selectors do not mutate persisted source state', () => {
 test('adaptive estimates match the existing default eight-prompt study setup, including its five-minute minimum', () => {
   assert.equal(build(state({ decks: [deck({ flashcards: Array.from({ length: 20 }, (_, i) => ({ id: `card${i}`, confidence: 'new', source: { sectionId: 'cells' } })) })] })).recommendation.minutes, 11);
   assert.equal(build(state({ decks: [deck({ flashcards: [{ id: 'only', confidence: 'new', source: { sectionId: 'cells' } }] })] })).recommendation.minutes, 5);
+});
+
+test('today uses distinct reviewed cards and deduplicated valid quiz answers, without samples or future work', () => {
+  const personalQuiz = quiz('today', 28, [answer('q1', true), answer('q1', true), answer('q2', false), answer('q3', true, { skipped: true })]);
+  const result = build(state({ decks: [deck(), deck({ id: 'demo', fileType: 'demo' })], activityEvents: [
+    review(28, { id: 'r1' }), review(28, { id: 'r1' }), review(28, { id: 'r2' }),
+    review(28, { id: 'unknown-card', cardId: 'missing' }), review(28, { id: 'seed-review' }),
+    personalQuiz, personalQuiz, quiz('future', 29, [answer('q1', true)]),
+    quiz('demo-quiz', 28, [answer('q1', true)], { deckId: 'demo' }),
+    quiz('gone-quiz', 28, [answer('q1', true)], { deckId: 'gone' }),
+  ] }));
+  assert.equal(result.today.reviewedCards, 1);
+  assert.equal(result.today.quizSessions, 1);
+  assert.equal(result.today.correctAnswers, 1);
+  assert.equal(result.today.totalAnswers, 2);
+  assert.equal(result.today.planTotal, 0);
+});
+
+test('daily plan completion uses the local date and real scope, without treating all remaining reviews as plan tasks', () => {
+  const localNow = new Date(2026, 9, 28, 12);
+  const source = state({ plan: plan({ days: [
+    { date: '2026-10-27', blocks: [{ complete: true }] },
+    { date: '2026-10-28', blocks: [{ complete: true }, { complete: false }] },
+    { date: '2026-10-29', blocks: [{ complete: false }] },
+  ] }) });
+  let result = buildHomeDashboard(source, { now: localNow });
+  assert.equal(result.today.planCompleted, 1);
+  assert.equal(result.today.planTotal, 2);
+  source.plan.scope = { type: 'deck', id: 'sample' };
+  result = buildHomeDashboard(source, { now: localNow });
+  assert.equal(result.today.planTotal, 0);
+});
+
+test('daily progress respects local midnight and does not turn partial listening into completion', () => {
+  const localNow = new Date(2026, 9, 28, 1);
+  const source = state({ activityEvents: [
+    { id: 'yesterday', type: 'focus', durationMinutes: 25, occurredAt: new Date(2026, 9, 27, 23, 59).toISOString() },
+    { id: 'today', type: 'focus', durationMinutes: 10, occurredAt: new Date(2026, 9, 28, 0, 30).toISOString() },
+    { id: 'partial', type: 'audio', deckId: 'bio', completionPercent: 50, occurredAt: new Date(2026, 9, 28, 0, 45).toISOString() },
+  ] });
+  const result = buildHomeDashboard(source, { now: localNow });
+  assert.equal(result.today.focusSessions, 1);
+  assert.equal(result.today.completedAudio, 0);
+});
+
+test('confirmed weak topics take priority over repeated mistakes, due work, an exam and unfinished audio', () => {
+  const source = state({ activityEvents: [
+    review(20), quiz('one', 20, [answer('q1', false)]),
+    quiz('two', 21, [answer('q1', false), answer('q2', false), answer('q3', true)]),
+  ], plan: plan({ exam: { date: '2026-10-30' } }) });
+  assert.equal(build(source, { resumeDeckId: 'bio' }).recommendation.kind, 'weak');
+});
+
+test('a pack with unavailable tools opens its existing tool status instead of asking for another upload', () => {
+  for (const status of ['failed', 'queued', 'generating']) {
+    const result = build(state({ decks: [deck({ notes: [], flashcards: [], generation: { materials: { flashcards: { status } } } })] }));
+    assert.equal(result.recommendation.kind, 'pack');
+    assert.equal(result.recommendation.deckId, 'bio');
+    assert.equal(result.recommendation.minutes, null);
+  }
+});
+
+test('recent materials use real study activity with answer-level attribution and never reorder stored packs', () => {
+  const source = state({ decks: [deck({ id: 'newer', createdAt: '2026-10-27T12:00:00Z' }), deck()], activityEvents: [
+    quiz('recent', 28, [answer('q1', true, { sourceDeckId: 'bio' })], { deckId: 'gone' }),
+    { id: 'seed-note', type: 'note-review', deckId: 'newer', noteId: 'note', occurredAt: '2026-10-28T11:00:00Z' },
+    { id: 'invalid-note', type: 'note-review', deckId: 'newer', noteId: 'missing', occurredAt: '2026-10-28T11:00:00Z' },
+  ] });
+  const before = structuredClone(source);
+  assert.equal(build(source).recent[0].deck.id, 'bio');
+  assert.equal(build(source).recent[1].lastStudiedAt, null);
+  assert.deepEqual(source, before);
+});
+
+test('a quiz crossing midnight attributes answers to their recorded local day and the session to its completion day', () => {
+  const localNow = new Date(2026, 9, 28, 1);
+  const source = state({ activityEvents: [quiz('cross-midnight', 28, [
+    answer('q1', true, { answeredAt: new Date(2026, 9, 27, 23, 58).toISOString() }),
+    answer('q2', false, { answeredAt: new Date(2026, 9, 28, 0, 2).toISOString() }),
+  ], { occurredAt: new Date(2026, 9, 28, 0, 30).toISOString() })] });
+  const result = buildHomeDashboard(source, { now: localNow });
+  assert.equal(result.today.quizSessions, 1);
+  assert.equal(result.today.totalAnswers, 1);
+  assert.equal(result.today.correctAnswers, 0);
 });

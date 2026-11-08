@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StudyBoltLoading } from '../components/StudyBoltLoading';
 
 import { useAuth } from '../AuthContext';
 import { CommunitySetCard } from '../components/CommunitySetCard';
@@ -70,7 +71,7 @@ export function CommunityClassScreen({
     return (
       <Screen>
         <Header title="Class" onBack={onBack} />
-        <View style={styles.loading}><ActivityIndicator color={colors.primary} /><Text style={[styles.loadingText, { color: colors.textSecondary }]}>Opening class…</Text></View>
+        <View style={styles.loading}><StudyBoltLoading colors={colors} message="Opening class…" /></View>
       </Screen>
     );
   }
@@ -116,7 +117,7 @@ export function CommunityClassScreen({
       <View style={styles.sortRow}>
         {([{ id: 'saved', label: 'Popular' }, { id: 'newest', label: 'Recent' }] as const).map((item) => {
           const selected = sort === item.id;
-          return <Pressable key={item.id} onPress={() => setSort(item.id)} style={[styles.sort, { backgroundColor: selected ? colors.primarySoft : colors.card, borderColor: selected ? colors.primary : colors.border }]}><Text style={[styles.sortText, { color: selected ? colors.primary : colors.textMuted }]}>{item.label}</Text></Pressable>;
+          return <Pressable accessibilityRole="button" key={item.id} onPress={() => setSort(item.id)} style={[styles.sort, { backgroundColor: selected ? colors.primarySoft : colors.card, borderColor: selected ? colors.primary : colors.border }]}><Text style={[styles.sortText, { color: selected ? colors.primary : colors.textMuted }]}>{item.label}</Text></Pressable>;
         })}
       </View>
       <View style={styles.list}>
@@ -141,31 +142,31 @@ function MiniStat({ icon, value, label, textValue = false }: { icon: 'bookshelf'
 
 const styles = StyleSheet.create({
   loading: { minHeight: 320, alignItems: 'center', justifyContent: 'center', gap: 12 },
-  loadingText: { fontSize: 12, fontWeight: '700' },
+  loadingText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   errorCard: { alignItems: 'center', paddingVertical: 30, marginTop: 20 },
   errorTitle: { fontSize: 17, fontWeight: '900', marginTop: 12 },
-  errorText: { maxWidth: 300, fontSize: 11, lineHeight: 17, textAlign: 'center', marginTop: 5 },
+  errorText: { maxWidth: 300, fontSize: 14, lineHeight: 21, textAlign: 'center', marginTop: 5 },
   retry: { minWidth: 170, marginTop: 17 },
   hero: { flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 16, padding: 17 },
   heroCopy: { flex: 1 },
-  code: { fontSize: 10, fontWeight: '900', letterSpacing: 0.8 },
+  code: { fontSize: 14, lineHeight: 21, fontWeight: '700', letterSpacing: 0.8 },
   name: { fontSize: 20, lineHeight: 25, fontWeight: '900', marginTop: 3 },
-  school: { fontSize: 11, fontWeight: '700', marginTop: 3 },
-  detail: { fontSize: 9, marginTop: 5 },
+  school: { fontSize: 14, lineHeight: 21, fontWeight: '700', marginTop: 3 },
+  detail: { fontSize: 14, lineHeight: 21, marginTop: 5 },
   stats: { flexDirection: 'row', gap: 8, marginTop: 10 },
   miniStat: { flex: 1, alignItems: 'center', borderRadius: 15, paddingVertical: 12, paddingHorizontal: 5 },
   statValue: { fontSize: 15, fontWeight: '900', marginTop: 4 },
-  statTextValue: { maxWidth: '100%', fontSize: 10, fontWeight: '900', marginTop: 5 },
-  statLabel: { fontSize: 8, marginTop: 2 },
+  statTextValue: { maxWidth: '100%', fontSize: 14, lineHeight: 21, fontWeight: '700', marginTop: 5 },
+  statLabel: { fontSize: 12, lineHeight: 18, marginTop: 2 },
   joinButton: { marginTop: 13 },
   notice: { flexDirection: 'row', gap: 8, alignItems: 'center', borderRadius: 12, padding: 11, marginTop: 10 },
-  noticeText: { flex: 1, fontSize: 10, lineHeight: 14, fontWeight: '700' },
+  noticeText: { flex: 1, fontSize: 14, lineHeight: 21, fontWeight: '700' },
   sortRow: { flexDirection: 'row', gap: 8, marginTop: -4, marginBottom: 10 },
   sort: { minHeight: 34, minWidth: 84, borderRadius: 17, borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 13 },
-  sortText: { fontSize: 9, fontWeight: '900' },
+  sortText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   list: { gap: 10 },
   empty: { alignItems: 'center', paddingVertical: 27 },
   emptyIcon: { width: 55, height: 55, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   emptyTitle: { fontSize: 14, fontWeight: '900', marginTop: 11 },
-  emptyText: { maxWidth: 290, fontSize: 10, lineHeight: 15, textAlign: 'center', marginTop: 4 },
+  emptyText: { maxWidth: 290, fontSize: 14, lineHeight: 21, textAlign: 'center', marginTop: 4 },
 });

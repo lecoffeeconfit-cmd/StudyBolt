@@ -1,3 +1,4 @@
+import { useReducedMotion } from '../hooks/useReducedMotion';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { PurchasesPackage } from 'react-native-purchases';
@@ -17,8 +18,10 @@ import {
   syncRevenueCatEntitlement,
 } from '../services/subscriptions';
 import { radius } from '../theme';
+import { StudyBoltLoading } from '../components/StudyBoltLoading';
 
 export function PremiumScreen({ onBack, onOpenLegal, onRequireAuth }: { onBack: () => void; onOpenLegal: () => void; onRequireAuth: () => void }) {
+  const reducedMotion = useReducedMotion();
   const { colors } = useStudyBolt();
   const { user, getAccessToken } = useAuth();
   const accountId = useRef(user?.id);
@@ -92,14 +95,20 @@ export function PremiumScreen({ onBack, onOpenLegal, onRequireAuth }: { onBack: 
       setPackages(offerResult.packages);
       setSelectedPackageId((current) => offerResult.packages.some((item) => item.identifier === current) ? current : offerResult.packages[0]?.identifier ?? null);
       if (offerResult.error) setError(offerResult.error);
+    } catch {
+      if (accountId.current === user.id) {
+        setSubscriptionSyncReady(false);
+        setError('StudyBolt could not load your plan right now. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
   }, [getAccessToken, onRequireAuth, refreshQuota, user]);
 
   useEffect(() => {
+    if (reducedMotion) { entrance.setValue(1); return; }
     Animated.spring(entrance, { toValue: 1, damping: 18, stiffness: 150, useNativeDriver: Platform.OS !== 'web' }).start();
-  }, [entrance]);
+  }, [entrance, reducedMotion]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -121,6 +130,8 @@ export function PremiumScreen({ onBack, onOpenLegal, onRequireAuth }: { onBack: 
       else if (syncResult.status === 'throttled') setNotice('Subscription verification is still cooling down. Wait a moment, then refresh status again.');
       else if (syncResult.error) setError(syncResult.error);
       else setNotice('No active Premium subscription is confirmed for this account.');
+    } catch {
+      setError('StudyBolt could not refresh your subscription status. Please try again.');
     } finally {
       setBusy(false);
     }
@@ -195,7 +206,7 @@ export function PremiumScreen({ onBack, onOpenLegal, onRequireAuth }: { onBack: 
           <View style={[styles.heroIcon, { backgroundColor: colors.primary }]}><Icon name="lightning-bolt" size={28} color={colors.primaryText} /></View>
           <View style={{ flex: 1 }}>
             <Text style={[styles.heroTitle, { color: colors.text }]}>{active ? 'Premium is active' : 'More room to study'}</Text>
-            <Text style={[styles.heroCopy, { color: colors.textSecondary }]}>Your plan and AI allowance are checked securely by StudyBolt.</Text>
+            <Text style={[styles.heroCopy, { color: colors.textSecondary }]}>Premium adds more monthly AI support for Tutor and document study. Your usage and reset date are below.</Text>
           </View>
         </View>
 
@@ -233,7 +244,7 @@ export function PremiumScreen({ onBack, onOpenLegal, onRequireAuth }: { onBack: 
                 {packages.map((item) => {
                   const selected = item.identifier === selectedPackage?.identifier;
                   return (
-                    <Pressable key={item.identifier} accessibilityRole="radio" accessibilityState={{ selected }} onPress={() => setSelectedPackageId(item.identifier)} style={[styles.packageCard, { backgroundColor: colors.card, borderColor: selected ? colors.primary : colors.border }]}>
+                    <Pressable aria-checked={selected} key={item.identifier} accessibilityRole="radio" accessibilityState={{ checked: selected }} onPress={() => setSelectedPackageId(item.identifier)} style={[styles.packageCard, { backgroundColor: colors.card, borderColor: selected ? colors.primary : colors.border }]}>
                       <View style={[styles.radio, { borderColor: selected ? colors.primary : colors.border }]}>{selected ? <View style={[styles.radioDot, { backgroundColor: colors.primary }]} /> : null}</View>
                       <View style={{ flex: 1 }}>
                         <Text style={[styles.packageTitle, { color: colors.text }]}>{packagePlanName(item)}</Text>
@@ -245,7 +256,7 @@ export function PremiumScreen({ onBack, onOpenLegal, onRequireAuth }: { onBack: 
                 })}
               </View>
             ) : (
-              <Card><Text style={[styles.noticeText, { color: colors.textSecondary }]}>{loading ? 'Loading store offers…' : 'No store offers are available. Check the App Store and Google Play products in the billing dashboard.'}</Text></Card>
+              <Card>{loading ? <StudyBoltLoading compact colors={colors} message="Loading store plans…" /> : <Text style={[styles.noticeText, { color: colors.textSecondary }]}>No store offers are available. Please try again later.</Text>}</Card>
             )}
 
             {!hasApprovedLegalDocuments ? (
@@ -263,7 +274,7 @@ export function PremiumScreen({ onBack, onOpenLegal, onRequireAuth }: { onBack: 
                   <LegalLink title="Privacy policy" url={LEGAL_URLS.privacyPolicy} />
                   <LegalLink title="Terms of service" url={LEGAL_URLS.termsOfService} />
                 </View>
-                <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: acceptedLegal }} onPress={() => setAcceptedLegal((value) => !value)} style={styles.consentRow}>
+                <Pressable aria-checked={acceptedLegal} accessibilityRole="checkbox" accessibilityState={{ checked: acceptedLegal }} onPress={() => setAcceptedLegal((value) => !value)} style={styles.consentRow}>
                   <View style={[styles.consentBox, { backgroundColor: acceptedLegal ? colors.primary : colors.card, borderColor: acceptedLegal ? colors.primary : colors.border }]}>
                     {acceptedLegal ? <Icon name="check" size={14} color={colors.primaryText} /> : null}
                   </View>
@@ -318,17 +329,24 @@ function packagePlanName(item: PurchasesPackage): string {
 }
 
 function packageBillingDetail(item: PurchasesPackage): string {
-  if (subscriptionPeriodMonths(item.product.subscriptionPeriod) === 12) {
-    const intro = item.product.introPrice;
-    const trialDays = intro?.periodUnit.toUpperCase() === 'WEEK'
-      ? intro.periodNumberOfUnits * 7
-      : intro?.periodUnit.toUpperCase() === 'DAY' ? intro.periodNumberOfUnits : 0;
-    if (intro?.price === 0 && trialDays === 7) {
-      return `7-day free trial for eligible new subscribers · then ${item.product.priceString} per year`;
-    }
-    return `${item.product.priceString} per year · billed annually`;
+  const months = subscriptionPeriodMonths(item.product.subscriptionPeriod);
+  const billingCadence = months === 12 ? 'yearly' : 'monthly';
+  const intro = item.product.introPrice;
+  if (intro?.price === 0) {
+    const duration = introTrialDuration(intro.periodUnit, intro.periodNumberOfUnits);
+    return `${duration ? `${duration} free trial` : 'Free trial'} for eligible subscribers · then billed ${billingCadence}`;
   }
-  return `${item.product.priceString} per month · billed monthly`;
+  return `Billed ${billingCadence}`;
+}
+
+function introTrialDuration(unit: string, count: number): string | null {
+  if (!Number.isInteger(count) || count < 1) return null;
+  const normalizedUnit = unit.toUpperCase();
+  if (normalizedUnit === 'DAY') return `${count}-day`;
+  if (normalizedUnit === 'WEEK') return `${count * 7}-day`;
+  if (normalizedUnit === 'MONTH') return `${count}-month`;
+  if (normalizedUnit === 'YEAR') return `${count}-year`;
+  return null;
 }
 
 function subscriptionPeriodMonths(period: string | null): number | null {
@@ -343,40 +361,40 @@ const styles = StyleSheet.create({
   hero: { flexDirection: 'row', alignItems: 'center', gap: 13, padding: 17, borderRadius: radius.md, marginTop: 12 },
   heroIcon: { width: 51, height: 51, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   heroTitle: { fontSize: 17, fontWeight: '900', letterSpacing: -0.3 },
-  heroCopy: { fontSize: 11, lineHeight: 16, marginTop: 4 },
+  heroCopy: { fontSize: 14, lineHeight: 21, marginTop: 4 },
   statusCard: { marginTop: 15 },
   statusTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  statusTitle: { fontSize: 13, fontWeight: '900' },
+  statusTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   statusPill: { borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 5 },
-  statusPillText: { fontSize: 10, fontWeight: '900' },
+  statusPillText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   usageTitle: { fontSize: 16, fontWeight: '900', marginTop: 13 },
-  usageCopy: { fontSize: 11, lineHeight: 16, marginTop: 5 },
+  usageCopy: { fontSize: 14, lineHeight: 21, marginTop: 5 },
   refresh: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', paddingTop: 12 },
-  refreshText: { fontSize: 11, fontWeight: '800' },
+  refreshText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   sectionTitle: { fontSize: 15, fontWeight: '900', marginTop: 23, marginBottom: 10 },
   packageList: { gap: 9 },
   packageCard: { borderWidth: 1.5, borderRadius: radius.md, padding: 13, flexDirection: 'row', alignItems: 'center', gap: 10 },
   radio: { width: 19, height: 19, borderRadius: 10, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   radioDot: { width: 9, height: 9, borderRadius: 5 },
-  packageTitle: { fontSize: 12, fontWeight: '900' },
-  packageDetail: { fontSize: 10, lineHeight: 15, marginTop: 3 },
-  packagePrice: { fontSize: 13, fontWeight: '900' },
-  noticeText: { fontSize: 11, lineHeight: 16 },
+  packageTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  packageDetail: { fontSize: 14, lineHeight: 21, marginTop: 3 },
+  packagePrice: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  noticeText: { fontSize: 14, lineHeight: 21 },
   legalGate: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginTop: 13 },
-  legalGateTitle: { fontSize: 12, fontWeight: '900', marginBottom: 4 },
-  link: { fontSize: 11, fontWeight: '900', marginTop: 8 },
+  legalGateTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700', marginBottom: 4 },
+  link: { fontSize: 14, lineHeight: 21, fontWeight: '700', marginTop: 8 },
   legalLinks: { flexDirection: 'row', gap: 18, marginTop: 13 },
   legalLink: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 4 },
-  legalLinkText: { fontSize: 10, fontWeight: '800' },
+  legalLinkText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   consentRow: { flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 11 },
   consentBox: { width: 19, height: 19, borderRadius: 5, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
-  consentText: { flex: 1, fontSize: 10, lineHeight: 15 },
+  consentText: { flex: 1, fontSize: 14, lineHeight: 21 },
   primaryButton: { marginTop: 16 },
-  billingNote: { fontSize: 9, lineHeight: 14, marginTop: 9, textAlign: 'center' },
+  billingNote: { fontSize: 14, lineHeight: 21, marginTop: 9, textAlign: 'center' },
   activeCard: { alignItems: 'center', marginTop: 18, paddingVertical: 20 },
   activeIcon: { width: 47, height: 47, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginBottom: 9 },
   activeTitle: { fontSize: 16, fontWeight: '900', marginBottom: 4 },
   restoreButton: { alignItems: 'center', paddingVertical: 17 },
-  restoreText: { fontSize: 11, fontWeight: '900' },
-  message: { fontSize: 11, lineHeight: 16, textAlign: 'center', marginBottom: 10 },
+  restoreText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  message: { fontSize: 14, lineHeight: 21, textAlign: 'center', marginBottom: 10 },
 });

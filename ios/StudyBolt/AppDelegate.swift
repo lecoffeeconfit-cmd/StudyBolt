@@ -54,6 +54,23 @@ class AppDelegate: ExpoAppDelegate {
 class ReactNativeDelegate: ExpoReactNativeFactoryDelegate {
   // Extension point for config-plugins
 
+  // StudyBolt static native-to-React launch handoff (no splash timer).
+  override func customize(_ rootView: UIView) {
+    super.customize(rootView)
+    rootView.backgroundColor = UIColor(named: "StudyBoltLaunchBackground")
+    guard let launchView = UIStoryboard(name: "SplashScreen", bundle: nil).instantiateInitialViewController()?.view else { return }
+    launchView.frame = rootView.bounds
+    launchView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    if let surface = rootView as? RCTSurfaceHostingProxyRootView {
+      surface.loadingView = launchView
+    } else if let legacy = rootView as? RCTRootView {
+      legacy.loadingViewFadeDelay = 0
+      legacy.loadingViewFadeDuration = 0
+      legacy.loadingView = launchView
+    }
+  }
+
+
   override func sourceURL(for bridge: RCTBridge) -> URL? {
     // needed to return the correct URL for expo-dev-client.
     bridge.bundleURL ?? bundleURL()

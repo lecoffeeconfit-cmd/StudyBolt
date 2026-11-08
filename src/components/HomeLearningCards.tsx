@@ -1,18 +1,19 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useStudyBolt } from '../StudyBoltContext';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import type { StudyPack } from '../models';
-import type { HomeDashboard, HomeDueReview, HomeWeakTopic } from '../services/homeDashboard';
+import type { HomeDashboard, HomeDueReview, HomeTodayProgress, HomeWeakTopic } from '../services/homeDashboard';
 import { MISTAKE_RULE, WEAK_TOPIC_RULE } from '../services/homeDashboard';
 import { Card, Icon, PrimaryButton, ProgressBar } from './ui';
 import type { HomePriority } from './TodaysPlanCard';
 
 export function UpcomingExamCard({ exam, onOpenPlan }: { exam: HomeDashboard['exam']; onOpenPlan: () => void }) {
   const { colors } = useStudyBolt();
-  return <Card onPress={onOpenPlan} accessibilityLabel={exam ? `${exam.title}, ${exam.course}. ${exam.date}. ${exam.completed} of ${exam.total} plan tasks complete. See plan.` : 'Add an upcoming test in Planner'} style={styles.examCard}>
+  const blue = colors.mode === 'dark' ? colors.primary : '#075BC6';
+  return <Card onPress={onOpenPlan} accessibilityLabel={exam ? `${exam.title}, ${exam.course}. ${exam.date}. ${exam.total ? `${exam.completed} of ${exam.total} plan tasks marked complete.` : 'Set up your study tasks.'} See plan.` : 'Add an upcoming test in Planner'} style={styles.examCard}>
     <View style={styles.row}>
       <View style={[styles.icon, { backgroundColor: colors.primarySoft }]}><Icon name="calendar-check-outline" color={colors.primary} size={23} /></View>
       <View style={styles.copy}>
@@ -23,36 +24,54 @@ export function UpcomingExamCard({ exam, onOpenPlan }: { exam: HomeDashboard['ex
       <Icon name="chevron-right" color={colors.primary} size={21} />
     </View>
     {exam ? <View style={styles.examProgress}>
-      <View style={[styles.row, { justifyContent: 'space-between', flexWrap: 'wrap' }]}><Text style={[styles.countdown, { color: colors.primary }]}>{exam.daysRemaining === 0 ? 'Test today' : exam.daysRemaining === 1 ? 'Tomorrow' : `${exam.daysRemaining} days to go`}</Text><Text style={[styles.small, { color: colors.textSecondary }]}>{exam.completed} / {exam.total} study tasks complete</Text></View>
+      <View style={[styles.row, { justifyContent: 'space-between', flexWrap: 'wrap' }]}><Text style={[styles.countdown, { color: blue }]}>{exam.daysRemaining === 0 ? 'Test today' : exam.daysRemaining === 1 ? 'Tomorrow' : `${exam.daysRemaining} days to go`}</Text><Text style={[styles.small, { color: colors.textSecondary }]}>{exam.total ? `${exam.completed} / ${exam.total} plan tasks marked complete` : 'Set up your study tasks'}</Text></View>
       {exam.progress !== null ? <View accessible accessibilityLabel={`${exam.progress}% of study-plan tasks marked complete`} style={{ marginTop: 8 }}><ProgressBar progress={exam.progress} color={colors.primary} /></View> : null}
       {exam.attentionTopics.length ? <Text style={[styles.small, { color: colors.textSecondary, marginTop: 8 }]}>Focus: {exam.attentionTopics.join(' · ')}</Text> : null}
-      <Text style={[styles.planLink, { color: colors.primary }]}>See plan →</Text>
+      <Text style={[styles.planLink, { color: blue }]}>See plan →</Text>
     </View> : null}
   </Card>;
 }
 
-export function RecentLearningCard({ activity, onOpenStats, onStart }: { activity: HomeDashboard['activity']; onOpenStats: () => void; onStart: () => void }) {
+export function RecentLearningCard({ activity, today, onOpenStats, onStart }: { activity: HomeDashboard['activity']; today: HomeTodayProgress; onOpenStats: () => void; onStart: () => void }) {
   const { colors } = useStudyBolt();
   const reducedMotion = useReducedMotion();
+  const [expanded, setExpanded] = useState(false);
   const highlight = useRef(new Animated.Value(0)).current;
   const latest = activity[0];
+  const hasWork = today.reviewedCards > 0 || today.quizSessions > 0 || today.totalAnswers > 0 || today.completedAudio > 0 || today.focusSessions > 0;
+  const blue = colors.mode === 'dark' ? colors.primary : '#075BC6';
+  const green = colors.mode === 'dark' ? colors.mint : '#187D68';
   useEffect(() => {
     highlight.setValue(0);
     if (!latest || Date.now() - Date.parse(latest.at) > 5 * 60000 || reducedMotion) return;
     const animation = Animated.sequence([
-      Animated.timing(highlight, { toValue: 0.7, duration: 280, useNativeDriver: Platform.OS !== 'web', isInteraction: false }),
-      Animated.timing(highlight, { toValue: 0, duration: 1000, useNativeDriver: Platform.OS !== 'web', isInteraction: false }),
+      Animated.timing(highlight, { toValue: 0.55, duration: 220, useNativeDriver: Platform.OS !== 'web', isInteraction: false }),
+      Animated.timing(highlight, { toValue: 0, duration: 800, useNativeDriver: Platform.OS !== 'web', isInteraction: false }),
     ]);
     animation.start();
     return () => animation.stop();
   }, [highlight, latest?.id, reducedMotion]);
   return <Card style={styles.activityCard}>
     <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: 20, backgroundColor: colors.mintSoft, opacity: highlight }]} />
-    <View style={styles.row}><View style={styles.copy}><Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>Recent learning progress</Text><Text style={[styles.small, { color: colors.textSecondary }]}>From completed work saved on this device</Text></View><Pressable accessibilityRole="button" accessibilityLabel="Open learning statistics" onPress={onOpenStats} style={styles.historyLink}><Text style={[styles.link, { color: colors.primary }]}>See all</Text><Icon name="chevron-right" color={colors.primary} size={18} /></Pressable></View>
-    {activity.length ? activity.map((item) => <View key={item.id} style={[styles.activityRow, { borderTopColor: colors.border }]}>
-      <View style={[styles.activityDot, { backgroundColor: item.recovered ? colors.mintSoft : colors.primarySoft }]}><Icon name={item.recovered ? 'check' : item.kind === 'quiz' ? 'clipboard-check-outline' : item.kind === 'review' ? 'cards-outline' : item.kind === 'audio' ? 'headphones' : 'timer-outline'} size={17} color={item.recovered ? colors.mint : colors.primary} /></View>
-      <View style={styles.copy}><Text style={[styles.activityTitle, { color: colors.text }]}>{item.title}</Text><Text style={[styles.body, { color: colors.textSecondary }]}>{item.course} · {item.detail}</Text>{item.recovered > 0 ? <Text style={[styles.recovery, { color: colors.mode === 'dark' ? colors.mint : '#187D68' }]}>{item.recovered} previously missed {item.recovered === 1 ? 'question answered' : 'questions answered'} correctly. A useful step forward.</Text> : null}<Text style={[styles.timestamp, { color: colors.textSecondary }]}>{new Date(item.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · {new Date(item.at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}</Text></View>
-    </View>) : <View style={styles.emptyActivity}><Icon name="sprout-outline" color={colors.mint} size={25} /><Text style={[styles.body, { color: colors.textSecondary }]}>Your first completed practice or review will appear here. Start small; every honest attempt helps.</Text><Pressable accessibilityRole="button" onPress={onStart} style={styles.emptyAction}><Text style={[styles.link, { color: colors.primary }]}>Take your first step →</Text></Pressable></View>}
+    <View style={styles.row}><View style={styles.copy}><Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>Learning progress</Text><Text style={[styles.small, { color: colors.textSecondary }]}>Recorded on this device · today</Text></View><Pressable accessibilityRole="button" accessibilityLabel="Open learning statistics" onPress={onOpenStats} style={styles.historyLink}><Text style={[styles.link, { color: blue }]}>Stats</Text><Icon name="chevron-right" color={blue} size={18} /></Pressable></View>
+    {hasWork ? <>
+      <View style={styles.progressMetrics}>
+        <View style={[styles.progressMetric, { backgroundColor: colors.cardStrong }]}><Text style={[styles.progressValue, { color: colors.text }]}>{today.reviewedCards}</Text><Text style={[styles.body, { color: colors.textSecondary }]}>Distinct cards reviewed</Text></View>
+        <View style={[styles.progressMetric, { backgroundColor: colors.cardStrong }]}><Text style={[styles.progressValue, { color: colors.text }]}>{today.totalAnswers ? today.correctAnswers + ' / ' + today.totalAnswers : '—'}</Text><Text style={[styles.body, { color: colors.textSecondary }]}>{today.totalAnswers ? 'Quiz answers correct' : 'No quiz answers yet'}</Text></View>
+      </View>
+      <Text style={[styles.progressContext, { color: colors.textSecondary }]}>{[
+        today.quizSessions ? today.quizSessions + (today.quizSessions === 1 ? ' quiz session' : ' quiz sessions') : '',
+        today.completedAudio ? today.completedAudio + (today.completedAudio === 1 ? ' StudyCast completed' : ' StudyCasts completed') : '',
+        today.focusSessions ? today.focusSessions + (today.focusSessions === 1 ? ' focus session' : ' focus sessions') : '',
+      ].filter(Boolean).join(' · ') || 'Every recorded review is a useful step. Revisit it later to check what sticks.'}</Text>
+    </> : <View style={styles.emptyActivity}><Icon name="sprout-outline" color={green} size={25} /><Text style={[styles.body, { color: colors.textSecondary }]}>{today.planTotal > 0 && today.planCompleted === today.planTotal ? 'Your plan tasks are marked complete. Recorded reviews and quiz answers appear here separately.' : activity.length ? 'A fresh day to build on your learning. Try a short review when you’re ready.' : 'Your completed reviews and quiz answers will appear here. Start with one useful step.'}</Text><Pressable accessibilityRole="button" onPress={onStart} style={styles.emptyAction}><Text style={[styles.link, { color: blue }]}>{today.planTotal > 0 && today.planCompleted === today.planTotal ? 'Choose optional practice' : activity.length ? 'Find my next step' : 'Take my first step'} →</Text></Pressable></View>}
+    {activity.length ? <>
+      <Pressable accessibilityRole="button" accessibilityState={{ expanded }} accessibilityLabel={expanded ? 'Hide recent learning activity' : 'Show recent learning activity'} onPress={() => setExpanded((value) => !value)} style={[styles.activityToggle, { borderTopColor: colors.border }]}><Text style={[styles.link, { color: blue }]}>Recent activity</Text><Icon name={expanded ? 'chevron-up' : 'chevron-down'} color={blue} size={19} /></Pressable>
+      {expanded ? activity.map((item) => <View key={item.id} style={[styles.activityRow, { borderTopColor: colors.border }]}>
+        <View style={[styles.activityDot, { backgroundColor: item.recovered ? colors.mintSoft : colors.primarySoft }]}><Icon name={item.recovered ? 'check' : item.kind === 'quiz' ? 'clipboard-check-outline' : item.kind === 'review' ? 'cards-outline' : item.kind === 'audio' ? 'headphones' : 'timer-outline'} size={17} color={item.recovered ? green : blue} /></View>
+        <View style={styles.copy}><Text style={[styles.activityTitle, { color: colors.text }]}>{item.title}</Text><Text style={[styles.body, { color: colors.textSecondary }]}>{item.course} · {item.detail}</Text>{item.recovered > 0 ? <Text style={[styles.recovery, { color: green }]}>{item.recovered} previously missed {item.recovered === 1 ? 'question answered' : 'questions answered'} correctly. A useful step forward.</Text> : null}<Text style={[styles.timestamp, { color: colors.textSecondary }]}>{new Date(item.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · {new Date(item.at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}</Text></View>
+      </View>) : null}
+    </> : null}
   </Card>;
 }
 
@@ -92,7 +111,12 @@ function Choice({ title, detail, onPress }: { title: string; detail: string; onP
   return <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.choice, { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.75 : 1 }]}><View style={styles.copy}><Text style={[styles.activityTitle, { color: colors.text }]}>{title}</Text><Text style={[styles.body, { color: colors.textSecondary }]}>{detail}</Text></View><Icon name="chevron-right" color={colors.primary} size={20} /></Pressable>;
 }
 const styles = StyleSheet.create({
-  examCard: { marginTop: 16, padding: 16, shadowOpacity: 0, elevation: 0 }, row: { flexDirection: 'row', alignItems: 'center', gap: 10 }, copy: { flex: 1, minWidth: 0 }, icon: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }, eyebrow: { fontSize: 9, lineHeight: 15, letterSpacing: 0.8, fontWeight: '800' }, title: { fontSize: 15, lineHeight: 21, fontWeight: '800' }, body: { fontSize: 12, lineHeight: 18, marginTop: 3 }, examProgress: { marginTop: 14 }, countdown: { fontSize: 12, lineHeight: 18, fontWeight: '800' }, small: { fontSize: 10, lineHeight: 16 }, planLink: { fontSize: 12, fontWeight: '800', marginTop: 10 },
-  activityCard: { marginTop: 20, padding: 16, overflow: 'hidden', shadowOpacity: 0, elevation: 0 }, historyLink: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 1, paddingLeft: 8 }, link: { fontSize: 12, lineHeight: 18, fontWeight: '700' }, activityRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, paddingTop: 12, marginTop: 10, borderTopWidth: StyleSheet.hairlineWidth }, activityDot: { width: 29, height: 29, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }, activityTitle: { fontSize: 13, lineHeight: 19, fontWeight: '700' }, recovery: { fontSize: 11, lineHeight: 17, marginTop: 5 }, timestamp: { fontSize: 10, lineHeight: 15, marginTop: 5 }, emptyActivity: { marginTop: 15, alignItems: 'flex-start' }, emptyAction: { minHeight: 44, justifyContent: 'center', marginTop: 4 },
+  examCard: { marginTop: 16, padding: 16, shadowOpacity: 0, elevation: 0 }, row: { flexDirection: 'row', alignItems: 'center', gap: 10 }, copy: { flex: 1, minWidth: 0 }, icon: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }, eyebrow: { fontSize: 9, lineHeight: 15, letterSpacing: 0.8, fontWeight: '800' }, title: { fontSize: 18, lineHeight: 25, fontWeight: '800' }, body: { fontSize: 14, lineHeight: 21, marginTop: 3 }, examProgress: { marginTop: 14 }, countdown: { fontSize: 12, lineHeight: 18, fontWeight: '800' }, small: { fontSize: 12, lineHeight: 19 }, planLink: { fontSize: 12, fontWeight: '800', marginTop: 10 },
+  progressMetrics: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 16 },
+  progressMetric: { flex: 1, minWidth: 130, padding: 13, borderRadius: 13 },
+  progressValue: { fontSize: 25, lineHeight: 32, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  progressContext: { fontSize: 13, lineHeight: 20, marginTop: 12 },
+  activityToggle: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: StyleSheet.hairlineWidth, marginTop: 12, paddingTop: 7 },
+  activityCard: { marginTop: 20, padding: 18, overflow: 'hidden', shadowOpacity: 0, elevation: 0 }, historyLink: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 1, paddingLeft: 8 }, link: { fontSize: 14, lineHeight: 21, fontWeight: '700' }, activityRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, paddingTop: 12, marginTop: 10, borderTopWidth: StyleSheet.hairlineWidth }, activityDot: { width: 29, height: 29, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }, activityTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' }, recovery: { fontSize: 13, lineHeight: 20, marginTop: 5 }, timestamp: { fontSize: 12, lineHeight: 18, marginTop: 5 }, emptyActivity: { marginTop: 15, alignItems: 'flex-start' }, emptyAction: { minHeight: 44, justifyContent: 'center', marginTop: 4 },
   modal: { flex: 1, justifyContent: 'flex-end' }, backdrop: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: '#00000066' }, sheet: { maxHeight: '85%', borderTopLeftRadius: 26, borderTopRightRadius: 26, padding: 20 }, sheetTitle: { flex: 1, fontSize: 22, lineHeight: 29, fontWeight: '800' }, close: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }, explanation: { fontSize: 12, lineHeight: 19, marginTop: 12, marginBottom: 15 }, choice: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 70, padding: 13, borderRadius: 15, borderWidth: 1, marginBottom: 9 }, emptySheet: { paddingVertical: 10 },
 });

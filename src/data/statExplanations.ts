@@ -290,8 +290,8 @@ const STAT_EXPLANATIONS: Record<string, StatExplanation> = {
     whyItMatters: 'Session count helps interpret averages and duration patterns; it is not a goal by itself.',
   },
   Notes: {
-    description: 'Time and coverage recorded while reviewing generated notes.',
-    calculation: 'Durations of note-review events are added; reviewed sections and fully reviewed packs are counted separately.',
+    description: 'Foreground time spent with a Study Pack’s notes open, plus sections explicitly marked reviewed.',
+    calculation: 'Time is counted while the notes view is open in the foreground, paused when the app is backgrounded or you leave Notes. Marking a section reviewed updates coverage separately.',
     whyItMatters: 'Notes build context. Follow reading with retrieval practice to test whether the ideas are accessible from memory.',
   },
   Flashcards: {

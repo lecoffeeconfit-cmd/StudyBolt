@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { getTodaysPlanFocus } from '../src/services/todaysPlan.ts';
+import { getTodaysPlanFocus, getTodaysPlanStatus } from '../src/services/todaysPlan.ts';
 
 const deck = (id = 'bio', extra = {}) => ({ id, courseName: 'Biology', title: 'Cell structure', flashcards: Array.from({ length: 20 }, (_, i) => ({ id: `c${i}`, source: { sectionId: i < 3 ? 'cells' : 'other' } })), ...extra });
 const dashboard = (kind, extra = {}) => ({ decks: [deck()], due: [], dueCount: 0, weak: [], mistakeIds: [], exam: null, recommendation: { kind, deckId: 'bio', title: 'Practice cell structure', why: '1 of 4 correct across 2 sessions.' }, ...extra });
@@ -62,4 +62,21 @@ test('presentation leaves the saved dashboard unchanged', () => {
   const before = structuredClone(source);
   getTodaysPlanFocus(source);
   assert.deepEqual(source, before);
+});
+
+test('only dated plan tasks can produce a completed-plan state; an empty denominator never does', () => {
+  const today = { reviewedCards: 0, quizSessions: 0, correctAnswers: 0, totalAnswers: 0, completedAudio: 0, focusSessions: 0, planCompleted: 0, planTotal: 0, latestAt: null };
+  assert.equal(getTodaysPlanStatus(dashboard('practice', { today })).complete, false);
+  const complete = getTodaysPlanStatus(dashboard('practice', { today: { ...today, planCompleted: 2, planTotal: 2 } }));
+  assert.equal(complete.complete, true);
+  assert.equal(complete.detail, '2 of 2 plan tasks marked complete');
+  assert.equal(getTodaysPlanStatus(dashboard('practice', { today: { ...today, reviewedCards: 4 } })).complete, false);
+});
+
+test('unavailable or generating tools never advertise practice prompts', () => {
+  const result = getTodaysPlanFocus(dashboard('pack', { recommendation: { kind: 'pack', deckId: 'bio', title: 'Your study tools are taking shape', why: 'Open the pack to follow progress.' } }));
+  assert.equal(result.medium, 'pack');
+  assert.equal(result.count, null);
+  assert.equal(result.actionLabel, 'View Study Pack');
+  assert.equal(result.reason, 'Open the pack to follow progress.');
 });

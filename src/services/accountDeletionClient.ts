@@ -29,6 +29,16 @@ export async function submitAccountDeletion(
   };
 }
 
-export function studyBoltLocalAccountKeys(keys: readonly string[]): string[] {
-  return keys.filter((key) => key.startsWith('@studybolt/'));
+export function studyBoltLocalAccountKeys(keys: readonly string[], userId?: string, legacyOwner?: string | null): string[] {
+  return keys.filter((key) => {
+    if (!key.startsWith('@studybolt/')) return false;
+    if (!userId) return true;
+    if (key === '@studybolt/state/legacy-owner' || key === '@studybolt/state/v1') {
+      return legacyOwner === `@studybolt/state/v2/account/${encodeURIComponent(userId)}`;
+    }
+    if (key.startsWith('@studybolt/state/v2/')) return key === `@studybolt/state/v2/account/${encodeURIComponent(userId)}`;
+    if (key.startsWith('@studybolt/admin-activity/')) return key === `@studybolt/admin-activity/${userId}`;
+    if (key.startsWith('@studybolt/deleting-account/')) return key === `@studybolt/deleting-account/${userId}`;
+    return true;
+  });
 }

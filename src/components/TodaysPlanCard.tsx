@@ -1,15 +1,11 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, AppState, Easing, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import Svg, { Ellipse } from 'react-native-svg';
+import { ActivityIndicator, Animated, Easing, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import type { HomeDashboard } from '../services/homeDashboard';
-import { getTodaysPlanFocus, type TodaysPlanFocus } from '../services/todaysPlan';
+import { getTodaysPlanFocus, getTodaysPlanStatus } from '../services/todaysPlan';
 import type { AppColors } from '../theme';
-import { StudyPlanIllustration } from './StudyPlanIllustration';
-import { PriorityGlyph } from './StudyBoltGlyphs';
 
 export type HomePriority = 'due' | 'weak' | 'mistakes';
 type Props = {
@@ -19,226 +15,157 @@ type Props = {
   onOpenPriority: (kind: HomePriority) => void;
   onOpenPlan: () => void;
 };
-function PlanIcon({ name, color, size = 18 }: { name: keyof typeof MaterialCommunityIcons.glyphMap; color: string; size?: number }) {
+type PlanIconName = keyof typeof MaterialCommunityIcons.glyphMap;
+function PlanIcon({ name, color, size = 20 }: { name: PlanIconName; color: string; size?: number }) {
   return <View aria-hidden accessible={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants"><MaterialCommunityIcons name={name} color={color} size={size} accessible={false} /></View>;
 }
 
+/** Local evidence and existing destinations only; no network or saved-state writes. */
 export function TodaysPlanCard({ dashboard, colors, onStartSession, onOpenPriority, onOpenPlan }: Props) {
   const reducedMotion = useReducedMotion();
   const { width, fontScale } = useWindowDimensions();
   const [cardWidth, setCardWidth] = useState(0);
   const [opening, setOpening] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [focused, setFocused] = useState<string | null>(null);
+  const [optionsExpanded, setOptionsExpanded] = useState(false);
   const inFlight = useRef(false);
   const mounted = useRef(true);
   const arrival = useRef(new Animated.Value(1)).current;
-  const float = useRef(new Animated.Value(0)).current;
   const press = useRef(new Animated.Value(0)).current;
-  const availableWidth = cardWidth || width - 40;
-  const stacked = availableWidth < 330 || fontScale >= 1.3;
-  const wide = availableWidth >= 500 && fontScale < 1.3;
-  const dark = colors.mode === 'dark';
-  const body = colors.textSecondary;
-  const actionBackground = dark ? colors.primary : '#1268D9';
+  const acknowledgment = useRef(new Animated.Value(1)).current;
   const focus = getTodaysPlanFocus(dashboard);
+  const status = getTodaysPlanStatus(dashboard);
   const hasMaterials = dashboard.decks.length > 0;
-  const animationKey = `${dashboard.recommendation.kind}:${dashboard.recommendation.deckId}:${focus.count}`;
+  const compact = (cardWidth || width - 40) < 360 || fontScale >= 1.3;
+  const blue = colors.mode === 'dark' ? colors.primary : '#075BC6';
+  const actionBackground = colors.mode === 'dark' ? colors.primary : '#1268D9';
+  const green = colors.mode === 'dark' ? colors.mint : '#187D68';
 
   useEffect(() => {
     mounted.current = true;
     arrival.setValue(reducedMotion ? 1 : 0);
-    const animation = Animated.timing(arrival, { toValue: 1, duration: 360, easing: Easing.out(Easing.cubic), useNativeDriver: Platform.OS !== 'web', isInteraction: false });
+    const animation = Animated.timing(arrival, { toValue: 1, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: Platform.OS !== 'web', isInteraction: false });
     if (!reducedMotion) animation.start();
     return () => { mounted.current = false; animation.stop(); press.stopAnimation(); };
   }, [arrival, press, reducedMotion]);
 
   useEffect(() => {
-    let animation: Animated.CompositeAnimation | undefined;
-    const stop = () => { animation?.stop(); float.setValue(0); };
-    const start = () => {
-      stop();
-      if (reducedMotion || AppState.currentState === 'background' || AppState.currentState === 'inactive') return;
-      // A few gentle cycles on arrival; decorative work rests afterward and in the background.
-      animation = Animated.loop(Animated.sequence([
-        Animated.timing(float, { toValue: 1, duration: 2100, easing: Easing.inOut(Easing.sin), useNativeDriver: Platform.OS !== 'web', isInteraction: false }),
-        Animated.timing(float, { toValue: 0, duration: 2100, easing: Easing.inOut(Easing.sin), useNativeDriver: Platform.OS !== 'web', isInteraction: false }),
-      ]), { iterations: 3 });
-      animation.start();
-    };
-    start();
-    const subscription = AppState.addEventListener('change', (state) => { if (state === 'active') start(); else stop(); });
-    return () => { subscription.remove(); stop(); };
-  }, [animationKey, float, reducedMotion]);
+    acknowledgment.setValue(1);
+    if (reducedMotion || !status.complete) return;
+    acknowledgment.setValue(0);
+    const animation = Animated.timing(acknowledgment, { toValue: 1, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: Platform.OS !== 'web', isInteraction: false });
+    animation.start();
+    return () => animation.stop();
+  }, [acknowledgment, reducedMotion, status.complete]);
 
   const animatePress = (down: boolean) => {
     press.stopAnimation();
-    Animated.timing(press, { toValue: down && !reducedMotion ? 1 : 0, duration: reducedMotion ? 0 : 130, useNativeDriver: Platform.OS !== 'web' }).start();
+    Animated.timing(press, { toValue: down && !reducedMotion ? 1 : 0, duration: reducedMotion ? 0 : 110, useNativeDriver: Platform.OS !== 'web' }).start();
   };
   const start = async () => {
     if (inFlight.current) return;
     inFlight.current = true;
     setOpening(true);
+    setError(null);
     try { await onStartSession(); }
-    catch { Alert.alert('Couldn’t open your next step', 'Please try again. Your learning data is saved.'); }
+    catch { if (mounted.current) setError('Couldn’t open this step. Please try again.'); }
     finally { inFlight.current = false; if (mounted.current) setOpening(false); }
   };
   const priorities = [
-    { kind: 'due' as const, value: dashboard.dueCount, label: 'Due reviews', tint: dark ? colors.mint : '#187D68', soft: colors.mintSoft, detail: dashboard.due.length ? [...new Set(dashboard.due.map((group) => group.deck.courseName))].join(' · ') : 'No scheduled reviews are due' },
-    { kind: 'weak' as const, value: dashboard.weak.length, label: 'Weak topics', tint: colors.purple, soft: colors.purpleSoft, detail: 'Topics needing practice, based on repeated recorded answers' },
-    { kind: 'mistakes' as const, value: dashboard.mistakeIds.length, label: 'Missed questions', tint: colors.primary, soft: colors.primarySoft, detail: 'Distinct questions missed repeatedly and not yet corrected' },
+    { kind: 'weak' as const, value: dashboard.weak.length, label: 'Weak topics', empty: 'None identified', detail: 'Based on repeated quiz answers', icon: 'lightning-bolt-outline' as const },
+    { kind: 'due' as const, value: dashboard.dueCount, label: 'Due reviews', empty: 'Nothing due', detail: 'Recorded reviews scheduled for now', icon: 'cards-outline' as const },
+    { kind: 'mistakes' as const, value: dashboard.mistakeIds.length, label: 'Missed questions', empty: 'Nothing repeated', detail: 'Repeated misses not yet corrected', icon: 'book-alert-outline' as const },
   ];
+  const taskIcon: PlanIconName = focus.medium === 'audio' ? 'headphones' : focus.medium === 'notes' ? 'book-open-page-variant-outline' : focus.medium === 'pack' ? 'file-document-outline' : focus.medium === 'materials' ? 'sprout-outline' : 'cards-outline';
 
   return (
-    <Animated.View onLayout={(event) => setCardWidth(event.nativeEvent.layout.width)} style={[styles.frame, { shadowColor: colors.shadow, opacity: arrival, transform: reducedMotion ? [] : [{ translateY: arrival.interpolate({ inputRange: [0, 1], outputRange: [7, 0] }) }] }]}>
-      <View style={[styles.card, { borderColor: colors.border, backgroundColor: colors.card }]}>
-        <LinearGradient colors={[colors.primarySoft, colors.card, colors.card]} locations={[0, 0.36, 1]} start={{ x: 1, y: 0 }} end={{ x: 0.3, y: 1 }} style={[styles.surface, wide && styles.surfaceWide]}>
-          <View style={styles.header}>
-            <Pressable accessibilityRole="button" accessibilityLabel="Today’s Plan. Open your study planner" onPress={onOpenPlan} onFocus={() => setFocused('planner')} onBlur={() => setFocused(null)} style={({ pressed }) => [styles.badgeClip, { opacity: pressed ? 0.7 : 1, borderColor: focused === 'planner' ? colors.primary : 'transparent' }]}>
-              <View style={styles.planBadge}>
-                <View style={[styles.planMark, { backgroundColor: colors.goldSoft }]}><PlanIcon name="calendar-check-outline" size={17} color={colors.goldText} /></View>
-                <Text style={[styles.badgeText, { color: colors.text }]}>Today’s plan</Text>
-                <PlanIcon name="chevron-right" size={15} color={body} />
-              </View>
-            </Pressable>
-            {dashboard.recommendation.minutes !== null ? <View style={styles.timeBadge}><PlanIcon name="clock-outline" size={14} color={body} /><Text style={[styles.estimate, { color: body }]}>About {dashboard.recommendation.minutes} min</Text></View> : null}
-          </View>
-
-          <View style={styles.hero}>
-            <View style={styles.heroCopy}>
-              <Text accessibilityRole="header" style={[styles.title, wide && styles.titleWide, { color: colors.text }]}>Study{'\u2002'}<Text style={{ color: colors.primary }}>Now</Text></Text>
-              <Text style={[styles.encouragement, { color: body }]}>{hasMaterials ? 'A clear next step. A little more confidence.' : 'Build your routine from what you’re learning.'}</Text>
-            </View>
-            {fontScale < 1.6 ? <PlanArtwork colors={colors} motion={float} wide={wide} compact={availableWidth < 350 || fontScale >= 1.3} /> : null}
-          </View>
-
-          {hasMaterials ? <View style={styles.priorities}>
-            <View style={styles.priorityHeading}><Text accessibilityRole="header" style={[styles.priorityTitle, { color: colors.text }]}>Your study priorities</Text><Text style={[styles.priorityHint, { color: body }]}>View details</Text></View>
-            <View style={[styles.metrics, stacked && styles.metricsStacked]}>
-              {priorities.map((priority) => <Pressable
-                key={priority.kind} accessibilityRole="button" accessibilityLabel={`${priority.value} ${priority.label}`} accessibilityHint={`${priority.detail}. View study options.`}
-                onPress={() => onOpenPriority(priority.kind)} onFocus={() => setFocused(priority.kind)} onBlur={() => setFocused(null)}
-                style={({ pressed }) => [styles.metric, stacked ? styles.metricStacked : styles.metricColumn, { opacity: pressed ? 0.65 : 1, borderColor: focused === priority.kind ? colors.primary : colors.border, backgroundColor: focused === priority.kind ? colors.primarySoft : colors.card }]}
-              >
-                <View style={[styles.metricTop, stacked && styles.metricTopStacked]}>
-                  <View style={[styles.metricIcon, { backgroundColor: priority.soft }]}><PriorityGlyph name={priority.kind} color={priority.tint} accent={colors.gold} size={21} /></View>
-                  <Text style={[styles.value, { color: colors.text }]}>{priority.value.toLocaleString()}</Text>
-                </View>
-                <View style={styles.metricLabelRow}><Text style={[styles.metricLabel, { color: body }]}>{priority.label}</Text><PlanIcon name="chevron-right" color={priority.tint} size={13} /></View>
-              </Pressable>)}
-            </View>
-          </View> : null}
-
-          <View style={[styles.nextFrame, { borderColor: `${colors.primary}26`, backgroundColor: colors.primarySoft }]}>
-            <View style={[styles.nextAccent, { backgroundColor: colors.goldBright }]} />
-            <View style={styles.nextPanel}>
-              <View style={styles.nextHeading}><PlanIcon name="bullseye-arrow" color={colors.primary} size={16} /><Text style={[styles.eyebrow, { color: colors.textSecondary }]}>{focus.medium === 'materials' ? 'YOUR FIRST STEP' : 'NEXT UP'}</Text>{focus.examLabel ? <Text style={[styles.examTag, { color: colors.goldText, backgroundColor: colors.goldSoft }]}>{focus.examLabel}</Text> : null}</View>
-              <View style={styles.nextBody}>
-                <View style={styles.nextCopy}>
-                  <Text accessibilityRole="header" style={[styles.nextTitle, { color: colors.text }]}>{focus.title}</Text>
-                  {focus.source ? <Text style={[styles.source, { color: colors.textSecondary }]}>{focus.source}</Text> : null}
-                  <Text style={[styles.reason, { color: body }]}>{focus.reason}</Text>
-                </View>
-                {!stacked ? <SessionSummary focus={focus} colors={colors} /> : null}
-              </View>
-              <View style={[styles.tip, { borderTopColor: `${colors.primary}26` }]}><PlanIcon name="lightbulb-on-outline" size={14} color={colors.goldText} /><Text style={[styles.tipText, { color: body }]}>{focus.tip}</Text></View>
-            </View>
-          </View>
-
-          <Animated.View style={{ marginTop: 13, transform: reducedMotion ? [] : [{ scale: press.interpolate({ inputRange: [0, 1], outputRange: [1, 0.985] }) }] }}>
-            <Pressable accessibilityRole="button" accessibilityLabel={opening ? 'Opening your next step' : `${focus.actionLabel}${focus.actionDetail ? `. ${focus.actionDetail}` : ''}`} accessibilityHint={focus.reason} accessibilityState={{ busy: opening, disabled: opening }} disabled={opening} onPress={() => { void start(); }} onPressIn={() => animatePress(true)} onPressOut={() => animatePress(false)} onFocus={() => setFocused('action')} onBlur={() => setFocused(null)} style={[styles.actionClip, { borderColor: focused === 'action' ? colors.text : 'transparent', opacity: opening ? 0.8 : 1 }]}>
-              <View style={[styles.action, { backgroundColor: actionBackground }]}>
-                <View style={[styles.play, { backgroundColor: `${colors.primaryText}1C` }]}>{opening ? <ActivityIndicator color={colors.primaryText} size="small" /> : <PlanIcon name={focus.medium === 'materials' ? 'plus' : focus.medium === 'notes' ? 'book-open-page-variant-outline' : 'play'} color={colors.primaryText} size={19} />}</View>
-                <View style={styles.actionCopy}><Text style={[styles.actionText, { color: colors.primaryText }]}>{opening ? 'Opening…' : focus.actionLabel}</Text>{focus.actionDetail && (stacked || availableWidth < 390) ? <Text style={[styles.actionDetail, { color: colors.primaryText }]}>{focus.actionDetail}</Text> : null}</View>
-                {focus.actionDetail && !stacked && availableWidth >= 390 ? <Text style={[styles.actionDetail, { color: colors.primaryText }]}>{focus.actionDetail}</Text> : null}
-                <PlanIcon name="arrow-right" color={colors.primaryText} size={20} />
-              </View>
-            </Pressable>
-          </Animated.View>
-          <Text style={[styles.footer, { color: body }]}>Progress over perfection. One useful step at a time.</Text>
-        </LinearGradient>
+    <Animated.View onLayout={(event) => setCardWidth(event.nativeEvent.layout.width)} style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow, opacity: arrival, transform: reducedMotion ? [] : [{ translateY: arrival.interpolate({ inputRange: [0, 1], outputRange: [5, 0] }) }] }]}>
+      <View style={styles.heading}>
+        <View style={styles.headingLabel}><View style={[styles.calendar, { backgroundColor: colors.goldSoft }]}><PlanIcon name="calendar-check-outline" color={colors.goldText} size={18} /></View><Text accessibilityRole="header" style={[styles.sectionTitle, { color: colors.text }]}>Today’s plan</Text></View>
+        <Pressable accessibilityRole="button" accessibilityLabel="Open study planner" onPress={onOpenPlan} onFocus={() => setFocused('planner')} onBlur={() => setFocused(null)} style={({ pressed }) => [styles.plannerLink, { backgroundColor: colors.cardStrong, borderColor: focused === 'planner' ? blue : 'transparent', opacity: pressed ? 0.7 : 1 }]}><Text style={[styles.linkText, { color: blue }]}>Planner</Text><PlanIcon name="chevron-right" color={blue} size={17} /></Pressable>
       </View>
+
+      <View style={[styles.taskLabel, { marginTop: hasMaterials ? 20 : 16 }]}>
+        <PlanIcon name={taskIcon} color={blue} size={18} />
+        <Text style={[styles.eyebrow, { color: blue }]}>{!hasMaterials ? 'YOUR FIRST STEP' : status.complete ? 'OPTIONAL NEXT STEP' : 'RECOMMENDED FOR YOU'}</Text>
+      </View>
+      <Text accessibilityRole="header" style={[styles.taskTitle, { color: colors.text }]}>{focus.title}</Text>
+      {focus.source ? <Text style={[styles.source, { color: colors.textSecondary }]}>{focus.source}</Text> : null}
+      <Text style={[styles.reason, { color: colors.textSecondary }]}>{focus.reason}</Text>
+      {focus.examLabel || dashboard.recommendation.minutes !== null || focus.actionDetail ? <View style={styles.taskDetails}>
+        {focus.examLabel ? <View style={[styles.examTag, { backgroundColor: colors.goldSoft }]}><PlanIcon name="calendar-outline" color={colors.goldText} size={15} /><Text style={[styles.detailText, { color: colors.goldText }]}>{focus.examLabel}</Text></View> : null}
+        {dashboard.recommendation.minutes !== null ? <View style={styles.detail}><PlanIcon name="clock-outline" color={colors.textSecondary} size={16} /><Text style={[styles.detailText, { color: colors.textSecondary }]}>About {dashboard.recommendation.minutes} min</Text></View> : null}
+        {focus.actionDetail ? <View style={styles.detail}><Text style={[styles.detailText, { color: colors.textSecondary }]}>{focus.actionDetail}</Text></View> : null}
+      </View> : null}
+
+      <Animated.View style={{ marginTop: 18, transform: reducedMotion ? [] : [{ scale: press.interpolate({ inputRange: [0, 1], outputRange: [1, 0.99] }) }] }}>
+        <Pressable accessibilityRole="button" accessibilityLabel={opening ? 'Opening your next step' : focus.actionLabel} accessibilityHint={focus.reason} accessibilityState={{ busy: opening, disabled: opening }} disabled={opening} onPress={() => { void start(); }} onPressIn={() => animatePress(true)} onPressOut={() => animatePress(false)} onFocus={() => setFocused('action')} onBlur={() => setFocused(null)} style={({ pressed }) => [styles.action, !hasMaterials && styles.firstAction, { backgroundColor: hasMaterials ? actionBackground : colors.primarySoft, borderColor: focused === 'action' ? colors.text : 'transparent', opacity: opening || pressed ? 0.8 : 1 }]}>
+          {opening ? <ActivityIndicator color={hasMaterials ? colors.primaryText : blue} /> : <PlanIcon name={focus.medium === 'materials' ? 'plus' : focus.medium === 'notes' ? 'book-open-page-variant-outline' : focus.medium === 'pack' ? 'file-document-outline' : 'play'} color={hasMaterials ? colors.primaryText : blue} />}
+          <Text style={[styles.actionText, { color: hasMaterials ? colors.primaryText : blue }]}>{opening ? 'Opening…' : focus.actionLabel}</Text>
+          <PlanIcon name="arrow-right" color={hasMaterials ? colors.primaryText : blue} />
+        </Pressable>
+      </Animated.View>
+      {error ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={[styles.error, { color: colors.danger }]}>{error}</Text> : null}
+      {hasMaterials ? <>
+        <Pressable accessibilityRole="button" accessibilityState={{ expanded: optionsExpanded }} accessibilityLabel={optionsExpanded ? 'Hide study priority details' : 'Show study priority details'} onPress={() => setOptionsExpanded((value) => !value)} style={[styles.optionsToggle, { borderBottomColor: colors.border }]}><Text style={[styles.linkText, { color: blue }]}>Study priorities</Text><Text style={[styles.optionsSummary, { color: colors.textSecondary }]}>{dashboard.dueCount} due · {dashboard.weak.length} weak {dashboard.weak.length === 1 ? 'topic' : 'topics'}</Text><PlanIcon name={optionsExpanded ? 'chevron-up' : 'chevron-down'} color={blue} size={18} /></Pressable>
+        {optionsExpanded ? <>
+        <View style={[styles.tip, { borderBottomColor: colors.border }]}><PlanIcon name="lightbulb-on-outline" size={16} color={colors.goldText} /><Text style={[styles.tipText, { color: colors.textSecondary }]}>{focus.tip}</Text></View>
+        <View style={[styles.priorities, compact && styles.prioritiesStacked]}>
+          {priorities.map((priority) => <Pressable key={priority.kind} accessibilityRole="button" accessibilityLabel={priority.value + ' ' + priority.label} accessibilityHint={priority.detail + '. View study options.'} onPress={() => onOpenPriority(priority.kind)} onFocus={() => setFocused(priority.kind)} onBlur={() => setFocused(null)} style={({ pressed }) => [styles.priority, compact && styles.priorityStacked, { borderColor: focused === priority.kind ? blue : 'transparent', backgroundColor: focused === priority.kind ? colors.primarySoft : 'transparent', opacity: pressed ? 0.65 : 1 }]}>
+            <View style={styles.priorityTitle}><PlanIcon name={priority.icon} color={colors.textSecondary} size={17} /><Text style={[styles.priorityValue, { color: colors.text }]}>{priority.value > 0 ? priority.value.toLocaleString() : '—'}</Text>{compact ? <Text style={[styles.priorityLabel, { color: colors.textSecondary }]}>{priority.label}</Text> : null}</View>
+            {!compact ? <Text style={[styles.priorityLabel, { color: colors.textSecondary }]}>{priority.label}</Text> : null}
+            <View style={[styles.priorityStatus, compact && { marginLeft: 'auto' }]}><Text style={[styles.priorityHint, { color: colors.textSecondary }]}>{priority.value > 0 ? 'View details' : priority.empty}</Text><PlanIcon name="chevron-right" color={blue} size={15} /></View>
+          </Pressable>)}
+        </View>
+        </> : null}
+      </> : null}
+      {hasMaterials ? <Animated.View accessibilityLiveRegion="polite" style={[styles.status, { backgroundColor: status.complete ? colors.mintSoft : colors.cardStrong, opacity: acknowledgment }]}>
+        <PlanIcon name={status.complete || status.hasActivity ? 'check-circle-outline' : 'sprout-outline'} color={status.complete || status.hasActivity ? green : blue} size={20} />
+        <View style={styles.statusCopy}><Text style={[styles.statusTitle, { color: colors.text }]}>{status.title}</Text><Text style={[styles.statusDetail, { color: colors.textSecondary }]}>{status.detail}</Text></View>
+        {dashboard.today.planTotal > 0 ? <View accessible accessibilityRole="progressbar" accessibilityLabel="Today's study plan tasks marked complete" accessibilityValue={{ min: 0, max: dashboard.today.planTotal, now: dashboard.today.planCompleted, text: status.detail }} style={[styles.completionTrack, { backgroundColor: colors.border }]}><View style={{ height: '100%', width: `${dashboard.today.planCompleted / dashboard.today.planTotal * 100}%`, backgroundColor: green, borderRadius: 3 }} /></View> : null}
+      </Animated.View> : null}
     </Animated.View>
   );
 }
 
-function SessionSummary({ focus, colors }: { focus: TodaysPlanFocus; colors: AppColors }) {
-  return <View accessible accessibilityLabel={focus.count === null ? focus.countLabel : `${focus.count} ${focus.countLabel}`} style={[styles.summary, { backgroundColor: colors.card, borderColor: `${colors.primary}26` }]}>
-    {focus.count === null
-      ? <PlanIcon name={focus.medium === 'audio' ? 'headphones' : focus.medium === 'materials' ? 'sprout-outline' : 'book-open-page-variant-outline'} size={25} color={colors.primary} />
-      : <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={[styles.summaryValue, { color: colors.primary }]}>{focus.count.toLocaleString()}</Text>}
-    <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>{focus.countLabel}</Text>
-  </View>;
-}
-
-function PlanArtwork({ colors, motion, wide, compact }: { colors: AppColors; motion: Animated.Value; wide: boolean; compact: boolean }) {
-  return <View aria-hidden accessible={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" pointerEvents="none" style={[styles.art, wide && styles.artWide, compact && styles.artCompact]}>
-    <Svg width="100%" height="100%" viewBox="0 0 190 145" style={StyleSheet.absoluteFill} accessible={false}>
-      <Ellipse cx="105" cy="80" rx="76" ry="53" fill={colors.primarySoft} />
-      <Ellipse cx="136" cy="44" rx="25" ry="25" fill={colors.goldSoft} opacity="0.65" />
-    </Svg>
-    <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ translateY: motion.interpolate({ inputRange: [0, 1], outputRange: [0, -3] }) }, { rotate: motion.interpolate({ inputRange: [0, 1], outputRange: ['-1deg', '1deg'] }) }] }]}><StudyPlanIllustration dark={colors.mode === 'dark'} /></Animated.View>
-    <Animated.View style={[styles.sparkle, { top: '17%', left: '8%', opacity: motion.interpolate({ inputRange: [0, 1], outputRange: [0.5, 0.95] }), transform: [{ scale: motion.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1.05] }) }] }]}><PlanIcon name="star-four-points" color={colors.goldBright} size={15} /></Animated.View>
-    <View style={[styles.sparkle, { top: '44%', right: '2%', opacity: 0.45 }]}><PlanIcon name="star-four-points" color={colors.primary} size={10} /></View>
-  </View>;
-}
-
 const styles = StyleSheet.create({
-  frame: { borderRadius: 24, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.045, shadowRadius: 12, elevation: 1 },
-  card: { borderWidth: 1, borderRadius: 24, overflow: 'hidden' },
-  surface: { padding: 16 },
-  surfaceWide: { padding: 20 },
-  header: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 6 },
-  badgeClip: { borderRadius: 12, borderWidth: 1 },
-  planBadge: { minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 3, paddingVertical: 4 },
-  planMark: { width: 30, height: 30, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  badgeText: { fontSize: 12, lineHeight: 18, fontWeight: '700' },
-  timeBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 8 },
-  estimate: { fontSize: 11, lineHeight: 16, fontWeight: '500' },
-  hero: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6, minHeight: 104 },
-  heroCopy: { flex: 1, minWidth: 0 },
-  title: { fontSize: 32, lineHeight: 40, fontWeight: '900', letterSpacing: -1 },
-  titleWide: { fontSize: 38, lineHeight: 46, letterSpacing: -1.2 },
-  encouragement: { fontSize: 13, lineHeight: 20, marginTop: 5, maxWidth: 310 },
-  art: { width: 108, height: 100, flexShrink: 0 },
-  artWide: { width: 150, height: 124 },
-  artCompact: { width: 82, height: 80 },
-  sparkle: { position: 'absolute' },
-  priorities: { marginTop: 12 },
-  priorityHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  priorityTitle: { fontSize: 12, lineHeight: 18, fontWeight: '700', flexShrink: 1 },
-  priorityHint: { fontSize: 10, lineHeight: 16 },
-  eyebrow: { fontSize: 9, lineHeight: 15, fontWeight: '800', letterSpacing: 0.9 },
-  metrics: { flexDirection: 'row', gap: 7, marginTop: 9 },
-  metricsStacked: { flexDirection: 'column', gap: 6 },
-  metric: { minHeight: 84, paddingHorizontal: 9, paddingVertical: 9, borderRadius: 14, borderWidth: 1 },
-  metricColumn: { flex: 1, minWidth: 0 },
-  metricStacked: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 50, paddingVertical: 8 },
-  metricTop: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  metricTopStacked: { minWidth: 80 },
-  metricIcon: { width: 28, height: 28, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  value: { fontSize: 23, lineHeight: 29, fontWeight: '800', fontVariant: ['tabular-nums'], letterSpacing: -0.5, flexShrink: 1 },
-  metricLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 1, marginTop: 5, flex: 1 },
-  metricLabel: { fontSize: 11, lineHeight: 16, fontWeight: '500', flex: 1 },
-  nextFrame: { marginTop: 14, borderRadius: 18, borderWidth: 1, overflow: 'hidden' },
-  nextAccent: { position: 'absolute', top: 0, bottom: 0, left: 0, width: 3 },
-  nextPanel: { padding: 14, paddingLeft: 16 },
-  nextHeading: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 },
-  examTag: { marginLeft: 'auto', fontSize: 9, lineHeight: 14, fontWeight: '700', borderRadius: 6, paddingHorizontal: 5, paddingVertical: 2 },
-  nextBody: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 9 },
-  nextCopy: { flex: 1, minWidth: 0 },
-  nextTitle: { fontSize: 17, lineHeight: 23, fontWeight: '800', letterSpacing: -0.25 },
-  source: { fontSize: 11, lineHeight: 17, fontWeight: '600', marginTop: 3 },
-  reason: { fontSize: 12, lineHeight: 18, marginTop: 5 },
-  tip: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, borderTopWidth: StyleSheet.hairlineWidth, marginTop: 11, paddingTop: 9 },
-  tipText: { flex: 1, fontSize: 11, lineHeight: 17 },
-  summary: { width: 68, minHeight: 76, borderRadius: 15, borderWidth: 1, flexShrink: 0, alignItems: 'center', justifyContent: 'center', padding: 7, gap: 2 },
-  summaryValue: { fontSize: 26, lineHeight: 32, fontWeight: '800', fontVariant: ['tabular-nums'], letterSpacing: -0.8 },
-  summaryLabel: { fontSize: 9, lineHeight: 13, textAlign: 'center', fontWeight: '500' },
-  actionClip: { borderRadius: 17, borderWidth: 2, overflow: 'hidden' },
-  action: { minHeight: 54, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 13, paddingVertical: 10 },
-  play: { width: 30, height: 30, borderRadius: 10, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  actionCopy: { flex: 1, minWidth: 0 },
-  actionText: { fontSize: 15, lineHeight: 22, fontWeight: '700' },
-  actionDetail: { fontSize: 11, lineHeight: 16, fontWeight: '500', opacity: 0.85, flexShrink: 1 },
-  footer: { fontSize: 10, lineHeight: 16, textAlign: 'center', marginTop: 8 },
+  card: { padding: 18, borderRadius: 22, borderWidth: 1, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.035, shadowRadius: 14, elevation: 1 },
+  heading: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  headingLabel: { flexDirection: 'row', alignItems: 'center', gap: 9, flexShrink: 1 },
+  calendar: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  sectionTitle: { fontSize: 16, lineHeight: 23, fontWeight: '700' },
+  plannerLink: { minHeight: 44, borderWidth: 1, borderRadius: 12, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 2 },
+  linkText: { fontSize: 13, lineHeight: 19, fontWeight: '600' },
+  taskLabel: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  eyebrow: { fontSize: 11, lineHeight: 17, letterSpacing: 0.65, fontWeight: '700', flexShrink: 1 },
+  taskTitle: { fontSize: 24, lineHeight: 31, fontWeight: '800', letterSpacing: -0.55, marginTop: 8 },
+  source: { fontSize: 14, lineHeight: 21, fontWeight: '600', marginTop: 7 },
+  reason: { fontSize: 15, lineHeight: 23, marginTop: 8 },
+  taskDetails: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 14, rowGap: 7, marginTop: 12 },
+  detail: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  detailText: { fontSize: 13, lineHeight: 19, fontWeight: '500' },
+  examTag: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 8 },
+  action: { minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 13, borderRadius: 15, borderWidth: 2 },
+  firstAction: { minHeight: 48 },
+  actionText: { flex: 1, minWidth: 0, fontSize: 16, lineHeight: 23, fontWeight: '700' },
+  error: { fontSize: 14, lineHeight: 21, marginTop: 10 },
+  tip: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, marginTop: 13, paddingBottom: 16, borderBottomWidth: StyleSheet.hairlineWidth },
+  optionsToggle: { minHeight: 48, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 7, borderBottomWidth: StyleSheet.hairlineWidth, marginTop: 7, paddingVertical: 6 },
+  optionsSummary: { fontSize: 12, lineHeight: 19, marginLeft: 'auto', flexShrink: 1 },
+  tipText: { flex: 1, fontSize: 13, lineHeight: 20 },
+  priorities: { flexDirection: 'row', gap: 6, marginTop: 10 },
+  prioritiesStacked: { flexDirection: 'column', gap: 2 },
+  priority: { flex: 1, minWidth: 0, minHeight: 94, paddingVertical: 9, paddingHorizontal: 5, borderWidth: 1, borderRadius: 10 },
+  priorityStacked: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, flex: 0, minHeight: 48 },
+  priorityTitle: { flexDirection: 'row', alignItems: 'center', gap: 5, flexShrink: 1 },
+  priorityValue: { fontSize: 18, lineHeight: 25, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  priorityLabel: { fontSize: 12, lineHeight: 18, fontWeight: '500', marginTop: 2 },
+  priorityStatus: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 3 },
+  priorityHint: { flexShrink: 1, fontSize: 11, lineHeight: 17 },
+  status: { marginTop: 8, padding: 12, borderRadius: 13, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 9 },
+  statusCopy: { flex: 1, minWidth: 150 },
+  statusTitle: { fontSize: 13, lineHeight: 20, fontWeight: '600' },
+  statusDetail: { fontSize: 12, lineHeight: 18, marginTop: 2 },
+  completionTrack: { height: 5, width: '100%', borderRadius: 3, overflow: 'hidden' },
 });

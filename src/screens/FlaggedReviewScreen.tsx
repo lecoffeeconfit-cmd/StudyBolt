@@ -95,7 +95,7 @@ export function FlaggedReviewScreen({
         {MODES.map((candidate) => {
           const active = mode === candidate.id;
           return (
-            <Pressable
+            <Pressable aria-selected={active}
               key={candidate.id}
               accessibilityRole="tab"
               accessibilityState={{ selected: active }}
@@ -210,7 +210,7 @@ function FlaggedFocusSession({ session, onBack, onOpenDeck }: { session: FocusSe
           <Text style={[styles.focusCompleteText, { color: colors.textSecondary }]}>You worked through the flagged items in {session.title}.</Text>
         </View>
         {availableAgain ? <PrimaryButton label="Review this set again" icon="refresh" onPress={resetSession} style={styles.focusButton} /> : null}
-        <Pressable onPress={onBack} style={[styles.backToFlags, { backgroundColor: colors.cardStrong, borderColor: colors.border }]}>
+        <Pressable accessibilityRole="button" onPress={onBack} style={[styles.backToFlags, { backgroundColor: colors.cardStrong, borderColor: colors.border }]}>
           <Text style={[styles.backToFlagsText, { color: colors.primary }]}>Back to saved items</Text>
         </Pressable>
       </Screen>
@@ -269,7 +269,7 @@ function FlaggedFocusSession({ session, onBack, onOpenDeck }: { session: FocusSe
         style={styles.focusButton}
       />
       <View style={styles.focusSecondaryActions}>
-        <Pressable onPress={() => onOpenDeck(item.deckId, toolFor(item.kind))} style={[styles.openAction, { backgroundColor: colors.primarySoft }]}>
+        <Pressable accessibilityRole="button" onPress={() => onOpenDeck(item.deckId, toolFor(item.kind))} style={[styles.openAction, { backgroundColor: colors.primarySoft }]}>
           <Text style={[styles.openActionText, { color: colors.primary }]}>Open in pack</Text>
           <Icon name="arrow-right" size={16} color={colors.primary} />
         </Pressable>
@@ -312,12 +312,12 @@ function FlaggedCard({ item, onRemove, onOpen }: { item: FlaggedItem; onRemove: 
 
       <View style={styles.itemActions}>
         {canReveal ? (
-          <Pressable onPress={() => setRevealed((value) => !value)} style={[styles.secondaryAction, { backgroundColor: colors.cardStrong, borderColor: colors.border }]}>
+          <Pressable accessibilityRole="button" onPress={() => setRevealed((value) => !value)} style={[styles.secondaryAction, { backgroundColor: colors.cardStrong, borderColor: colors.border }]}>
             <Icon name={revealed ? 'eye-off-outline' : 'eye-outline'} size={16} color={colors.primary} />
             <Text style={[styles.secondaryActionText, { color: colors.primary }]}>{revealed ? 'Hide answer' : 'Reveal answer'}</Text>
           </Pressable>
         ) : null}
-        <Pressable onPress={onOpen} style={[styles.openAction, { backgroundColor: colors.primarySoft }]}>
+        <Pressable accessibilityRole="button" onPress={onOpen} style={[styles.openAction, { backgroundColor: colors.primarySoft }]}>
           <Text style={[styles.openActionText, { color: colors.primary }]}>Open in pack</Text>
           <Icon name="arrow-right" size={16} color={colors.primary} />
         </Pressable>
@@ -345,15 +345,15 @@ const styles = StyleSheet.create({
   heroIcon: { width: 52, height: 52, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   heroCopy: { flex: 1 },
   heroTitle: { fontSize: 16, fontWeight: '900' },
-  heroText: { fontSize: 10, lineHeight: 15, marginTop: 4 },
+  heroText: { fontSize: 14, lineHeight: 21, marginTop: 4 },
   summaryRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
   summary: { flex: 1, borderWidth: StyleSheet.hairlineWidth, borderRadius: 15, paddingVertical: 12, alignItems: 'center' },
   summaryValue: { fontSize: 20, fontWeight: '900' },
-  summaryLabel: { fontSize: 8, marginTop: 2, textAlign: 'center' },
+  summaryLabel: { fontSize: 12, lineHeight: 18, marginTop: 2, textAlign: 'center' },
   modeSwitcher: { flexDirection: 'row', borderRadius: 16, padding: 4, gap: 4, marginTop: 22 },
   mode: { flex: 1, minHeight: 42, borderRadius: 13, borderWidth: StyleSheet.hairlineWidth, borderColor: 'transparent', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 },
-  modeText: { fontSize: 10, fontWeight: '900' },
-  modeDescription: { fontSize: 11, lineHeight: 16, marginTop: 8, marginBottom: 13 },
+  modeText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  modeDescription: { fontSize: 14, lineHeight: 21, marginTop: 8, marginBottom: 13 },
   focusButton: { marginTop: 4, marginBottom: 16 },
   list: { gap: 11 },
   groupList: { gap: 25 },
@@ -361,47 +361,47 @@ const styles = StyleSheet.create({
   groupHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   groupCopy: { flex: 1 },
   groupTitle: { fontSize: 16, fontWeight: '900' },
-  groupSubtitle: { fontSize: 10, marginTop: 3 },
+  groupSubtitle: { fontSize: 16, lineHeight: 24, marginTop: 3 },
   groupFocusButton: { minHeight: 34, borderRadius: 11, paddingHorizontal: 9, flexDirection: 'row', alignItems: 'center', gap: 4 },
-  groupFocusText: { fontSize: 9, fontWeight: '900' },
+  groupFocusText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   itemCard: { padding: 16 },
   itemTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   kindBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 8, paddingVertical: 6, borderRadius: 9 },
-  kindText: { fontSize: 8, fontWeight: '900', letterSpacing: 0.7 },
-  itemContext: { fontSize: 9, fontWeight: '700', marginTop: 13 },
-  itemTitle: { fontSize: 13, fontWeight: '900', marginTop: 5 },
+  kindText: { fontSize: 14, lineHeight: 21, fontWeight: '700', letterSpacing: 0.7 },
+  itemContext: { fontSize: 14, lineHeight: 21, fontWeight: '700', marginTop: 13 },
+  itemTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700', marginTop: 5 },
   itemPrompt: { fontSize: 15, lineHeight: 21, fontWeight: '800', marginTop: 7 },
   answerBlock: { borderRadius: 13, padding: 12, marginTop: 12 },
   answerHeading: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  answerLabel: { fontSize: 8, fontWeight: '900', letterSpacing: 0.7 },
-  answerText: { fontSize: 12, lineHeight: 18, marginTop: 6 },
-  explanation: { fontSize: 10, lineHeight: 15, marginTop: 8 },
+  answerLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 0.7 },
+  answerText: { fontSize: 14, lineHeight: 21, marginTop: 6 },
+  explanation: { fontSize: 14, lineHeight: 21, marginTop: 8 },
   itemActions: { flexDirection: 'row', gap: 8, marginTop: 12 },
   secondaryAction: { flex: 1, minHeight: 41, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
-  secondaryActionText: { fontSize: 9, fontWeight: '900' },
+  secondaryActionText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   openAction: { flex: 1, minHeight: 41, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
-  openActionText: { fontSize: 9, fontWeight: '900' },
+  openActionText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   focusIntro: { flexDirection: 'row', alignItems: 'center', gap: 11, marginBottom: 14 },
   focusIntroIcon: { width: 44, height: 44, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   focusIntroCopy: { flex: 1 },
   focusIntroTitle: { fontSize: 16, fontWeight: '900' },
-  focusIntroText: { fontSize: 10, lineHeight: 15, marginTop: 2 },
+  focusIntroText: { fontSize: 14, lineHeight: 21, marginTop: 2 },
   focusCard: { padding: 18, marginTop: 18 },
   focusPrompt: { fontSize: 19, lineHeight: 27, fontWeight: '800', marginTop: 10 },
   answerLocked: { borderRadius: 13, borderWidth: StyleSheet.hairlineWidth, padding: 14, marginTop: 16, flexDirection: 'row', alignItems: 'center', gap: 9 },
-  answerLockedText: { flex: 1, fontSize: 11, lineHeight: 16 },
+  answerLockedText: { flex: 1, fontSize: 14, lineHeight: 21 },
   focusSecondaryActions: { alignItems: 'center', gap: 10 },
-  focusHint: { fontSize: 10, textAlign: 'center' },
+  focusHint: { fontSize: 14, lineHeight: 21, textAlign: 'center' },
   focusComplete: { alignItems: 'center', borderRadius: 20, padding: 24, marginTop: 12 },
   focusCompleteIcon: { width: 70, height: 70, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
   focusCompleteTitle: { fontSize: 22, fontWeight: '900', marginTop: 16 },
-  focusCompleteText: { maxWidth: 290, fontSize: 12, lineHeight: 18, textAlign: 'center', marginTop: 6 },
+  focusCompleteText: { maxWidth: 290, fontSize: 14, lineHeight: 21, textAlign: 'center', marginTop: 6 },
   backToFlags: { minHeight: 50, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center', marginTop: 0 },
-  backToFlagsText: { fontSize: 13, fontWeight: '900' },
+  backToFlagsText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   sourceRow: { borderTopWidth: StyleSheet.hairlineWidth, marginTop: 13, paddingTop: 10, flexDirection: 'row', alignItems: 'center', gap: 5 },
-  sourceText: { fontSize: 9, fontWeight: '600' },
+  sourceText: { fontSize: 12, lineHeight: 18, fontWeight: '600' },
   empty: { alignItems: 'center', paddingVertical: 38, marginTop: 8 },
   emptyIcon: { width: 64, height: 64, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
   emptyTitle: { fontSize: 18, fontWeight: '900', marginTop: 14 },
-  emptyText: { maxWidth: 280, textAlign: 'center', fontSize: 11, lineHeight: 17, marginTop: 5 },
+  emptyText: { maxWidth: 280, textAlign: 'center', fontSize: 14, lineHeight: 21, marginTop: 5 },
 });

@@ -6,11 +6,9 @@
         <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="24053.1"/>
         <capability name="Named colors" minToolsVersion="9.0"/>
         <capability name="Safe area layout guides" minToolsVersion="9.0"/>
-        <capability name="System colors in document resources" minToolsVersion="11.0"/>
         <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
     </dependencies>
     <scenes>
-        <!--View Controller-->
         <scene sceneID="EXPO-SCENE-1">
             <objects>
                 <viewController storyboardIdentifier="SplashScreenViewController" id="EXPO-VIEWCONTROLLER-1" sceneMemberID="viewController">
@@ -18,30 +16,47 @@
                         <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
                         <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMaxY="YES"/>
                         <subviews>
-                            <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="SplashScreen" translatesAutoresizingMaskIntoConstraints="NO" id="EXPO-SplashScreen" userLabel="SplashScreen">
-                                <rect key="frame" x="146.66666666666666" y="381" width="100" height="90.333333333333314"/>
-                                <accessibility key="accessibilityConfiguration">
-                                    <accessibilityTraits key="traits" image="YES" notEnabled="YES"/>
-                                </accessibility>
-                            </imageView>
+                            <view clipsSubviews="YES" userInteractionEnabled="NO" translatesAutoresizingMaskIntoConstraints="NO" id="EXPO-SplashScreen" userLabel="Rounded approved StudyBolt artwork">
+                                <rect key="frame" x="100.5" y="332.1060329067642" width="192" height="187.78793418647166"/>
+                                <subviews>
+                                    <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="StudyBoltLaunchLogo" translatesAutoresizingMaskIntoConstraints="NO" id="StudyBolt-SourceImage">
+                                        <rect key="frame" x="-14.040219378427787" y="-11.934186471663619" width="220.08043875685556" height="220.08043875685556"/>
+                                        <constraints>
+                                            <constraint firstAttribute="width" constant="220.08043875685556" id="StudyBolt-SourceWidth"/>
+                                            <constraint firstAttribute="height" constant="220.08043875685556" id="StudyBolt-SourceHeight"/>
+                                        </constraints>
+                                    </imageView>
+                                    <imageView userInteractionEnabled="NO" contentMode="scaleToFill" image="StudyBoltLaunchCorners" translatesAutoresizingMaskIntoConstraints="NO" id="StudyBolt-CornerCover">
+                                        <rect key="frame" x="0" y="0" width="192" height="187.78793418647166"/>
+                                    </imageView>
+                                </subviews>
+                                <constraints>
+                                    <constraint firstAttribute="width" constant="192" id="StudyBolt-LogoWidth"/>
+                                    <constraint firstAttribute="height" constant="187.78793418647166" id="StudyBolt-LogoHeight"/>
+                                    <constraint firstItem="StudyBolt-SourceImage" firstAttribute="leading" secondItem="EXPO-SplashScreen" secondAttribute="leading" constant="-14.040219378427787" id="StudyBolt-SourceLeft"/>
+                                    <constraint firstItem="StudyBolt-SourceImage" firstAttribute="top" secondItem="EXPO-SplashScreen" secondAttribute="top" constant="-11.934186471663619" id="StudyBolt-SourceTop"/>
+                                    <constraint firstItem="StudyBolt-CornerCover" firstAttribute="leading" secondItem="EXPO-SplashScreen" secondAttribute="leading" id="StudyBolt-CornerLeft"/>
+                                    <constraint firstItem="StudyBolt-CornerCover" firstAttribute="top" secondItem="EXPO-SplashScreen" secondAttribute="top" id="StudyBolt-CornerTop"/>
+                                    <constraint firstItem="StudyBolt-CornerCover" firstAttribute="trailing" secondItem="EXPO-SplashScreen" secondAttribute="trailing" id="StudyBolt-CornerRight"/>
+                                    <constraint firstItem="StudyBolt-CornerCover" firstAttribute="bottom" secondItem="EXPO-SplashScreen" secondAttribute="bottom" id="StudyBolt-CornerBottom"/>
+                                </constraints>
+                            </view>
                         </subviews>
                         <viewLayoutGuide key="safeArea" id="Rmq-lb-GrQ"/>
+                        <color key="backgroundColor" name="StudyBoltLaunchBackground"/>
                         <constraints>
                             <constraint firstItem="EXPO-SplashScreen" firstAttribute="centerY" secondItem="EXPO-ContainerView" secondAttribute="centerY" id="0VC-Wk-OaO"/>
                             <constraint firstItem="EXPO-SplashScreen" firstAttribute="centerX" secondItem="EXPO-ContainerView" secondAttribute="centerX" id="zR4-NK-mVN"/>
                         </constraints>
-                        <color key="backgroundColor" systemColor="systemBackgroundColor"/>
                     </view>
                 </viewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="EXPO-PLACEHOLDER-1" userLabel="First Responder" sceneMemberID="firstResponder"/>
             </objects>
-            <point key="canvasLocation" x="0.0" y="0.0"/>
         </scene>
     </scenes>
     <resources>
-        <image name="SplashScreenLogo" width="100" height="90.333335876464844"/>
-        <systemColor name="systemBackgroundColor">
-            <color white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
-        </systemColor>
+        <image name="StudyBoltLaunchLogo" width="1254" height="1254"/>
+        <image name="StudyBoltLaunchCorners" width="192" height="187.78793418647166"/>
+        <namedColor name="StudyBoltLaunchBackground"><color red="0.968627451" green="0.976470588" blue="0.992156863" alpha="1" colorSpace="custom" customColorSpace="sRGB"/></namedColor>
     </resources>
 </document>

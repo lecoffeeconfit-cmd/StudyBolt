@@ -1,6 +1,6 @@
 # App Store release checklist
 
-**Readiness update:** 2 November 2026. This worktree has build-ready code changes, but StudyBolt is not ready for App Store submission yet. App Store Connect is signed out here; RevenueCat and the public legal repository were reviewed read-only.
+**Readiness update:** 7 November 2026. This worktree has build-ready code changes, but StudyBolt is not ready for App Store submission yet. App Store Connect is signed out here; RevenueCat and the public legal repository were reviewed read-only.
 
 ## Ready in the repository
 
@@ -9,7 +9,7 @@
 - A 1024 × 1024 iOS app icon exists; the app supports iPhone and iPad.
 - Account creation is optional for the local Biology sample, and the app has an in-app account deletion flow.
 - Subscription checkout is gated until HTTPS Privacy Policy and Terms links are configured. The purchase screen shows store price/period, restore, legal links, and subscription management.
-- The updated account-deletion confirmation checks Apple subscription status, links to Apple subscription settings, and allows immediate confirmation while billing is active. Deletion is journaled and retried; Supabase cleanup precedes asynchronously confirmed RevenueCat erasure. Review and complete [the deletion rollout and sandbox verification](account-deletion-audit.md) before release. This source change is not deployed or end-to-end verified.
+- The updated account-deletion confirmation checks Apple subscription status, links to Apple subscription settings, and allows immediate confirmation while billing is active. Deletion is journaled and retried; Supabase cleanup precedes asynchronously confirmed RevenueCat erasure. Review and complete [the deletion rollout and sandbox verification](account-deletion-audit.md) before release. The deletion journal is not deployed and native end-to-end deletion remains unverified.
 - The app declares `ITSAppUsesNonExemptEncryption=false`; confirm the export-compliance answer for the final binary.
 - Before a cloud document upload, the app explains that the selected file and class name go to StudyBolt’s server and AI provider, requires an explicit per-upload acknowledgment, and links to the published Privacy Policy.
 
@@ -43,7 +43,7 @@ See [`revenuecat-setup-status.md`](revenuecat-setup-status.md) for installed key
 - Complete required App Store tax/banking agreements and subscription metadata.
 - The RevenueCat restore policy is still **Transfer to new App User ID**, which can move an existing receipt to another identified account. Test the intended ownership behavior with sandbox accounts before changing this setting or enabling purchases.
 - Confirm the production UI displays the real store price and period, and exercise sandbox purchase, restore, cancellation, expiration, refunds, and account deletion.
-- Finish the RevenueCat v2 deletion key, backend worker configuration, migration, and retry schedule described in the deletion audit. Keep all secrets on the server.
+- Production preflight on 7 November confirmed the RevenueCat v2 key, project ID, and 32+ character worker secret are installed in the Edge Functions environment; the worker flag remains false. The deletion table is absent, the worker entrypoint is not mounted, the current webhook/sync files lack the new deletion guards, and no root cron/systemd schedule was found. The latest database dump is dated 27 October; create and verify a current backup before any database or service change. See the [deletion audit](account-deletion-audit.md) for the exact production change set and rollback plan. Keep all secrets on the server.
 
 ### 5. Fill App Store Connect fields
 

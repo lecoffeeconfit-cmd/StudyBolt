@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { AccessibilityInfo, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { StudyPackMaterial } from '../models';
@@ -7,6 +7,7 @@ import { AUTOMATIC_STUDY_PACK_MATERIALS, STUDY_PACK_MATERIAL_LABELS } from '../s
 import { useStudyBolt } from '../StudyBoltContext';
 import { bottomTabBarTop } from './BottomTabs';
 import { Icon } from './ui';
+import { LoadingArtwork } from './StudyBoltLoading';
 
 export function StudyPackGenerationProgress({ aboveNavigation = false }: { aboveNavigation?: boolean }) {
   const { colors, state, retryStudyPackMaterial } = useStudyBolt();
@@ -43,6 +44,10 @@ export function StudyPackGenerationProgress({ aboveNavigation = false }: { above
   }, [complete, deck]);
 
   useEffect(() => {
+    if (deck?.id && complete && Platform.OS === 'ios') AccessibilityInfo.announceForAccessibility('Study Pack tools are ready.');
+  }, [complete, deck?.id]);
+
+  useEffect(() => {
     if (!generationStartedAt || complete) return;
     const updateElapsed = () => setElapsedSeconds(Math.max(0, Math.floor((Date.now() - generationStartedAt) / 1000)));
     updateElapsed();
@@ -65,7 +70,7 @@ export function StudyPackGenerationProgress({ aboveNavigation = false }: { above
     return (
       <Pressable accessibilityRole="button" accessibilityLabel="View Study Pack tools" onPress={() => setExpanded(true)} style={[styles.banner, navigationSpacing, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <View style={[styles.bannerIcon, { backgroundColor: colors.goldSoft }]}><Icon name="lightning-bolt" size={18} color={colors.goldText} /></View>
-        <Text numberOfLines={1} style={[styles.bannerTitle, { color: colors.text }]}>Study Pack ready · {ready}/{totalMaterials} tools ready</Text>
+        <Text numberOfLines={1} style={[styles.bannerTitle, { color: colors.text }]}>Study tools · {ready}/{totalMaterials} ready</Text>
         <Text style={[styles.viewLabel, { color: colors.primary }]}>View tools</Text>
       </Pressable>
     );
@@ -76,7 +81,7 @@ export function StudyPackGenerationProgress({ aboveNavigation = false }: { above
       <View style={styles.header}>
         <View style={[styles.panelIcon, { backgroundColor: colors.goldSoft }]}><Icon name="lightning-bolt" size={20} color={colors.goldText} /></View>
         <View style={styles.headerCopy}>
-          <Text style={[styles.title, { color: colors.text }]}>Study Pack ready</Text>
+          <Text style={[styles.title, { color: colors.text }]}>Your study tools</Text>
           <Text style={[styles.count, { color: colors.textSecondary }]}>{ready} of {totalMaterials} tools ready · {remaining} more to add · {formatElapsed(elapsedSeconds)}</Text>
         </View>
         <Pressable accessibilityRole="button" accessibilityLabel="Collapse progress" onPress={() => setExpanded(false)} hitSlop={10} style={styles.collapseButton}><Icon name="chevron-down" color={colors.textMuted} /></Pressable>
@@ -104,7 +109,7 @@ function MaterialRow({ material, deckId, status, onRetry }: {
   return (
     <View style={styles.row}>
       <View style={[styles.statusIcon, { backgroundColor: ready ? colors.mintSoft : failed ? colors.goldSoft : colors.cardStrong }]}>
-        <Icon name={ready ? 'check' : failed ? 'alert-outline' : queued ? 'clock-outline' : 'circle-small'} size={16} color={ready ? colors.mint : failed ? colors.goldText : colors.primary} />
+        {status.status === 'generating' ? <LoadingArtwork colors={colors} compact /> : <Icon name={ready ? 'check' : failed ? 'alert-outline' : queued ? 'clock-outline' : 'circle-small'} size={16} color={ready ? colors.mint : failed ? colors.goldText : colors.primary} />}
       </View>
       <Text style={[styles.label, { color: colors.text }]}>{STUDY_PACK_MATERIAL_LABELS[material]}</Text>
       {failed ? (
@@ -123,22 +128,22 @@ const styles = StyleSheet.create({
   panel: { position: 'absolute', zIndex: 50, elevation: 12, left: 12, right: 12, bottom: 82, borderWidth: StyleSheet.hairlineWidth, borderRadius: 20, padding: 14, shadowOpacity: 0.18, shadowRadius: 18, shadowOffset: { width: 0, height: 8 } },
   banner: { position: 'absolute', zIndex: 50, elevation: 12, left: 16, right: 16, bottom: 88, minHeight: 48, borderWidth: StyleSheet.hairlineWidth, borderRadius: 17, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 8 },
   bannerIcon: { width: 29, height: 29, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  bannerTitle: { flex: 1, fontSize: 11, fontWeight: '900' },
-  viewLabel: { fontSize: 10, fontWeight: '900' },
+  bannerTitle: { flex: 1, fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  viewLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700' },
   header: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   panelIcon: { width: 37, height: 37, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   headerCopy: { flex: 1 },
   title: { fontSize: 14, fontWeight: '900' },
-  count: { fontSize: 10, marginTop: 2, fontWeight: '700' },
+  count: { fontSize: 14, lineHeight: 21, marginTop: 2, fontWeight: '700' },
   collapseButton: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
   rows: { marginTop: 12, gap: 8 },
   row: { minHeight: 30, flexDirection: 'row', alignItems: 'center', gap: 9 },
   statusIcon: { width: 25, height: 25, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
-  label: { flex: 1, fontSize: 11, fontWeight: '800' },
-  state: { maxWidth: 132, fontSize: 9, fontWeight: '700', textAlign: 'right' },
+  label: { flex: 1, fontSize: 12, lineHeight: 18, fontWeight: '700' },
+  state: { maxWidth: 132, fontSize: 14, lineHeight: 21, fontWeight: '700', textAlign: 'right' },
   retry: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 6, borderRadius: 9 },
-  retryText: { fontSize: 9, fontWeight: '900' },
-  hint: { marginTop: 11, fontSize: 10, textAlign: 'center' },
+  retryText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  hint: { marginTop: 11, fontSize: 14, lineHeight: 21, textAlign: 'center' },
 });
 
 function formatElapsed(seconds: number): string {

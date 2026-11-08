@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import type { TextInputProps } from 'react-native';
 
 import { useStudyBolt } from '../StudyBoltContext';
-import { radius } from '../theme';
+import { radius, typography } from '../theme';
 import { Icon } from './ui';
 import type { IconName } from './ui';
 
@@ -65,16 +65,16 @@ export function AuthField({
           </Pressable>
         ) : null}
       </View>
-      {error ? <Text style={[styles.error, { color: colors.danger }]}>{error}</Text> : null}
+      {error ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={[styles.error, { color: colors.danger }]}>{error}</Text> : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: { gap: 7 },
-  label: { fontSize: 11, lineHeight: 14, fontWeight: '800', marginLeft: 2 },
+  label: { ...typography.secondary, fontWeight: '600', marginLeft: 2 },
   field: { minHeight: 54, borderRadius: radius.md, borderWidth: 1, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  input: { flex: 1, minWidth: 0, height: 52, fontSize: 14 },
-  eye: { width: 34, height: 40, alignItems: 'flex-end', justifyContent: 'center' },
-  error: { fontSize: 10, lineHeight: 14, fontWeight: '700', marginLeft: 2 },
+  input: { ...typography.body, flex: 1, minWidth: 0, minHeight: 52, paddingVertical: 12 },
+  eye: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  error: { ...typography.caption, marginLeft: 2 },
 });

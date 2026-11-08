@@ -931,7 +931,7 @@ export function buildAnalytics(state: StudyBoltState, now = new Date()): Analyti
       productiveTime,
     },
     methods: {
-      notesMinutes: events.filter((event) => event.type === 'note-review').reduce((sum, event) => sum + minutesFor(event), 0),
+      notesMinutes: events.filter((event) => event.type === 'note-review' || event.type === 'note-reading').reduce((sum, event) => sum + minutesFor(event), 0),
       notesSectionsReviewed: events.filter((event) => event.type === 'note-review').length,
       flashcardsReviewed: cardEvents.length,
       flashcardsMastered: masteredCount,

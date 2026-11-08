@@ -73,7 +73,7 @@ export function SpeedReviewScreen({
     })
     .filter((item) => item.text.length > 0), [selectedDecks]);
   const item = items[index];
-  const scopeName = deckId ? selectedDecks[0]?.title ?? 'PowerPoint' : state.classes.find((course) => course.id === courseId)?.name ?? selectedDecks[0]?.courseName ?? 'Class';
+  const scopeName = deckId ? selectedDecks[0]?.title ?? 'Study Pack' : state.classes.find((course) => course.id === courseId)?.name ?? selectedDecks[0]?.courseName ?? 'Class';
   const totalWords = items.reduce((sum, current) => sum + current.words, 0);
   const totalMinutes = formatMinutes(totalWords, rate);
 
@@ -158,7 +158,7 @@ export function SpeedReviewScreen({
         <Card style={styles.emptyCard}>
           <View style={[styles.emptyIcon, { backgroundColor: colors.purpleSoft }]}><Icon name="headphones-off" size={32} color={colors.purple} /></View>
           <Text style={[styles.emptyTitle, { color: colors.text }]}>Speed Review is still preparing</Text>
-          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>This {deckId ? 'PowerPoint' : 'class'} does not have a short summary ready yet. Try again after StudyBolt finishes preparing it.</Text>
+          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>This {deckId ? 'Study Pack' : 'class'} does not have a short summary ready yet. Try again after StudyBolt finishes preparing it.</Text>
           <PrimaryButton label="Go back" icon="arrow-left" onPress={onBack} style={styles.emptyButton} />
         </Card>
       </Screen>
@@ -172,10 +172,10 @@ export function SpeedReviewScreen({
         <View style={[styles.completeCard, { backgroundColor: colors.mintSoft }]}>
           <View style={[styles.completeIcon, { backgroundColor: colors.card }]}><Icon name="check-decagram" size={42} color={colors.mint} /></View>
           <Text style={[styles.completeTitle, { color: colors.text }]}>Quick pass complete</Text>
-          <Text style={[styles.completeText, { color: colors.textSecondary }]}>You reviewed {items.length} {items.length === 1 ? 'PowerPoint' : 'PowerPoints'} in {scopeName}.</Text>
+          <Text style={[styles.completeText, { color: colors.textSecondary }]}>You reviewed {items.length} {items.length === 1 ? 'Study Pack' : 'Study Packs'} in {scopeName}.</Text>
         </View>
         <PrimaryButton label="Listen again" icon="refresh" onPress={restart} style={styles.primaryAction} />
-        <Pressable onPress={onBack} style={[styles.secondaryAction, { backgroundColor: colors.cardStrong, borderColor: colors.border }]}>
+        <Pressable accessibilityRole="button" onPress={onBack} style={[styles.secondaryAction, { backgroundColor: colors.cardStrong, borderColor: colors.border }]}>
           <Text style={[styles.secondaryActionText, { color: colors.primary }]}>Back to studying</Text>
         </Pressable>
       </Screen>
@@ -191,7 +191,7 @@ export function SpeedReviewScreen({
         <View style={[styles.heroIcon, { backgroundColor: colors.purpleSoft }]}><Icon name="speedometer" size={25} color={colors.purple} /></View>
         <View style={styles.heroCopy}>
           <Text style={[styles.heroTitle, { color: colors.text }]}>A fast pass through the ideas</Text>
-          <Text style={[styles.heroText, { color: colors.textSecondary }]}>{items.length} {items.length === 1 ? 'PowerPoint' : 'PowerPoints'} · about {totalMinutes} at {currentRateLabel}</Text>
+          <Text style={[styles.heroText, { color: colors.textSecondary }]}>{items.length} {items.length === 1 ? 'Study Pack' : 'Study Packs'} · about {totalMinutes} at {currentRateLabel}</Text>
         </View>
       </View>
       <ProgressBar progress={((index + 1) / Math.max(1, items.length)) * 100} color={colors.purple} />
@@ -209,9 +209,9 @@ export function SpeedReviewScreen({
           <Text numberOfLines={4} style={styles.summaryText}>{current.text}</Text>
         </View>
         <View style={styles.controls}>
-          <Pressable accessibilityLabel="Previous PowerPoint" onPress={() => jump(-1)} style={styles.skipButton}><Icon name="skip-previous" size={27} color="#D9DCF0" /></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Previous Study Pack" onPress={() => jump(-1)} style={styles.skipButton}><Icon name="skip-previous" size={27} color="#D9DCF0" /></Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel={playing ? 'Pause speed review' : 'Play speed review'} onPress={togglePlay} style={[styles.playButton, { backgroundColor: colors.purple }]}><Icon name={playing ? 'pause' : 'play'} size={32} color={colors.primaryText} /></Pressable>
-          <Pressable accessibilityLabel="Next PowerPoint" onPress={() => jump(1)} style={styles.skipButton}><Icon name="skip-next" size={27} color="#D9DCF0" /></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Next Study Pack" onPress={() => jump(1)} style={styles.skipButton}><Icon name="skip-next" size={27} color="#D9DCF0" /></Pressable>
         </View>
       </Card>
 
@@ -222,9 +222,9 @@ export function SpeedReviewScreen({
           <Icon name="chevron-right" color={colors.textMuted} />
         </Pressable>
         <View style={[styles.settingDivider, { backgroundColor: colors.border }]} />
-        <Pressable onPress={() => onOpenDeck(current.deck.id)} style={styles.speedSetting}>
+        <Pressable accessibilityRole="button" onPress={() => onOpenDeck(current.deck.id)} style={styles.speedSetting}>
           <Icon name="book-open-page-variant" color={colors.mint} />
-          <View style={styles.settingCopy}><Text style={[styles.settingLabel, { color: colors.textMuted }]}>WANT MORE DETAIL?</Text><Text style={[styles.settingValue, { color: colors.text }]}>Open this PowerPoint</Text></View>
+          <View style={styles.settingCopy}><Text style={[styles.settingLabel, { color: colors.textMuted }]}>WANT MORE DETAIL?</Text><Text style={[styles.settingValue, { color: colors.text }]}>Open this Study Pack</Text></View>
           <Icon name="chevron-right" color={colors.textMuted} />
         </Pressable>
       </Card>
@@ -240,36 +240,36 @@ const styles = StyleSheet.create({
   heroIcon: { width: 48, height: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   heroCopy: { flex: 1 },
   heroTitle: { fontSize: 17, fontWeight: '900' },
-  heroText: { fontSize: 10, lineHeight: 15, marginTop: 3 },
+  heroText: { fontSize: 14, lineHeight: 21, marginTop: 3 },
   playerCard: { marginTop: 18, padding: 18, borderWidth: 0, alignItems: 'center' },
   playerTop: { width: '100%', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  playerPosition: { color: '#B9B1D6', fontSize: 10, fontWeight: '800' },
+  playerPosition: { color: '#B9B1D6', fontSize: 14, lineHeight: 21, fontWeight: '700' },
   playerIcon: { width: 76, height: 76, borderRadius: 28, backgroundColor: '#302753', alignItems: 'center', justifyContent: 'center', marginTop: 20 },
   playerTitle: { color: '#FFFFFF', fontSize: 20, fontWeight: '900', textAlign: 'center', marginTop: 16 },
-  playerSubtitle: { color: '#B9B1D6', fontSize: 10, marginTop: 4 },
+  playerSubtitle: { color: '#B9B1D6', fontSize: 16, lineHeight: 24, marginTop: 4 },
   summaryPreview: { width: '100%', borderRadius: 14, backgroundColor: '#211D40', padding: 12, marginTop: 17 },
-  summaryLabel: { color: '#B9A9EC', fontSize: 8, fontWeight: '900', letterSpacing: 0.8 },
-  summaryText: { color: '#E6E1F6', fontSize: 11, lineHeight: 17, marginTop: 5 },
+  summaryLabel: { color: '#B9A9EC', fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 0.8 },
+  summaryText: { color: '#E6E1F6', fontSize: 14, lineHeight: 21, marginTop: 5 },
   controls: { flexDirection: 'row', alignItems: 'center', gap: 28, marginTop: 18 },
   skipButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
   playButton: { width: 68, height: 68, borderRadius: 34, alignItems: 'center', justifyContent: 'center' },
   settingsCard: { marginTop: 13, paddingVertical: 4 },
   speedSetting: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 11 },
   settingCopy: { flex: 1 },
-  settingLabel: { fontSize: 8, fontWeight: '900', letterSpacing: 0.7 },
-  settingValue: { fontSize: 13, fontWeight: '800', marginTop: 2 },
+  settingLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 0.7 },
+  settingValue: { fontSize: 14, lineHeight: 21, fontWeight: '700', marginTop: 2 },
   settingDivider: { height: StyleSheet.hairlineWidth, marginLeft: 31 },
   primaryAction: { marginTop: 16 },
   secondaryAction: { minHeight: 52, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center', marginTop: 10 },
-  secondaryActionText: { fontSize: 13, fontWeight: '900' },
-  footerHint: { fontSize: 10, lineHeight: 15, textAlign: 'center', marginTop: 15 },
+  secondaryActionText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  footerHint: { fontSize: 14, lineHeight: 21, textAlign: 'center', marginTop: 15 },
   emptyCard: { alignItems: 'center', paddingVertical: 38, marginTop: 12 },
   emptyIcon: { width: 64, height: 64, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
   emptyTitle: { fontSize: 18, fontWeight: '900', textAlign: 'center', marginTop: 14 },
-  emptyText: { maxWidth: 290, fontSize: 11, lineHeight: 17, textAlign: 'center', marginTop: 6 },
+  emptyText: { maxWidth: 290, fontSize: 14, lineHeight: 21, textAlign: 'center', marginTop: 6 },
   emptyButton: { alignSelf: 'stretch', marginTop: 18 },
   completeCard: { alignItems: 'center', borderRadius: 20, padding: 24, marginTop: 12 },
   completeIcon: { width: 70, height: 70, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
   completeTitle: { fontSize: 22, fontWeight: '900', marginTop: 16 },
-  completeText: { maxWidth: 290, fontSize: 12, lineHeight: 18, textAlign: 'center', marginTop: 6 },
+  completeText: { maxWidth: 290, fontSize: 14, lineHeight: 21, textAlign: 'center', marginTop: 6 },
 });

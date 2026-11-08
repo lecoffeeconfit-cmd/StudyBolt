@@ -1,3 +1,4 @@
+import { useReducedMotion } from '../hooks/useReducedMotion';
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Platform, StyleSheet, Text, View } from 'react-native';
 
@@ -8,6 +9,7 @@ import { useStudyBolt } from '../StudyBoltContext';
 
 export function ResetPasswordScreen({ onComplete }: { onComplete: () => void }) {
   const { colors } = useStudyBolt();
+  const reducedMotion = useReducedMotion();
   const { changePassword, finishRecovery } = useAuth();
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
@@ -16,8 +18,9 @@ export function ResetPasswordScreen({ onComplete }: { onComplete: () => void }) 
   const entrance = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    if (reducedMotion) { entrance.setValue(1); return; }
     Animated.spring(entrance, { toValue: 1, damping: 17, stiffness: 150, useNativeDriver: Platform.OS !== 'web' }).start();
-  }, [entrance]);
+  }, [entrance, reducedMotion]);
 
   const submit = async () => {
     if (password.length < 8) {
@@ -67,9 +70,9 @@ const styles = StyleSheet.create({
   content: { alignItems: 'center', paddingTop: 32 },
   iconWrap: { width: 72, height: 72, borderRadius: 23, alignItems: 'center', justifyContent: 'center' },
   title: { fontSize: 25, lineHeight: 31, fontWeight: '900', letterSpacing: -0.7, marginTop: 18 },
-  subtitle: { fontSize: 13, lineHeight: 19, textAlign: 'center', maxWidth: 380, marginTop: 7 },
+  subtitle: { fontSize: 16, lineHeight: 24, textAlign: 'center', maxWidth: 380, marginTop: 7 },
   error: { width: '100%', minHeight: 46, borderRadius: 13, paddingHorizontal: 12, marginTop: 18, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  errorText: { flex: 1, fontSize: 11, lineHeight: 15, fontWeight: '700' },
+  errorText: { flex: 1, fontSize: 14, lineHeight: 21, fontWeight: '700' },
   form: { width: '100%', gap: 14, marginTop: 22 },
   button: { marginTop: 3 },
 });

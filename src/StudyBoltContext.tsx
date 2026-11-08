@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { useColorScheme } from 'react-native';
+import { Pressable, Text, useColorScheme, View } from 'react-native';
 
 import { initialState } from './data/mockStudyPacks';
 import type { ExamAttempt, FlaggedItemInput, LibrarySort, QuizQuestionCount, RetentionMode, StudyBoltState, StudyClass, StudyEventInput, StudyPack, StudyPackMaterial, StudyPlan, ThemePreference } from './models';
@@ -11,6 +11,7 @@ import { AUTOMATIC_STUDY_PACK_MATERIALS, generateStudyPackMaterial, STUDY_PACK_M
 import { loadStudyBoltState, saveStudyBoltState } from './services/persistence';
 import { updateStudyBoltWidgets } from './services/widgets';
 import { clearStudyBoltLocalAccountData } from './services/accountDeletionLocal';
+import { clearStudyBoltAiResponseCache } from './services/aiRouter';
 import { AppColors, resolveColors } from './theme';
 
 interface StudyBoltContextValue {
@@ -39,11 +40,13 @@ interface StudyBoltContextValue {
 
 const StudyBoltContext = createContext<StudyBoltContextValue | null>(null);
 
-export function StudyBoltProvider({ children }: { children: ReactNode }) {
+export function StudyBoltProvider({ children, onInitialContentReady }: { children: ReactNode; onInitialContentReady?: () => void }) {
   const { getAccessToken, user } = useAuth();
   const systemScheme = useColorScheme();
   const [state, setState] = useState<StudyBoltState>(initialState);
   const [hydrated, setHydrated] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const activeMaterialJobs = useRef(new Set<string>());
   const runningDecks = useRef(new Set<string>());
   const materialQueues = useRef(new Map<string, StudyPackMaterial[]>());
@@ -52,29 +55,40 @@ export function StudyBoltProvider({ children }: { children: ReactNode }) {
   const stateRef = useRef(state);
   useAdminActivity(user?.id, state.activityEvents, hydrated);
 
+  // Presentation-only signal: also uncover the existing retry UI after a read failure.
+  useEffect(() => {
+    if (hydrated || loadFailed) onInitialContentReady?.();
+  }, [hydrated, loadFailed, onInitialContentReady]);
+
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
 
   useEffect(() => {
     let mounted = true;
-    loadStudyBoltState().then((loaded) => {
+    setLoadFailed(false);
+    loadStudyBoltState(user?.id).then((loaded) => {
       if (mounted) {
         setState(loaded);
         setHydrated(true);
       }
-    });
+    }).catch(() => { if (mounted) setLoadFailed(true); });
     return () => {
       mounted = false;
+      generationEpoch.current += 1;
+      materialQueues.current.clear();
+      clearStudyBoltAiResponseCache();
     };
-  }, []);
+  }, [loadAttempt]);
 
   useEffect(() => {
-    if (hydrated) void saveStudyBoltState(state);
-  }, [hydrated, state]);
+    if (hydrated) void saveStudyBoltState(state, user?.id);
+  }, [hydrated, state, user?.id]);
 
   useEffect(() => {
-    if (hydrated) updateStudyBoltWidgets(state);
+    // Clear the previous account's widget snapshot while this one hydrates,
+    // including the storage-error path where hydration cannot complete.
+    updateStudyBoltWidgets(state);
   }, [hydrated, state]);
 
   const processNextStudyPackMaterial = useCallback((deckId: string) => {
@@ -332,6 +346,14 @@ export function StudyBoltProvider({ children }: { children: ReactNode }) {
     [hydrated, retryStudyPackMaterial, startStudyPackGeneration, state, systemScheme],
   );
 
+  if (loadFailed) {
+    const colors = resolveColors(state.theme, systemScheme);
+    return <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 28, gap: 16, backgroundColor: colors.background }}>
+      <Text style={{ color: colors.text, fontSize: 18, fontWeight: '700', textAlign: 'center' }}>Your saved study space couldn't be opened.</Text>
+      <Text style={{ color: colors.textSecondary, textAlign: 'center' }}>Your saved data has been kept. Try again, or contact support if this continues.</Text>
+      <Pressable accessibilityRole="button" onPress={() => setLoadAttempt((attempt) => attempt + 1)} style={{ padding: 16, borderRadius: 16, backgroundColor: colors.primary }}><Text style={{ color: colors.primaryText, fontWeight: '700' }}>Try again</Text></Pressable>
+    </View>;
+  }
   return <StudyBoltContext.Provider value={value}>{children}</StudyBoltContext.Provider>;
 }
 

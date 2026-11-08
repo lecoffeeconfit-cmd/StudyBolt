@@ -196,7 +196,7 @@ export function SmartStudyScreen({ initialMode = 'smart', focusDeckId, focusSect
             const active = candidate.id === mode;
             const smartAccent = candidate.id === 'smart';
             return (
-              <Pressable key={candidate.id} onPress={() => chooseMode(candidate.id)} style={[styles.modeCard, { backgroundColor: active ? colors.primarySoft : colors.card, borderColor: active ? (smartAccent ? colors.gold : colors.primary) : colors.border }]}>
+              <Pressable accessibilityRole="button" key={candidate.id} onPress={() => chooseMode(candidate.id)} style={[styles.modeCard, { backgroundColor: active ? colors.primarySoft : colors.card, borderColor: active ? (smartAccent ? colors.gold : colors.primary) : colors.border }]}>
                 <Icon name={candidate.icon} size={19} color={active ? (smartAccent ? colors.goldText : colors.primary) : colors.textMuted} />
                 <View>
                   <Text style={[styles.modeLabel, { color: active ? colors.primary : colors.text }]}>{candidate.label}</Text>
@@ -218,7 +218,7 @@ export function SmartStudyScreen({ initialMode = 'smart', focusDeckId, focusSect
           {SESSION_LENGTHS.map((minutes) => {
             const active = minutes === sessionMinutes;
             return (
-              <Pressable
+              <Pressable aria-pressed={active}
                 key={minutes}
                 accessibilityRole="button"
                 accessibilityState={{ selected: active }}
@@ -269,14 +269,14 @@ export function SmartStudyScreen({ initialMode = 'smart', focusDeckId, focusSect
         <Text style={[styles.reviewSubtitle, { color: colors.textSecondary }]}>Your next session has already been adjusted from what happened here.</Text>
         <View style={styles.reviewGrid}>
           <ReviewMetric value={`${actualMinutes}m`} label="studied" color={colors.primary} />
-          <ReviewMetric value={`${correct}`} label={mode === 'pretest' ? 'can skip' : 'strengthened'} color={colors.mint} />
-          <ReviewMetric value={`${weak.length}`} label="still weak" color={colors.warning} />
+          <ReviewMetric value={`${correct}`} label="answered correctly" color={colors.mint} />
+          <ReviewMetric value={`${weak.length}`} label="to revisit" color={colors.warning} />
         </View>
         {biggestIssue ? (
           <Card style={[styles.issueCard, { backgroundColor: confidentWrong ? `${colors.danger}12` : colors.primarySoft }]}>
             <View style={[styles.issueIcon, { backgroundColor: colors.card }]}><Icon name={confidentWrong ? 'alert-decagram-outline' : 'target'} color={confidentWrong ? colors.danger : colors.primary} /></View>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.issueLabel, { color: confidentWrong ? colors.danger : colors.primary }]}>{confidentWrong ? `${confidentWrong} CONFIDENTLY WRONG` : 'BIGGEST ISSUE'}</Text>
+              <Text style={[styles.issueLabel, { color: confidentWrong ? colors.danger : colors.primary }]}>{confidentWrong ? `${confidentWrong} CONFIDENT MISS` : 'REVISIT NEXT'}</Text>
               <Text style={[styles.issueText, { color: colors.text }]}>{biggestIssue}</Text>
               <Text style={[styles.issueHint, { color: colors.textMuted }]}>Moved higher in your Study Now priority.</Text>
             </View>
@@ -288,7 +288,7 @@ export function SmartStudyScreen({ initialMode = 'smart', focusDeckId, focusSect
           </Card>
         )}
         <PrimaryButton label="Done" icon="check" onPress={onBack} style={styles.startButton} />
-        <Pressable onPress={start} style={styles.againButton}><Icon name="refresh" size={17} color={colors.primary} /><Text style={[styles.againText, { color: colors.primary }]}>Build another session</Text></Pressable>
+        <Pressable accessibilityRole="button" onPress={start} style={styles.againButton}><Icon name="refresh" size={17} color={colors.primary} /><Text style={[styles.againText, { color: colors.primary }]}>Build another session</Text></Pressable>
       </Screen>
     );
   }
@@ -302,7 +302,7 @@ export function SmartStudyScreen({ initialMode = 'smart', focusDeckId, focusSect
   return (
     <View style={[styles.activePage, { backgroundColor: colors.background, paddingTop: insets.top + 8 }]}>
       <View style={styles.activeHeader}>
-        <Pressable accessibilityLabel="End session" onPress={onBack} style={styles.closeButton}><Icon name="close" color={colors.text} /></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="End session" onPress={onBack} style={styles.closeButton}><Icon name="close" color={colors.text} /></Pressable>
         <View style={{ flex: 1 }}><ProgressBar progress={((index + 1) / brief.items.length) * 100} color={colors.primary} /></View>
         <Text style={[styles.counter, { color: colors.textMuted }]}>{index + 1}/{brief.items.length}</Text>
       </View>
@@ -324,7 +324,7 @@ export function SmartStudyScreen({ initialMode = 'smart', focusDeckId, focusSect
           ] as Array<{ id: AnswerConfidence; label: string; icon: IconName }>).map((choice) => {
             const active = confidence === choice.id;
             return (
-              <Pressable key={choice.id} disabled={revealed} onPress={() => setConfidence(choice.id)} style={[styles.confidenceChoice, { backgroundColor: active ? colors.primarySoft : colors.card, borderColor: active ? colors.primary : colors.border, opacity: revealed && !active ? 0.5 : 1 }]}>
+              <Pressable accessibilityRole="button" key={choice.id} disabled={revealed} onPress={() => setConfidence(choice.id)} style={[styles.confidenceChoice, { backgroundColor: active ? colors.primarySoft : colors.card, borderColor: active ? colors.primary : colors.border, opacity: revealed && !active ? 0.5 : 1 }]}>
                 <Icon name={choice.icon} size={18} color={active ? colors.primary : colors.textMuted} />
                 <Text style={[styles.confidenceChoiceText, { color: active ? colors.primary : colors.textSecondary }]}>{choice.label}</Text>
               </Pressable>
@@ -339,7 +339,7 @@ export function SmartStudyScreen({ initialMode = 'smart', focusDeckId, focusSect
               const isCorrect = revealed && optionIndex === item.correctIndex;
               const isWrong = revealed && isSelected && !isCorrect;
               return (
-                <Pressable key={`${option}-${optionIndex}`} disabled={revealed} onPress={() => chooseOption(optionIndex)} style={[styles.option, { backgroundColor: isCorrect ? colors.mintSoft : isWrong ? `${colors.danger}12` : colors.card, borderColor: isCorrect ? colors.mint : isWrong ? colors.danger : colors.border }]}>
+                <Pressable accessibilityRole="button" key={`${option}-${optionIndex}`} disabled={revealed} onPress={() => chooseOption(optionIndex)} style={[styles.option, { backgroundColor: isCorrect ? colors.mintSoft : isWrong ? `${colors.danger}12` : colors.card, borderColor: isCorrect ? colors.mint : isWrong ? colors.danger : colors.border }]}>
                   <View style={[styles.optionLetter, { backgroundColor: isCorrect ? colors.mint : isWrong ? colors.danger : colors.cardStrong }]}>
                     {isCorrect || isWrong ? <Icon name={isCorrect ? 'check' : 'close'} size={14} color="#FFFFFF" /> : <Text style={[styles.optionLetterText, { color: colors.textSecondary }]}>{String.fromCharCode(65 + optionIndex)}</Text>}
                   </View>
@@ -362,8 +362,8 @@ export function SmartStudyScreen({ initialMode = 'smart', focusDeckId, focusSect
             {!revealed ? <PrimaryButton label="Check my answer" icon="eye-outline" disabled={!writtenAnswer.trim()} onPress={revealWritten} /> : null}
             {revealed && !answered ? (
               <View style={styles.selfGradeRow}>
-                <Pressable onPress={() => gradeWritten(false)} style={[styles.selfGrade, { backgroundColor: `${colors.danger}12`, borderColor: colors.danger }]}><Icon name="refresh" color={colors.danger} /><Text style={[styles.selfGradeText, { color: colors.danger }]}>Need work</Text></Pressable>
-                <Pressable onPress={() => gradeWritten(true)} style={[styles.selfGrade, { backgroundColor: colors.mintSoft, borderColor: colors.mint }]}><Icon name="check" color={colors.mint} /><Text style={[styles.selfGradeText, { color: colors.mint }]}>I got it</Text></Pressable>
+                <Pressable accessibilityRole="button" onPress={() => gradeWritten(false)} style={[styles.selfGrade, { backgroundColor: `${colors.danger}12`, borderColor: colors.danger }]}><Icon name="refresh" color={colors.danger} /><Text style={[styles.selfGradeText, { color: colors.danger }]}>Need work</Text></Pressable>
+                <Pressable accessibilityRole="button" onPress={() => gradeWritten(true)} style={[styles.selfGrade, { backgroundColor: colors.mintSoft, borderColor: colors.mint }]}><Icon name="check" color={colors.mint} /><Text style={[styles.selfGradeText, { color: colors.mint }]}>I got it</Text></Pressable>
               </View>
             ) : null}
           </View>
@@ -410,76 +410,76 @@ const styles = StyleSheet.create({
   heroGoldGlow: { position: 'absolute', width: 170, height: 170, borderRadius: 85, right: -72, top: -92, opacity: 0.55 },
   heroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   heroBolt: { width: 48, height: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  heroEyebrow: { fontSize: 9, fontWeight: '900', letterSpacing: 1.3, marginTop: 18 },
+  heroEyebrow: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 1.3, marginTop: 18 },
   heroTitle: { fontSize: 26, lineHeight: 32, fontWeight: '900', letterSpacing: -0.8, marginTop: 7 },
-  heroText: { fontSize: 12, lineHeight: 18, marginTop: 7 },
+  heroText: { fontSize: 14, lineHeight: 21, marginTop: 7 },
   heroEstimate: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 18 },
-  heroEstimateText: { fontSize: 11, fontWeight: '800' },
+  heroEstimateText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   modeRow: { gap: 8, paddingVertical: 14 },
   modeCard: { minWidth: 147, minHeight: 59, borderRadius: 15, borderWidth: 1, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 9 },
-  modeLabel: { fontSize: 11, fontWeight: '900' },
-  modeDetail: { fontSize: 8, marginTop: 2 },
+  modeLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700' },
+  modeDetail: { fontSize: 14, lineHeight: 21, marginTop: 2 },
   lengthHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 4, marginBottom: 10 },
   lengthTitle: { fontSize: 14, fontWeight: '900' },
-  lengthHint: { fontSize: 9, lineHeight: 13, marginTop: 2 },
+  lengthHint: { fontSize: 14, lineHeight: 21, marginTop: 2 },
   lengthRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
   lengthChoice: { flex: 1, minHeight: 51, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   lengthValue: { fontSize: 16, lineHeight: 19, fontWeight: '900' },
-  lengthUnit: { fontSize: 8, fontWeight: '800', marginTop: 1 },
+  lengthUnit: { fontSize: 12, lineHeight: 18, fontWeight: '700', marginTop: 1 },
   sectionTitle: { fontSize: 18, fontWeight: '900', marginTop: 10, marginBottom: 11 },
   signalCard: { flexDirection: 'row', paddingHorizontal: 8, paddingVertical: 14 },
   signal: { flex: 1, alignItems: 'center' },
   signalIcon: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   signalValue: { fontSize: 17, fontWeight: '900', marginTop: 6 },
-  signalLabel: { textAlign: 'center', fontSize: 8, marginTop: 1 },
+  signalLabel: { textAlign: 'center', fontSize: 12, lineHeight: 18, marginTop: 1 },
   examNote: { borderRadius: 15, padding: 13, flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 11 },
-  examNoteText: { flex: 1, fontSize: 10, lineHeight: 15 },
+  examNoteText: { flex: 1, fontSize: 14, lineHeight: 21 },
   startButton: { marginTop: 18 },
   activePage: { flex: 1 },
   activeHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 17, minHeight: 48 },
   closeButton: { width: 35, height: 35, alignItems: 'center', justifyContent: 'center' },
-  counter: { width: 38, textAlign: 'right', fontSize: 10, fontWeight: '800' },
+  counter: { width: 38, textAlign: 'right', fontSize: 12, lineHeight: 18, fontWeight: '700' },
   activeContent: { paddingHorizontal: 20, paddingTop: 22, paddingBottom: 150 },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  courseLabel: { fontSize: 10, fontWeight: '700', marginTop: 13 },
+  courseLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', marginTop: 13 },
   prompt: { fontSize: 25, lineHeight: 33, fontWeight: '900', letterSpacing: -0.7, marginTop: 8 },
   reasonRow: { alignSelf: 'flex-start', borderRadius: 10, paddingHorizontal: 9, paddingVertical: 7, flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 14 },
-  reasonText: { fontSize: 9, fontWeight: '700', textTransform: 'capitalize' },
-  confidenceTitle: { fontSize: 10, fontWeight: '900', marginTop: 23, marginBottom: 9 },
+  reasonText: { fontSize: 14, lineHeight: 21, fontWeight: '700', textTransform: 'capitalize' },
+  confidenceTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700', marginTop: 23, marginBottom: 9 },
   confidenceChoices: { flexDirection: 'row', gap: 7 },
   confidenceChoice: { flex: 1, minHeight: 46, borderWidth: 1, borderRadius: 13, alignItems: 'center', justifyContent: 'center', gap: 3 },
-  confidenceChoiceText: { fontSize: 9, fontWeight: '800' },
+  confidenceChoiceText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   options: { gap: 9, marginTop: 19 },
   option: { minHeight: 62, borderRadius: 16, borderWidth: 1, padding: 11, flexDirection: 'row', alignItems: 'center', gap: 11 },
   optionLetter: { width: 33, height: 33, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  optionLetterText: { fontSize: 11, fontWeight: '900' },
-  optionText: { flex: 1, fontSize: 12, lineHeight: 17, fontWeight: '600' },
+  optionLetterText: { fontSize: 12, lineHeight: 18, fontWeight: '700' },
+  optionText: { flex: 1, fontSize: 14, lineHeight: 21, fontWeight: '600' },
   writtenBlock: { gap: 11, marginTop: 19 },
-  writtenInput: { minHeight: 130, borderRadius: 17, borderWidth: 1, padding: 15, fontSize: 13, lineHeight: 20, textAlignVertical: 'top' },
+  writtenInput: { minHeight: 130, borderRadius: 17, borderWidth: 1, padding: 15, fontSize: 15, lineHeight: 22, textAlignVertical: 'top' },
   selfGradeRow: { flexDirection: 'row', gap: 9 },
   selfGrade: { flex: 1, minHeight: 51, borderRadius: 14, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
-  selfGradeText: { fontSize: 11, fontWeight: '900' },
+  selfGradeText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   feedback: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginTop: 13, borderWidth: 1 },
-  feedbackTitle: { fontSize: 13, fontWeight: '900' },
-  feedbackAnswer: { fontSize: 12, lineHeight: 17, fontWeight: '800', marginTop: 6 },
-  feedbackText: { fontSize: 10, lineHeight: 15, marginTop: 4 },
-  dangerHint: { fontSize: 9, lineHeight: 13, fontWeight: '800', marginTop: 7 },
+  feedbackTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  feedbackAnswer: { fontSize: 14, lineHeight: 21, fontWeight: '700', marginTop: 6 },
+  feedbackText: { fontSize: 14, lineHeight: 21, marginTop: 4 },
+  dangerHint: { fontSize: 14, lineHeight: 21, fontWeight: '700', marginTop: 7 },
   bottomBar: { position: 'absolute', left: 0, right: 0, bottom: 0, borderTopWidth: StyleSheet.hairlineWidth, padding: 13, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  bottomHint: { flex: 1, fontSize: 9 },
+  bottomHint: { flex: 1, fontSize: 14, lineHeight: 21 },
   nextButton: { minHeight: 48, minWidth: 143 },
   reviewIcon: { width: 88, height: 88, borderRadius: 28, alignSelf: 'center', alignItems: 'center', justifyContent: 'center', marginTop: 25 },
   reviewTitle: { textAlign: 'center', fontSize: 27, fontWeight: '900', marginTop: 16 },
-  reviewSubtitle: { textAlign: 'center', fontSize: 12, lineHeight: 18, marginTop: 6, paddingHorizontal: 22 },
+  reviewSubtitle: { textAlign: 'center', fontSize: 16, lineHeight: 24, marginTop: 6, paddingHorizontal: 22 },
   reviewGrid: { flexDirection: 'row', gap: 8, marginTop: 23 },
   reviewMetric: { flex: 1, borderWidth: StyleSheet.hairlineWidth, borderRadius: 16, alignItems: 'center', paddingVertical: 15 },
   reviewMetricValue: { fontSize: 21, fontWeight: '900' },
-  reviewMetricLabel: { fontSize: 9, fontWeight: '700', marginTop: 3 },
+  reviewMetricLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', marginTop: 3 },
   issueCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 11, marginTop: 15 },
   issueIcon: { width: 39, height: 39, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  issueLabel: { fontSize: 8, fontWeight: '900', letterSpacing: 0.8 },
-  issueText: { fontSize: 12, lineHeight: 17, fontWeight: '800', marginTop: 4 },
-  issueHint: { fontSize: 9, marginTop: 5 },
+  issueLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 0.8 },
+  issueText: { fontSize: 14, lineHeight: 21, fontWeight: '700', marginTop: 4 },
+  issueHint: { fontSize: 14, lineHeight: 21, marginTop: 5 },
   againButton: { alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, padding: 14 },
-  againText: { fontSize: 11, fontWeight: '900' },
+  againText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   flatCard: { shadowOpacity: 0, elevation: 0 },
 });

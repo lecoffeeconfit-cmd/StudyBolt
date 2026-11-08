@@ -1,14 +1,18 @@
+import { typography } from '../theme';
 import React, { useMemo, useState } from 'react';
 import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { Card, Header, Icon, Pill, ProgressBar, Screen, SectionHeader } from '../components/ui';
 import { SubjectIcon } from '../components/SubjectIcon';
+import { LearningMasteryHero } from '../components/LearningMasteryHero';
 import type { IconName } from '../components/ui';
 import { learningEvidence } from '../data/learningScience';
 import { makeStatDetail } from '../data/statExplanations';
 import type { StatDetail } from '../data/statExplanations';
 import { useStudyBolt } from '../StudyBoltContext';
 import { buildAnalytics } from '../services/analytics';
+import { personalStatisticsState } from '../services/personalStatistics';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 import type { AnalyticsSnapshot, BreakdownValue, ConceptInsight, DistributionValue } from '../services/analytics';
 
 type StatsTab = 'overview' | 'insights' | 'mastery' | 'quizzes' | 'activity' | 'methods';
@@ -32,7 +36,10 @@ export function StatsScreen() {
   const { colors, state } = useStudyBolt();
   const [tab, setTab] = useState<StatsTab>('overview');
   const [selectedDetail, setSelectedDetail] = useState<StatDetail | null>(null);
-  const analytics = useMemo(() => buildAnalytics(state), [state]);
+  const [includeSamples, setIncludeSamples] = useState(false);
+  const personalState = useMemo(() => personalStatisticsState(state), [state]);
+  const hasSamples = state.decks.some((deck) => deck.fileType === 'demo');
+  const analytics = useMemo(() => buildAnalytics(includeSamples ? state : personalState), [includeSamples, personalState, state]);
 
   return (
     <StatDetailContext.Provider value={setSelectedDetail}>
@@ -55,14 +62,20 @@ export function StatsScreen() {
               </Pressable>
             )}
           />
-          <Text style={[styles.title, { color: colors.text }]}>Know what to study next.</Text>
-          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Progress signals grounded in your coverage, retrieval, quizzes, and study spacing—not XP.</Text>
+          <Text style={[styles.title, { color: colors.text }]}>Your learning, clearly.</Text>
+          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Recorded activity, practice results, and learning estimates. Each tells a different part of the story.</Text>
+
+          <View style={[styles.scopeNotice, { backgroundColor: includeSamples ? colors.goldSoft : colors.primarySoft }]}>
+            <Text style={[styles.scopeNoticeTitle, { color: colors.text }]}>{includeSamples ? 'All recorded activity' : 'Personal progress'}</Text>
+            <Text style={[styles.scopeNoticeText, { color: colors.textSecondary }]}>{includeSamples ? 'Includes bundled examples and older totals. These are not exclusively your learning results.' : 'Samples and mixed sample sessions are excluded. Mastery and readiness remain estimates, not exam predictions.'}</Text>
+            {<Pressable aria-checked={includeSamples} accessibilityRole="switch" accessibilityLabel="Include samples and older totals" accessibilityState={{ checked: includeSamples }} onPress={() => setIncludeSamples((value) => !value)} style={styles.scopeToggle}><Text style={[styles.scopeToggleText, { color: includeSamples ? colors.goldText : colors.primary }]}>{includeSamples ? 'Return to personal progress' : hasSamples ? 'Explore sample statistics' : 'Show all recorded statistics'}</Text><Icon name={includeSamples ? 'toggle-switch' : 'toggle-switch-off-outline'} color={includeSamples ? colors.goldText : colors.primary} /></Pressable>}
+          </View>
 
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabs}>
             {TABS.map((item) => {
               const active = tab === item.id;
               return (
-                <Pressable
+                <Pressable aria-selected={active}
                   key={item.id}
                   accessibilityRole="tab"
                   accessibilityState={{ selected: active }}
@@ -81,6 +94,8 @@ export function StatsScreen() {
             <Text style={[styles.tapHintText, { color: colors.textSecondary }]}>Tap any stat to see what it means, how it’s calculated, and what your data suggests.</Text>
           </View>
 
+          {tab === 'overview' ? <LearningMasteryHero onExplore={setSelectedDetail} /> : null}
+          {!includeSamples && !personalState.decks.length ? <Card style={{ marginTop: 16 }}><Icon name="sprout-outline" color={colors.mint} size={28} /><Text accessibilityRole="header" style={[styles.sectionHeroTitle, { color: colors.text, marginTop: 10 }]}>Your stats are ready</Text><Text style={[styles.sectionHeroText, { color: colors.textSecondary }]}>Add a Study Pack from Home, then review notes, try flashcards, or take a quiz. Counts and activity will build as you study; estimates will appear when there’s enough evidence.</Text></Card> : null}
           {tab === 'overview' ? <Overview analytics={analytics} /> : null}
           {tab === 'insights' ? <AdvancedInsights analytics={analytics} /> : null}
           {tab === 'mastery' ? <MasteryAnalytics analytics={analytics} /> : null}
@@ -96,12 +111,13 @@ export function StatsScreen() {
 
 function StatDetailSheet({ detail, onClose }: { detail: StatDetail | null; onClose: () => void }) {
   const { colors } = useStudyBolt();
+  const reducedMotion = useReducedMotion();
   return (
-    <Modal visible={Boolean(detail)} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
+    <Modal visible={Boolean(detail)} transparent animationType={reducedMotion ? 'none' : 'slide'} onRequestClose={onClose} statusBarTranslucent>
       <View style={styles.modalRoot}>
-        <Pressable accessibilityLabel="Close stat details" style={styles.modalBackdrop} onPress={onClose} />
+        <Pressable accessibilityRole="button" accessibilityLabel="Close stat details" style={styles.modalBackdrop} onPress={onClose} />
         {detail ? (
-          <View style={[styles.detailSheet, { backgroundColor: colors.backgroundRaised, borderColor: colors.border }]}>
+          <View accessibilityViewIsModal aria-modal role="dialog" accessibilityLabel="Statistic details" style={[styles.detailSheet, { backgroundColor: colors.backgroundRaised, borderColor: colors.border }]}>
             <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
             <View style={styles.detailHeader}>
               <View style={{ flex: 1 }}>
@@ -155,36 +171,12 @@ function DetailSection({ icon, title, body, emphasized = false }: { icon: IconNa
 function Overview({ analytics }: { analytics: AnalyticsSnapshot }) {
   const { colors } = useStudyBolt();
   const showStatDetail = useStatDetail();
-  const readiness = analytics.readiness.score;
-  const readinessColor = readiness === null ? colors.textMuted : readiness >= 75 ? colors.mint : readiness >= 55 ? colors.warning : colors.danger;
+  const hasPacks = analytics.packs.length > 0;
   return (
     <>
-      <Card
-        accessibilityLabel="Estimated exam readiness. Tap for details"
-        onPress={() => showStatDetail(makeStatDetail('Estimated exam readiness', readiness === null ? 'Building' : `${readiness}%`, analytics.historyMessage))}
-        style={[styles.readinessCard, { backgroundColor: colors.mode === 'dark' ? '#121A24' : '#111936' }]}
-      >
-        <View style={styles.readinessTop}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.heroEyebrow}>ESTIMATED EXAM READINESS</Text>
-            <Text numberOfLines={1} adjustsFontSizeToFit style={styles.heroValue}>{readiness === null ? 'Building' : `${readiness}%`}</Text>
-            <Text style={styles.heroDetail}>{readiness === null ? 'Complete two quizzes and review concepts on more than one day.' : readinessLabel(readiness)}</Text>
-          </View>
-          <View style={[styles.readinessRing, { borderColor: readinessColor }]}>
-            <Icon name={readiness === null ? 'progress-clock' : 'school-outline'} size={28} color={readinessColor} />
-          </View>
-        </View>
-        <ProgressBar progress={readiness ?? 0} color={readinessColor} />
-        <View style={styles.confidenceRow}>
-          <Icon name="shield-check-outline" size={16} color="#AEB8DE" />
-          <Text style={styles.confidenceText}>{analytics.historyMessage}</Text>
-          <Icon name="information-outline" size={16} color="#AEB8DE" />
-        </View>
-      </Card>
-
       <SectionHeader title="At a glance" action="Live" />
       <View style={styles.metricGrid}>
-        <MetricCard icon="brain" label="Overall mastery" value={`${analytics.overallMastery}%`} detail="Across every class" tone="purple" />
+        <MetricCard icon="brain" label="Overall mastery" value={hasPacks ? `${analytics.overallMastery}%` : '—'} detail="Across every class" tone="purple" muted={!hasPacks} />
         <MetricCard icon="clipboard-check-outline" label="Recent quiz average" value={percent(analytics.recentQuizAverage)} detail="Most recent 5" tone="mint" />
         <MetricCard icon="timer-outline" label="Study time this week" value={formatMinutes(analytics.studyTimeThisWeek)} detail={`${analytics.activity.daysThisWeek} active days`} tone="blue" />
         <MetricCard icon="fire" label="Study streak" value={`${analytics.streakDays} days`} detail="Consecutive active days" tone="orange" />
@@ -193,15 +185,15 @@ function Overview({ analytics }: { analytics: AnalyticsSnapshot }) {
         <MetricCard icon="check-decagram-outline" label="Concepts mastered" value={`${analytics.masteredCount}`} detail="Observed mastery ≥ 80%" tone="mint" />
         <MetricCard icon="progress-clock" label="Still learning" value={`${analytics.learningCount}`} detail="Needs more retrieval" tone="orange" />
         <MetricCard icon="calendar-alert" label="Due today" value={`${analytics.dueTodayCount}`} detail="Based on last recall" tone="red" />
-        <MetricCard icon="book-open-page-variant-outline" label="Pack completion" value={`${analytics.packCompletion}%`} detail="Notes, cards, quiz, audio" tone="blue" />
-        <MetricCard icon="layers-triple-outline" label="Material remaining" value={`${analytics.materialRemaining}%`} detail="Across all Study Packs" tone="purple" />
+        <MetricCard icon="book-open-page-variant-outline" label="Pack completion" value={hasPacks ? `${analytics.packCompletion}%` : '—'} detail="Notes, cards, quiz, audio" tone="blue" muted={!hasPacks} />
+        <MetricCard icon="layers-triple-outline" label="Material remaining" value={hasPacks ? `${analytics.materialRemaining}%` : '—'} detail="Across all Study Packs" tone="purple" muted={!hasPacks} />
       </View>
 
       <SectionHeader title="What to study next" action={`${analytics.weakConcepts.length} priority concepts`} />
       <Card style={styles.insightCard}>
         {analytics.weakConcepts.length ? analytics.weakConcepts.slice(0, 4).map((concept, index) => (
           <ConceptRow key={concept.id} concept={concept} rank={index + 1} last={index === Math.min(3, analytics.weakConcepts.length - 1)} />
-        )) : <EmptyInsight icon="check-circle-outline" title="No weak concepts detected" detail="Keep using spaced retrieval to confirm they stay strong." />}
+        )) : !hasPacks ? <EmptyInsight icon="book-open-outline" title="Study suggestions will appear here" detail="Add a Study Pack and complete practice to find what needs attention." /> : <EmptyInsight icon="check-circle-outline" title="No weak concepts detected" detail="Keep using spaced retrieval to confirm they stay strong." />}
       </Card>
 
       <SectionHeader title="Class mastery" action={`${analytics.classes.length} classes`} />
@@ -228,11 +220,13 @@ function Overview({ analytics }: { analytics: AnalyticsSnapshot }) {
             </View>
           </Card>
         ))}
+        {!analytics.classes.length ? <EmptyInsight icon="school-outline" title="No class data yet" detail="Add a Study Pack to see progress by class." /> : null}
       </View>
 
-      <SectionHeader title="Study Pack coverage" action={`${analytics.materialRemaining}% remaining`} />
+      <SectionHeader title="Study Pack coverage" action={hasPacks ? `${analytics.materialRemaining}% remaining` : '— remaining'} />
       <View style={styles.stack}>
         {analytics.packs.map((pack) => <PackRow key={pack.id} pack={pack} />)}
+        {!analytics.packs.length ? <EmptyInsight icon="book-open-outline" title="No Study Packs yet" detail="Your pack coverage will appear here after you add material." /> : null}
       </View>
     </>
   );
@@ -431,9 +425,9 @@ function MasteryAnalytics({ analytics }: { analytics: AnalyticsSnapshot }) {
 
       <SectionHeader title="Topic mastery" action="Strongest to weakest" />
       <Card>
-        {analytics.topicMastery.slice(0, 12).map((topic, index) => (
+        {analytics.topicMastery.length ? analytics.topicMastery.slice(0, 12).map((topic, index) => (
           <ProgressRow key={topic.id} label={topic.title} detail={topic.courseName} value={topic.value} last={index === Math.min(11, analytics.topicMastery.length - 1)} />
-        ))}
+        )) : <EmptyInsight icon="brain" title="Topic estimates will appear here" detail="Study Pack topics and recorded practice build this view." />}
       </Card>
 
       <StatusSection title="Strongest concepts" action="Most secure" concepts={analytics.strongestConcepts} icon="shield-check-outline" />
@@ -444,7 +438,7 @@ function MasteryAnalytics({ analytics }: { analytics: AnalyticsSnapshot }) {
 
       <SectionHeader title="How the estimate works" action="Transparent by design" />
       <Card>
-        {analytics.readiness.components.map((component, index) => (
+        {analytics.packs.length ? analytics.readiness.components.map((component, index) => (
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={`${component.label} ${component.value}%, ${component.weight}% readiness weight. Tap for details`}
@@ -464,7 +458,7 @@ function MasteryAnalytics({ analytics }: { analytics: AnalyticsSnapshot }) {
             <Pill label={`${component.weight}% weight`} tone="neutral" />
             <Icon name="chevron-right" size={17} color={colors.textMuted} />
           </Pressable>
-        ))}
+        )) : <EmptyInsight icon="chart-box-outline" title="Readiness estimate not available yet" detail="Add study material and record practice to build enough evidence." />}
         <Text style={[styles.disclaimer, { color: colors.textMuted }]}>Readiness is an evidence-informed StudyBolt estimate, not a validated prediction of an exam grade. It stays hidden until there is enough varied activity to calculate it responsibly.</Text>
       </Card>
 
@@ -637,9 +631,9 @@ function ActivityAnalytics({ analytics, goalMinutes }: { analytics: AnalyticsSna
 
       <SectionHeader title="More activity stats" action="Secondary insights" />
       <View style={styles.compactStats}>
-        <CompactStat label="Longest session" value={activity.longestSession === null ? 'More history needed' : formatMinutes(activity.longestSession)} />
-        <CompactStat label="Most productive day" value={activity.productiveDay ?? 'More history needed'} />
-        <CompactStat label="Most productive time" value={activity.productiveTime ?? 'More history needed'} />
+        <CompactStat label="Longest session" value={activity.longestSession === null ? '—' : formatMinutes(activity.longestSession)} />
+        <CompactStat label="Most productive day" value={activity.productiveDay ?? '—'} />
+        <CompactStat label="Most productive time" value={activity.productiveTime ?? '—'} />
         <CompactStat label="Study sessions" value={`${activity.sessions}`} />
       </View>
     </>
@@ -724,18 +718,19 @@ function MetricCard({ icon, label, value, detail, tone, muted = false }: { icon:
   const showStatDetail = useStatDetail();
   const color = tone === 'mint' ? colors.mint : tone === 'purple' ? colors.purple : tone === 'orange' ? colors.warning : tone === 'red' ? colors.danger : colors.primary;
   const background = tone === 'mint' ? colors.mintSoft : tone === 'purple' ? colors.purpleSoft : tone === 'orange' ? `${colors.warning}18` : tone === 'red' ? `${colors.danger}14` : colors.primarySoft;
-  const displayedValue = muted ? '—' : value;
+  const isMuted = muted || value === '—';
+  const displayedValue = isMuted ? '—' : value;
   return (
     <Card
       accessibilityLabel={`${label}, ${displayedValue}. Tap for details`}
       onPress={() => showStatDetail(makeStatDetail(label, displayedValue, detail))}
-      style={[styles.metricCard, muted && { opacity: 0.78 }]}
+      style={[styles.metricCard, isMuted && { opacity: 0.78 }]}
     >
       <View style={styles.metricTopRow}>
         <View style={[styles.metricIcon, { backgroundColor: background }]}><Icon name={icon} size={19} color={color} /></View>
         <View style={[styles.metricInfo, { backgroundColor: colors.cardStrong }]}><Icon name="information-outline" size={14} color={colors.textMuted} /></View>
       </View>
-      <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.metricValue, { color: muted ? colors.textMuted : colors.text }]}>{displayedValue}</Text>
+      <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.metricValue, { color: isMuted ? colors.textMuted : colors.text }]}>{displayedValue}</Text>
       <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>{label}</Text>
       <Text style={[styles.metricDetail, { color: colors.textMuted }]}>{detail}</Text>
     </Card>
@@ -1053,13 +1048,14 @@ function EmptyInsight({ icon, title, detail }: { icon: IconName; title: string; 
   );
 }
 
-const percent = (value: number | null) => value === null ? 'Not enough data' : `${value}%`;
+const percent = (value: number | null) => value === null ? '—' : `${value}%`;
 const capitalize = (value: string) => `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
 const friendlyLabel = (value: string) => value.split('-').map(capitalize).join(' ');
 const formatDate = (value: string) => new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 const formatSigned = (value: number) => `${value > 0 ? '+' : ''}${value}`;
 const formatPointGap = (value: number) => `${formatSigned(value)} pts`;
 function formatMinutes(minutes: number): string {
+  if (minutes > 0 && minutes < 1) return `${Math.max(1, Math.round(minutes * 60))}s`;
   const rounded = Math.max(0, Math.round(minutes));
   const hours = Math.floor(rounded / 60);
   const rest = rounded % 60;
@@ -1128,134 +1124,139 @@ function getNextStudyAdjustment(analytics: AnalyticsSnapshot): StatDetail {
 }
 
 const styles = StyleSheet.create({
+  scopeNotice: { marginTop: 16, padding: 15, borderRadius: 16 },
+  scopeNoticeTitle: { fontSize: 15, lineHeight: 22, fontWeight: '700' },
+  scopeNoticeText: { fontSize: 14, lineHeight: 21, marginTop: 4 },
+  scopeToggle: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 5 },
+  scopeToggleText: { flex: 1, fontSize: 14, lineHeight: 21, fontWeight: '600' },
   screenShell: { flex: 1 },
-  title: { fontSize: 29, lineHeight: 35, fontWeight: '900', letterSpacing: -1 },
-  subtitle: { fontSize: 13, lineHeight: 19, marginTop: 5, marginBottom: 17, maxWidth: 510 },
+  title: { ...typography.pageTitle },
+  subtitle: { fontSize: 16, lineHeight: 24, marginTop: 5, marginBottom: 17, maxWidth: 510 },
   tabs: { gap: 7, paddingBottom: 4 },
-  tab: { height: 39, borderRadius: 13, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  tabText: { fontSize: 11, fontWeight: '800' },
+  tab: { minHeight: 44, paddingVertical: 9, borderRadius: 13, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  tabText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   tapHint: { minHeight: 42, borderRadius: 13, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 9, marginTop: 10 },
-  tapHintText: { flex: 1, fontSize: 10, lineHeight: 14, fontWeight: '700' },
+  tapHintText: { flex: 1, fontSize: 14, lineHeight: 21, fontWeight: '700' },
   modalRoot: { flex: 1, justifyContent: 'flex-end', alignItems: 'center' },
   modalBackdrop: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: 'rgba(4, 9, 20, 0.56)' },
   detailSheet: { width: '100%', maxWidth: 620, maxHeight: '88%', borderTopLeftRadius: 28, borderTopRightRadius: 28, borderWidth: StyleSheet.hairlineWidth, paddingTop: 9, shadowColor: '#000000', shadowOffset: { width: 0, height: -8 }, shadowOpacity: 0.18, shadowRadius: 24, elevation: 18 },
   sheetHandle: { width: 38, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 8 },
   detailHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 8 },
-  detailEyebrow: { fontSize: 9, lineHeight: 12, fontWeight: '900', letterSpacing: 1.1 },
+  detailEyebrow: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 1.1 },
   detailTitle: { fontSize: 24, lineHeight: 30, fontWeight: '900', letterSpacing: -0.65, marginTop: 2 },
-  detailClose: { width: 38, height: 38, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  detailClose: { width: 44, height: 44, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   detailScroll: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 34, gap: 10 },
   detailValueCard: { minHeight: 116, borderRadius: 20, padding: 17, justifyContent: 'center' },
-  detailValueLabel: { fontSize: 9, lineHeight: 12, fontWeight: '900', letterSpacing: 1 },
+  detailValueLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 1 },
   detailValue: { fontSize: 32, lineHeight: 39, fontWeight: '900', letterSpacing: -0.8, marginTop: 3 },
-  detailSupporting: { fontSize: 11, lineHeight: 16, marginTop: 3 },
+  detailSupporting: { fontSize: 14, lineHeight: 21, marginTop: 3 },
   detailSection: { flexDirection: 'row', alignItems: 'flex-start', gap: 11, borderRadius: 17, padding: 13 },
   detailSectionIcon: { width: 36, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
-  detailSectionTitle: { fontSize: 12, lineHeight: 16, fontWeight: '900' },
-  detailSectionBody: { fontSize: 11, lineHeight: 17, marginTop: 3 },
+  detailSectionTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  detailSectionBody: { fontSize: 14, lineHeight: 21, marginTop: 3 },
   estimateNote: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 13, marginTop: 2 },
-  estimateNoteText: { flex: 1, fontSize: 9, lineHeight: 14 },
+  estimateNoteText: { flex: 1, fontSize: 14, lineHeight: 21 },
   statPressed: { opacity: 0.66 },
   advancedHero: { marginTop: 14, flexDirection: 'row', alignItems: 'center', gap: 12 },
   advancedHeroIcon: { width: 46, height: 46, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   advancedHeroTitle: { fontSize: 14, fontWeight: '900' },
-  advancedHeroText: { fontSize: 10, lineHeight: 15, marginTop: 3 },
-  advancedHeroMode: { fontSize: 9, lineHeight: 13, fontWeight: '800', marginTop: 5 },
+  advancedHeroText: { fontSize: 14, lineHeight: 21, marginTop: 3 },
+  advancedHeroMode: { fontSize: 14, lineHeight: 21, fontWeight: '700', marginTop: 5 },
   readinessCard: { padding: 20, marginTop: 14, borderColor: 'transparent' },
   readinessTop: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 14 },
-  heroEyebrow: { color: '#AAB6C2', fontSize: 9, fontWeight: '900', letterSpacing: 1.15 },
+  heroEyebrow: { color: '#AAB6C2', fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 1.15 },
   heroValue: { color: '#EDF1F5', fontSize: 40, lineHeight: 47, fontWeight: '900', letterSpacing: -1.2, marginTop: 3 },
-  heroDetail: { color: '#C6CED6', fontSize: 11, lineHeight: 16, marginTop: 3, maxWidth: 350 },
+  heroDetail: { color: '#C6CED6', fontSize: 14, lineHeight: 21, marginTop: 3, maxWidth: 350 },
   readinessRing: { width: 62, height: 62, borderRadius: 31, borderWidth: 5, alignItems: 'center', justifyContent: 'center' },
   confidenceRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 11 },
-  confidenceText: { flex: 1, color: '#AAB6C2', fontSize: 10, lineHeight: 14 },
+  confidenceText: { flex: 1, color: '#AAB6C2', fontSize: 14, lineHeight: 21 },
   metricGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 9 },
   metricCard: { width: '48%', minHeight: 140, padding: 14 },
   metricTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   metricIcon: { width: 35, height: 35, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   metricInfo: { width: 25, height: 25, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
   metricValue: { fontSize: 21, lineHeight: 27, fontWeight: '900', letterSpacing: -0.5, marginTop: 9 },
-  metricLabel: { fontSize: 11, lineHeight: 15, fontWeight: '800', marginTop: 1 },
-  metricDetail: { fontSize: 9, lineHeight: 13, marginTop: 4 },
+  metricLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', marginTop: 1 },
+  metricDetail: { fontSize: 14, lineHeight: 21, marginTop: 4 },
   stack: { gap: 9 },
   insightCard: { paddingVertical: 3 },
   conceptRow: { minHeight: 74, flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 12 },
   rank: { width: 31, height: 31, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  rankText: { fontSize: 12, fontWeight: '900' },
-  rowTitle: { fontSize: 12, lineHeight: 17, fontWeight: '800' },
-  rowMeta: { fontSize: 9, lineHeight: 13, marginTop: 2 },
+  rankText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  rowTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  rowMeta: { fontSize: 12, lineHeight: 18, marginTop: 2 },
   conceptScore: { alignItems: 'flex-end', gap: 2 },
   conceptPercent: { fontSize: 14, fontWeight: '900' },
-  dueText: { fontSize: 8, fontWeight: '900', letterSpacing: 0.8 },
+  dueText: { fontSize: 14, lineHeight: 21, fontWeight: '700', letterSpacing: 0.8 },
   riskIcon: { width: 37, height: 37, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  riskLabel: { fontSize: 7, fontWeight: '900', letterSpacing: 0.7 },
+  riskLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 0.7 },
   calibrationGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   calibrationCell: { width: '48.5%', minHeight: 74, borderRadius: 13, padding: 12, justifyContent: 'center' },
   calibrationValue: { fontSize: 21, fontWeight: '900' },
-  calibrationLabel: { fontSize: 9, fontWeight: '800', marginTop: 2 },
+  calibrationLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', marginTop: 2 },
   confusionRow: { minHeight: 70, flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 11 },
   confusionCount: { width: 39, height: 39, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  confusionCountText: { fontSize: 12, fontWeight: '900' },
+  confusionCountText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   confusionCorrection: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 },
   performanceRow: { minHeight: 61, flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10 },
   performanceValue: { fontSize: 15, fontWeight: '900' },
   distributionRow: { paddingVertical: 12 },
   distributionHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8 },
-  distributionValue: { fontSize: 10, fontWeight: '900' },
+  distributionValue: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   forecastCard: { minHeight: 100, justifyContent: 'center' },
   forecastTop: { flexDirection: 'row', alignItems: 'center', gap: 11, marginBottom: 12 },
   forecastIcon: { width: 43, height: 43, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   forecastValue: { fontSize: 18, fontWeight: '900' },
-  forecastText: { fontSize: 10, marginTop: 3 },
+  forecastText: { fontSize: 14, lineHeight: 21, marginTop: 3 },
   methodologyRow: { minHeight: 75, flexDirection: 'row', alignItems: 'flex-start', gap: 11, paddingVertical: 12 },
   methodologyIcon: { width: 36, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
-  methodologyText: { fontSize: 9, lineHeight: 14, marginTop: 3 },
+  methodologyText: { fontSize: 14, lineHeight: 21, marginTop: 3 },
   progressCard: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   progressHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8 },
-  progressTitle: { fontSize: 12, fontWeight: '800' },
-  progressValue: { fontSize: 12, fontWeight: '900' },
-  progressMeta: { fontSize: 9, marginTop: 7 },
+  progressTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  progressValue: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  progressMeta: { fontSize: 12, lineHeight: 18, marginTop: 7 },
   packCard: { padding: 14 },
   packMetaRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 8 },
   sectionHero: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 },
   heroIcon: { width: 43, height: 43, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  sectionHeroTitle: { fontSize: 13, fontWeight: '900' },
-  sectionHeroText: { fontSize: 10, lineHeight: 15, marginTop: 3 },
+  sectionHeroTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  sectionHeroText: { fontSize: 14, lineHeight: 21, marginTop: 3 },
   topicRow: { paddingVertical: 12 },
   formulaRow: { flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 12 },
-  formulaLabel: { fontSize: 11, fontWeight: '800', marginBottom: 7 },
-  formulaValue: { width: 38, textAlign: 'right', fontSize: 12, fontWeight: '900' },
-  disclaimer: { fontSize: 9, lineHeight: 14, marginTop: 9 },
+  formulaLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', marginBottom: 7 },
+  formulaValue: { width: 38, textAlign: 'right', fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  disclaimer: { fontSize: 14, lineHeight: 21, marginTop: 9 },
   evidenceCard: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   evidenceIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  evidenceTitle: { fontSize: 12, fontWeight: '900' },
-  evidenceText: { fontSize: 9, lineHeight: 14, marginTop: 2 },
-  evidenceSource: { fontSize: 9, fontWeight: '800', marginTop: 4 },
+  evidenceTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  evidenceText: { fontSize: 14, lineHeight: 21, marginTop: 2 },
+  evidenceSource: { fontSize: 12, lineHeight: 18, fontWeight: '700', marginTop: 4 },
   chart: { height: 190, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 5 },
   chartColumn: { flex: 1, height: '100%', alignItems: 'center', justifyContent: 'flex-end', gap: 6 },
-  chartValue: { fontSize: 8, fontWeight: '700' },
+  chartValue: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   barTrack: { width: '68%', maxWidth: 27, height: 125, borderRadius: 7, justifyContent: 'flex-end', overflow: 'hidden' },
   bar: { width: '100%', borderRadius: 7 },
-  dayLabel: { fontSize: 9, fontWeight: '800' },
-  chartCaption: { fontSize: 9, lineHeight: 13, textAlign: 'center', marginTop: 8 },
+  dayLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700' },
+  chartCaption: { fontSize: 12, lineHeight: 18, textAlign: 'center', marginTop: 8 },
   resultRow: { minHeight: 65, flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 10 },
   scoreBadge: { width: 48, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
-  scoreBadgeText: { fontSize: 12, fontWeight: '900' },
+  scoreBadgeText: { fontSize: 12, lineHeight: 18, fontWeight: '700' },
   breakdownGrid: { flexDirection: 'row', gap: 9 },
   breakdownCard: { flex: 1, padding: 13 },
-  breakdownTitle: { fontSize: 12, fontWeight: '900', marginBottom: 10 },
+  breakdownTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700', marginBottom: 10 },
   breakdownRow: { marginTop: 8 },
-  breakdownLabel: { fontSize: 9, fontWeight: '700' },
+  breakdownLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700' },
   breakdownValue: { fontSize: 15, fontWeight: '900', marginTop: 1 },
-  breakdownCount: { fontSize: 8, marginTop: 1 },
+  breakdownCount: { fontSize: 14, lineHeight: 21, marginTop: 1 },
   missRow: { minHeight: 66, flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 10 },
   missBadge: { width: 39, height: 39, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  missBadgeText: { fontSize: 12, fontWeight: '900' },
+  missBadgeText: { fontSize: 12, lineHeight: 18, fontWeight: '700' },
   compactStats: { flexDirection: 'row', flexWrap: 'wrap', gap: 9 },
   compactStat: { width: '48%', minHeight: 89, justifyContent: 'center', padding: 14 },
   compactTopRow: { position: 'absolute', right: 10, top: 10 },
   compactValue: { fontSize: 16, lineHeight: 21, fontWeight: '900' },
-  compactLabel: { fontSize: 9, lineHeight: 13, marginTop: 4 },
+  compactLabel: { fontSize: 12, lineHeight: 18, marginTop: 4 },
   goalCard: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 },
   goalIcon: { width: 43, height: 43, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   heatmap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
@@ -1263,19 +1264,19 @@ const styles = StyleSheet.create({
   heatLegend: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 5, marginTop: 10 },
   legendCell: { width: 11, height: 11, borderRadius: 3 },
   horizontalRow: { paddingVertical: 12 },
-  horizontalValue: { fontSize: 10, fontWeight: '900' },
+  horizontalValue: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   methodStack: { gap: 9 },
   methodCard: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   methodIcon: { width: 45, height: 45, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  methodTitle: { fontSize: 13, fontWeight: '900' },
-  methodDetail: { fontSize: 9, lineHeight: 14, marginTop: 3 },
-  methodValue: { fontSize: 12, fontWeight: '900', textAlign: 'right' },
+  methodTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  methodDetail: { fontSize: 14, lineHeight: 21, marginTop: 3 },
+  methodValue: { fontSize: 14, lineHeight: 21, fontWeight: '700', textAlign: 'right' },
   splitCard: { flexDirection: 'row', alignItems: 'center' },
   splitMetric: { flex: 1, alignItems: 'center', paddingVertical: 7 },
   splitDivider: { width: StyleSheet.hairlineWidth, height: 78 },
   bigStatusIcon: { width: 43, height: 43, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   splitValue: { fontSize: 24, fontWeight: '900', marginTop: 8 },
-  splitLabel: { fontSize: 9, marginTop: 1 },
+  splitLabel: { fontSize: 12, lineHeight: 18, marginTop: 1 },
   milestone: { minHeight: 55, flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 9 },
   milestoneIcon: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   emptyInsight: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 9 },

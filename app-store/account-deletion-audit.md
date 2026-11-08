@@ -36,7 +36,34 @@ The RevenueCat dashboard and anonymous server aggregates were inspected; no live
 | Other app metadata | No unexpected app-metadata key among registered StudyBolt accounts at query time |
 | Apple identities | 0 Apple identities joined to registered StudyBolt accounts at query time; Apple sign-in still exists in source and must be handled before use |
 
-The current deployed function does not erase RevenueCat records. Historical customer-by-customer erasure was not audited. The dedicated server configuration is absent, and no disposable end-to-end customer was available for this audit. The production deletion endpoint was not invoked.
+The 29 October observations above are the original baseline. The read-only production preflight below records the newer 7 November state and supersedes the earlier deployment-configuration and migration observations.
+
+## Production preflight — 7 November 2026
+
+No production data or service was changed during this preflight. No account, purchase, uploaded file, or customer record was deleted.
+
+- **Correct target:** Coolify identifies the `studybolt-supabase` resource as project `studybolt`, routed through `studybolt-api.duckdns.org`. Its PostgreSQL service is `supabase-db-mrbwmu6upfr6zofvlfy9tqws`, database `postgres`. A separate `bookez` Supabase stack was excluded.
+- **Migration copy:** `/tmp/20261029000000_studybolt_account_deletion.sql` on the VPS has the same SHA-256 as the repository migration.
+- **Database state and prerequisites:** the migration ledger ends at `20261027000000`; the deletion journal and its functions are absent. `auth.users`, `storage.objects`, `studybolt_subscription_events`, `studybolt_admin_audit`, `service_role`, and the audit table's `admin_user_id`/`target_user_id` columns are present. The production inventory has the same 17 public Auth foreign keys as the migration's StudyBolt allowlist. The required Storage columns exist. No conflicting migration trigger exists; the current Storage triggers are `protect_objects_delete` and `update_objects_updated_at`.
+- **Current database backup:** the latest discovered database dump is `pre-migrations-20261027T051603Z.dump`, dated 27 October. Its archive table-of-contents and all compressed payload blocks decode successfully. It is not a current backup, and no isolated restore test was performed. Newer Coolify volume archives are Storage volume backups, not database dumps. A fresh database backup and verification are required immediately before the migration.
+- **Function environment:** the running Edge Functions container has `SUPABASE_URL`, the service-role key, RevenueCat v2 project/key, and a worker secret of at least 32 characters. Secret values were not displayed. `STUDYBOLT_DELETION_WORKER_ENABLED=false` and `VERIFY_JWT=false`.
+- **Mounted source:** `delete-account/index.ts` and its four deletion helpers match the repository. `process-account-deletions/index.ts` is missing from the production functions volume. The mounted RevenueCat webhook and subscription-sync entrypoints differ from the current guarded repository versions and must be updated before accepting deletion requests.
+- **Worker schedule and service:** no matching root cron entry or systemd timer was found. The Edge Functions service is currently healthy. Only that service needs recreation after its function volume and environment are ready; the database, Auth, Storage, gateway, and other services must not be restarted.
+
+### Proposed production change set
+
+After explicit approval, create a fresh custom-format PostgreSQL dump, decode-check it, and test a restore in an isolated disposable database before applying the migration. Apply the migration with `ON_ERROR_STOP` inside one transaction and insert its `20261029000000` migration-ledger row in that same transaction. Verify the private journal, RLS/ACLs, seven migration functions, two new triggers, and the subscription-event function before continuing.
+
+Then add the missing `process-account-deletions` entrypoint and update only the mounted `revenuecat-webhook` and `studybolt-sync-subscription` entrypoints to their reviewed repository versions. Preserve copies of the current mounted webhook/sync sources for rollback. Configure a root-owned systemd timer to call `https://studybolt-api.duckdns.org/functions/v1/process-account-deletions` once per minute. Store its bearer credential in a root-only protected file and keep it out of command-line arguments and logs. First recreate only the StudyBolt Edge Functions service with the deletion flag still false. Verify service health and safe checks: unsupported methods and missing/incorrect authorization are rejected. Run the authenticated worker once through its systemd service only after confirming the journal is empty; enable the timer and confirm a successful empty-queue run while intake is still disabled. Then set `STUDYBOLT_DELETION_WORKER_ENABLED=true` and recreate that same Edge Functions service to load the flag. Confirm health and leave the timer active. Do not submit a real customer deletion as a test.
+
+### Rollback plan
+
+- If the SQL transaction errors, `ON_ERROR_STOP` aborts the transaction, so neither the schema changes nor its migration-ledger row should remain.
+- Before enabling deletion requests, disable the timer and keep the worker flag false if the new service or safe checks fail. Restore the saved webhook/sync files, remove the added worker entrypoint, and recreate only the Edge Functions service.
+- If the migration itself must be reversed before any deletion request is accepted, remove its two triggers and new objects, and restore the prior `apply_studybolt_subscription_event` definition captured before the change. Do not drop the journal after it contains an accepted request.
+- Once any deletion request has been accepted, do not roll back by deleting the journal, recreating Auth users, or restoring RevenueCat profiles. Set the worker flag false to stop new requests, leave the scheduler running to finish accepted jobs, and resolve the backlog. A partial erasure is not reversible.
+
+No separate StudyBolt staging backend was found, so this rollout would be a production-only change without a hosted staging rehearsal. The local PostgreSQL fixture does not reproduce the full hosted Auth/Storage services. The owner must explicitly approve proceeding with that limitation after reviewing the fresh backup and rollback plan.
 
 ## Data inventory and removal
 

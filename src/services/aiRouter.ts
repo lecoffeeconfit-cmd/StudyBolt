@@ -6,6 +6,12 @@ export type AiRouteUsed = 'on-device' | 'cloud' | 'cache' | 'none';
 
 const RESPONSE_CACHE_TTL_MS = 15 * 60 * 1000;
 const responseCache = new Map<string, { response: AiTutorResponse; expiresAt: number }>();
+let accountCacheEpoch = 0;
+
+export function clearStudyBoltAiResponseCache(): void {
+  accountCacheEpoch += 1;
+  responseCache.clear();
+}
 
 function cacheKey(action: AiTutorAction, context: AiTutorContext): string {
   return JSON.stringify([action, context.studySetTitle, context.currentChunk.id, context.currentChunk.text.slice(0, 1_200), context.mastery]);
@@ -39,6 +45,7 @@ export async function runStudyBoltAI({
   conversation?: AiTutorConversation;
   channel?: AiRequestChannel;
 }): Promise<StudyBoltAIResult> {
+  const cacheEpoch = accountCacheEpoch;
   const cacheable = !question?.trim() && !(conversation?.turns?.length) && ['explain', 'teach', 'quick-answer', 'deep-dive', 'simplify', 'example', 'important', 'confuse'].includes(action);
   const key = cacheable ? cacheKey(action, context) : '';
   const cached = key ? responseCache.get(key) : undefined;
@@ -47,8 +54,11 @@ export async function runStudyBoltAI({
   }
   if (cached) responseCache.delete(key);
   const localResult = await askOnDeviceTutor({ action, question, context, conversation });
+  if (cacheEpoch !== accountCacheEpoch) {
+    return { availability: localResult.availability, routeUsed: 'none', error: 'Your account changed. Please try again.' };
+  }
   if (localResult.response) {
-    if (key) responseCache.set(key, { response: localResult.response, expiresAt: Date.now() + RESPONSE_CACHE_TTL_MS });
+    if (key && cacheEpoch === accountCacheEpoch) responseCache.set(key, { response: localResult.response, expiresAt: Date.now() + RESPONSE_CACHE_TTL_MS });
     return { response: localResult.response, availability: localResult.availability, routeUsed: 'on-device' };
   }
   if (canAttemptOnDeviceAI(localResult.availability)) {
@@ -68,7 +78,7 @@ export async function runStudyBoltAI({
     };
   }
   const cloudResult = await askAiTutor({ action, question, context, accessToken, depth, conversation, channel });
-  if (key && cloudResult.response) responseCache.set(key, { response: cloudResult.response, expiresAt: Date.now() + RESPONSE_CACHE_TTL_MS });
+  if (key && cloudResult.response && cacheEpoch === accountCacheEpoch) responseCache.set(key, { response: cloudResult.response, expiresAt: Date.now() + RESPONSE_CACHE_TTL_MS });
   return {
     ...(cloudResult.response ? { response: cloudResult.response } : {}),
     ...(cloudResult.quota ? { quota: cloudResult.quota } : {}),

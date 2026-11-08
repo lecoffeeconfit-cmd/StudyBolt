@@ -25,6 +25,20 @@ export async function fetchRevenueCatEntitlement(
   const expiration = parseDate(entitlement.expires_date);
   const graceExpiration = parseDate(entitlement.grace_period_expires_date);
   const latest = Math.max(expiration ?? 0, graceExpiration ?? 0);
+  if (latest > Date.now()) {
+    // Entitlements are project-wide, including RevenueCat's simulated Test
+    // Store. Only the actual app stores can grant production backend access.
+    // TestFlight uses APP_STORE sandbox receipts, which remain supported.
+    const productId = entitlement.product_identifier;
+    const subscriptions = payload.subscriber.subscriptions;
+    const subscription = typeof productId === 'string' && isRecord(subscriptions) ? subscriptions[productId] : null;
+    if (!isRecord(subscription) || typeof subscription.store !== 'string') {
+      throw new Error('RevenueCat subscription store could not be verified');
+    }
+    if (!['app_store', 'mac_app_store', 'play_store'].includes(subscription.store.toLowerCase())) {
+      return { active: false, expiresAt: null };
+    }
+  }
   return {
     active: latest > Date.now(),
     expiresAt: latest > 0 ? new Date(latest).toISOString() : null,

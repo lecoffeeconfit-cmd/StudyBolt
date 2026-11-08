@@ -3,7 +3,6 @@ import * as Haptics from 'expo-haptics';
 import React from 'react';
 import type { ReactNode } from 'react';
 import {
-  ActivityIndicator,
   Animated,
   Easing,
   GestureResponderEvent,
@@ -20,19 +19,20 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useStudyBolt } from '../StudyBoltContext';
 import { useReducedMotion } from '../hooks/useReducedMotion';
-import { radius } from '../theme';
+import { radius, typography } from '../theme';
+import { LoadingArtwork } from './StudyBoltLoading';
 
 export type IconName = keyof typeof MaterialCommunityIcons.glyphMap;
 
 export function Icon({ name, size = 22, color }: { name: IconName; size?: number; color?: string }) {
   const { colors } = useStudyBolt();
-  return <MaterialCommunityIcons name={name} size={size} color={color ?? colors.text} />;
+  return <MaterialCommunityIcons name={name} size={size} color={color ?? colors.text} accessible={false} aria-hidden accessibilityElementsHidden importantForAccessibility="no-hide-descendants" />;
 }
 
 export function FlagButton({ flagged, onPress, label = 'Flag for later' }: { flagged: boolean; onPress: () => void; label?: string }) {
   const { colors } = useStudyBolt();
   return (
-    <Pressable
+    <Pressable aria-pressed={flagged}
       accessibilityRole="button"
       accessibilityLabel={flagged ? 'Remove flag' : label}
       accessibilityState={{ selected: flagged }}
@@ -149,10 +149,10 @@ export function Card({ children, style, onPress, accessibilityLabel }: { childre
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       onPress={() => {
-        if (Platform.OS !== 'web') void Haptics.selectionAsync();
+        if (Platform.OS !== 'web') void Haptics.selectionAsync().catch(() => undefined);
         onPress();
       }}
-      style={({ pressed }) => [cardStyle, pressed && styles.pressed]}
+      style={({ pressed }) => [cardStyle, pressed && { opacity: 0.85 }]}
     >
       {children}
     </Pressable>
@@ -176,12 +176,13 @@ export function PrimaryButton({
 }) {
   const { colors } = useStudyBolt();
   return (
-    <Pressable
+    <Pressable aria-disabled={disabled || loading} aria-busy={loading}
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityState={{ disabled: disabled || loading, busy: loading }}
       disabled={disabled || loading}
       onPress={(event) => {
-        if (Platform.OS !== 'web') void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        if (Platform.OS !== 'web') void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
         onPress(event);
       }}
       style={({ pressed }) => [
@@ -190,7 +191,7 @@ export function PrimaryButton({
         style,
       ]}
     >
-      {loading ? <ActivityIndicator color={colors.primaryText} /> : icon ? <Icon name={icon} size={20} color={colors.primaryText} /> : null}
+      {loading ? <LoadingArtwork compact colors={{ ...colors, primary: colors.primaryText }} /> : icon ? <Icon name={icon} size={20} color={colors.primaryText} /> : null}
       <Text style={[styles.primaryButtonText, { color: colors.primaryText }]}>{label}</Text>
     </Pressable>
   );
@@ -200,12 +201,12 @@ export function SectionHeader({ title, action, onAction }: { title: string; acti
   const { colors } = useStudyBolt();
   return (
     <View style={styles.sectionHeader}>
-      <Text style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text>
-      {action ? (
-        <Pressable onPress={onAction} hitSlop={10}>
+      <Text accessibilityRole="header" style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text>
+      {action && onAction ? (
+        <Pressable accessibilityRole="button" accessibilityLabel={`${action}: ${title}`} onPress={onAction} hitSlop={6} style={styles.sectionActionTarget}>
           <Text style={[styles.sectionAction, { color: colors.primary }]}>{action}</Text>
         </Pressable>
-      ) : null}
+      ) : action ? <Text style={[styles.sectionMetadata, { color: colors.textSecondary }]}>{action}</Text> : null}
     </View>
   );
 }
@@ -223,6 +224,7 @@ export function Screen({ children, scroll = true }: { children: ReactNode; scrol
       style={{ backgroundColor: colors.background }}
       contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 8 }]}
       showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
     >
       {children}
     </ScrollView>
@@ -235,7 +237,7 @@ export function Header({ title, subtitle, onBack, right }: { title: string; subt
     <View style={styles.header}>
       <View style={styles.headerSide}>
         {onBack ? (
-          <Pressable accessibilityLabel="Go back" onPress={onBack} hitSlop={12} style={styles.iconButton}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Go back" onPress={() => onBack()} hitSlop={8} style={styles.iconButton}>
             <Icon name="chevron-left" size={30} color={colors.text} />
           </Pressable>
         ) : (
@@ -244,8 +246,8 @@ export function Header({ title, subtitle, onBack, right }: { title: string; subt
       </View>
       {onBack ? (
         <View style={styles.headerTitleWrap}>
-          <Text numberOfLines={1} style={[styles.headerTitle, { color: colors.text }]}>{title}</Text>
-          {subtitle ? <Text numberOfLines={1} style={[styles.headerSubtitle, { color: colors.textSecondary }]}>{subtitle}</Text> : null}
+          <Text accessibilityRole="header" numberOfLines={2} style={[styles.headerTitle, { color: colors.text }]}>{title}</Text>
+          {subtitle ? <Text numberOfLines={2} style={[styles.headerSubtitle, { color: colors.textSecondary }]}>{subtitle}</Text> : null}
         </View>
       ) : null}
       <View style={[styles.headerSide, styles.headerRight]}>{right}</View>
@@ -264,11 +266,11 @@ export function Pill({ label, tone = 'blue' }: { label: string; tone?: 'blue' | 
   );
 }
 
-export function ProgressBar({ progress, color }: { progress: number; color?: string }) {
+export function ProgressBar({ progress, color, accessibilityLabel = 'Progress' }: { progress: number; color?: string; accessibilityLabel?: string }) {
   const { colors } = useStudyBolt();
   const safe = Math.max(0, Math.min(100, progress));
   return (
-    <View style={[styles.progressTrack, { backgroundColor: colors.border }]}>
+    <View aria-valuemin={0} aria-valuemax={100} aria-valuenow={safe} accessible accessibilityRole="progressbar" accessibilityLabel={accessibilityLabel} accessibilityValue={{ min: 0, max: 100, now: safe }} style={[styles.progressTrack, { backgroundColor: colors.border }]}>
       <View style={[styles.progressFill, { backgroundColor: color ?? colors.primary, width: `${safe}%` }]} />
     </View>
   );
@@ -278,13 +280,13 @@ const styles = StyleSheet.create({
   screen: { flex: 1, paddingHorizontal: 20 },
   scrollContent: { paddingHorizontal: 20, paddingBottom: 120 },
   card: {
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
     borderWidth: StyleSheet.hairlineWidth,
     padding: 16,
-    shadowOffset: { width: 0, height: 7 },
-    shadowOpacity: 0.06,
-    shadowRadius: 15,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.035,
+    shadowRadius: 12,
+    elevation: 1,
   },
   pressed: { transform: [{ scale: 0.987 }], opacity: 0.92 },
   logoRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
@@ -300,21 +302,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  primaryButtonText: { fontSize: 16, lineHeight: 20, fontWeight: '800', flexShrink: 1, textAlign: 'center' },
+  primaryButtonText: { ...typography.control, fontSize: 16, lineHeight: 23, fontWeight: '700', flexShrink: 1, textAlign: 'center' },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 26, marginBottom: 12 },
-  sectionTitle: { fontSize: 18, lineHeight: 23, fontWeight: '800', letterSpacing: -0.3 },
-  sectionAction: { fontSize: 13, fontWeight: '700' },
-  header: { height: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
-  headerSide: { minWidth: 88, justifyContent: 'center' },
+  sectionTitle: { ...typography.sectionTitle, flex: 1 },
+  sectionAction: { ...typography.control },
+  sectionActionTarget: { minHeight: 44, justifyContent: 'center', paddingLeft: 10 },
+  sectionMetadata: { ...typography.caption, flexShrink: 1, textAlign: 'right', marginLeft: 8 },
+  header: { minHeight: 52, paddingVertical: 4, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  headerSide: { minWidth: 44, justifyContent: 'center' },
   headerRight: { alignItems: 'flex-end' },
   headerTitleWrap: { flex: 1, alignItems: 'center', paddingHorizontal: 8 },
-  headerTitle: { fontSize: 17, fontWeight: '800', letterSpacing: -0.3 },
-  headerSubtitle: { fontSize: 11, marginTop: 1 },
-  iconButton: { width: 42, height: 42, justifyContent: 'center' },
-  flagButton: { width: 34, height: 34, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { fontSize: 17, lineHeight: 24, fontWeight: '700', letterSpacing: -0.3, textAlign: 'center' },
+  headerSubtitle: { ...typography.caption, marginTop: 1, textAlign: 'center' },
+  iconButton: { width: 44, height: 44, justifyContent: 'center' },
+  flagButton: { width: 44, height: 44, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center' },
   flagButtonPressed: { opacity: 0.68, transform: [{ scale: 0.94 }] },
   pill: { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.pill },
-  pillText: { fontSize: 11, lineHeight: 14, fontWeight: '800' },
+  pillText: { ...typography.caption, fontWeight: '600' },
   progressTrack: { height: 8, borderRadius: radius.pill, overflow: 'hidden' },
   progressFill: { height: '100%', borderRadius: radius.pill },
 });

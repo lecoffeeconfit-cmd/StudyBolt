@@ -2,8 +2,11 @@ import { setAudioModeAsync } from 'expo-audio';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Speech from 'expo-speech';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Image, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { AccessibilityInfo, Animated, AppState, Image, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { useReducedMotion } from '../hooks/useReducedMotion';
+import { LoadingArtwork, StudyBoltLoading } from '../components/StudyBoltLoading';
 
 import { useAuth } from '../AuthContext';
 import { AskStudyBoltSheet, SpeedPickerSheet, VoicePickerSheet } from '../components/StudyCastSheets';
@@ -33,7 +36,7 @@ const TABS: Array<{ id: StudyTool; label: string }> = [
   { id: 'overview', label: 'Overview' },
   { id: 'notes', label: 'Notes' },
   { id: 'flashcards', label: 'Flashcards' },
-  { id: 'quiz', label: 'Exam' },
+  { id: 'quiz', label: 'Quiz' },
   { id: 'audio', label: 'Listen' },
   { id: 'coach', label: 'Coach' },
 ];
@@ -234,7 +237,7 @@ export function StudyPackScreen({
         {TABS.map((tab) => {
           const active = tool === tab.id;
           return (
-            <Pressable key={tab.id} onPress={() => setTool(tab.id)} style={[styles.tab, active && { backgroundColor: colors.primarySoft }]}>
+            <Pressable aria-selected={active} accessibilityRole="tab" accessibilityState={{ selected: active }} key={tab.id} onPress={() => setTool(tab.id)} style={[styles.tab, active && { backgroundColor: colors.primarySoft }]}>
               <Text style={[styles.tabText, { color: active ? colors.primary : colors.textSecondary }]}>{tab.label}</Text>
             </Pressable>
           );
@@ -287,19 +290,19 @@ function Overview({ deck, onTool, onPlan, onStartStudy, onOpenSpeedReview, onOpe
       <Card style={[styles.masteryCard, styles.flatCard, { backgroundColor: colors.mode === 'dark' ? colors.primarySoft : '#EEF5FF' }]}>
         <View style={styles.masteryTop}>
           <View>
-            <Text style={[styles.masteryLabel, { color: colors.textSecondary }]}>ESTIMATED MASTERY</Text>
+            <Text style={[styles.masteryLabel, { color: colors.textSecondary }]}>STUDY PROGRESS ESTIMATE</Text>
             <Text style={[styles.masteryValue, { color: colors.text }]}>{mastery.overall}%</Text>
           </View>
           <View style={[styles.masteryRing, { backgroundColor: colors.goldSoft, borderColor: colors.gold }]}><Icon name="lightning-bolt" size={24} color={colors.goldText} /></View>
         </View>
-        <ProgressBar progress={mastery.overall} />
+        <ProgressBar accessibilityLabel="Study progress estimate" progress={mastery.overall} />
         <Text style={[styles.masteryHint, { color: colors.textSecondary }]}>{mastery.weakCount} flashcards still need retrieval practice.</Text>
       </Card>
 
       <View style={styles.toolGrid}>
         <ToolCard icon="note-text-outline" title="Layered Notes" detail={materialReady('simpleNotes') || materialReady('detailedNotes') ? 'Simplified + full-detail views' : 'Creating your note layers…'} color={colors.primary} background={colors.primarySoft} onPress={() => onTool('notes')} />
         <ToolCard icon="cards-outline" title="Flashcards" detail={materialReady('flashcards') ? `${deck.flashcards.length} active recall cards` : 'Building flashcards…'} color={colors.purple} background={colors.purpleSoft} onPress={() => onTool('flashcards')} />
-        <ToolCard icon="clipboard-text-outline" title="Quiz & Full Test" detail={materialReady('quiz') ? `${state.quizQuestionCount} practice questions + cumulative test` : 'Preparing your quiz…'} color={colors.mint} background={colors.mintSoft} onPress={() => onTool('quiz')} />
+        <ToolCard icon="clipboard-text-outline" title="Quiz & Exam" detail={materialReady('quiz') ? 'Practice questions + cumulative test' : 'Preparing your quiz…'} color={colors.mint} background={colors.mintSoft} onPress={() => onTool('quiz')} />
         <ToolCard icon="headphones" title="StudyCast" detail={materialReady('audio') ? 'Listen and ask about any section' : 'Creating audio summary…'} color="#A45FEB" background={colors.purpleSoft} onPress={() => onTool('audio')} />
         {!shared && visualCount > 0 && onOpenVisualReview ? <ToolCard icon="image-multiple-outline" title="Visuals" detail={`${visualCount} saved study visual${visualCount === 1 ? '' : 's'} from your slides`} color={colors.purple} background={colors.purpleSoft} onPress={onOpenVisualReview} /> : null}
       </View>
@@ -309,7 +312,7 @@ function Overview({ deck, onTool, onPlan, onStartStudy, onOpenSpeedReview, onOpe
           <View style={[styles.speedReviewBannerIcon, { backgroundColor: colors.purple }]}><Icon name="speedometer" size={22} color={colors.primaryText} /></View>
           <View style={styles.speedReviewBannerCopy}>
             <Text style={[styles.speedReviewBannerTitle, { color: colors.text }]}>Speed Review</Text>
-            <Text style={[styles.speedReviewBannerText, { color: colors.textSecondary }]}>Hear a short, fast pass through this PowerPoint.</Text>
+            <Text style={[styles.speedReviewBannerText, { color: colors.textSecondary }]}>Hear a short recap of this Study Pack.</Text>
           </View>
           <Pill label="1.5×" tone="purple" />
           <Icon name="arrow-right" color={colors.purple} />
@@ -327,8 +330,8 @@ function Overview({ deck, onTool, onPlan, onStartStudy, onOpenSpeedReview, onOpe
 
       {!shared && onStartStudy ? (
         <View style={styles.deckAdaptiveActions}>
-          <Pressable onPress={() => onStartStudy('smart')} style={[styles.deckAdaptivePrimary, { backgroundColor: colors.primary }]}><Icon name="lightning-bolt" color={colors.goldBright} /><View><Text style={[styles.deckAdaptiveTitle, { color: colors.primaryText }]}>Study this pack</Text><Text style={[styles.deckAdaptiveText, { color: colors.primaryText }]}>Adaptive mix</Text></View></Pressable>
-          <Pressable onPress={() => onStartStudy('pretest')} style={[styles.deckAdaptiveSecondary, { backgroundColor: colors.card, borderColor: colors.border }]}><Icon name="radar" color={colors.primary} /><View><Text style={[styles.deckAdaptiveTitle, { color: colors.text }]}>Pre-test</Text><Text style={[styles.deckAdaptiveText, { color: colors.textMuted }]}>Find your baseline</Text></View></Pressable>
+          <Pressable accessibilityRole="button" onPress={() => onStartStudy('smart')} style={[styles.deckAdaptivePrimary, { backgroundColor: colors.primary }]}><Icon name="lightning-bolt" color={colors.goldBright} /><View><Text style={[styles.deckAdaptiveTitle, { color: colors.primaryText }]}>Study this pack</Text><Text style={[styles.deckAdaptiveText, { color: colors.primaryText }]}>Adaptive mix</Text></View></Pressable>
+          <Pressable accessibilityRole="button" onPress={() => onStartStudy('pretest')} style={[styles.deckAdaptiveSecondary, { backgroundColor: colors.card, borderColor: colors.border }]}><Icon name="radar" color={colors.primary} /><View><Text style={[styles.deckAdaptiveTitle, { color: colors.text }]}>Pre-test</Text><Text style={[styles.deckAdaptiveText, { color: colors.textMuted }]}>Find your baseline</Text></View></Pressable>
         </View>
       ) : null}
 
@@ -350,7 +353,7 @@ function Overview({ deck, onTool, onPlan, onStartStudy, onOpenSpeedReview, onOpe
         </Card>
       ) : null}
 
-      <SectionHeader title="Slide outline" action="Source order" />
+      <SectionHeader title="Source outline" action="Source order" />
       <View style={styles.outlineList}>
         {deck.outline.map((item, index) => (
           <Card key={item.id} style={[styles.outlineCard, styles.flatCard]}>
@@ -359,7 +362,6 @@ function Overview({ deck, onTool, onPlan, onStartStudy, onOpenSpeedReview, onOpe
               <Text style={[styles.outlineTitle, { color: colors.text }]}>{item.title}</Text>
               <Text style={[styles.outlineRange, { color: colors.textMuted }]}>{item.range}</Text>
             </View>
-            <Icon name="chevron-right" color={colors.textMuted} />
           </Card>
         ))}
       </View>
@@ -369,9 +371,9 @@ function Overview({ deck, onTool, onPlan, onStartStudy, onOpenSpeedReview, onOpe
           <View style={[styles.planIcon, { backgroundColor: colors.mint }]}><Icon name="calendar-check" color={colors.primaryText} /></View>
           <View style={{ flex: 1 }}>
             <Text style={[styles.planTitle, { color: colors.text }]}>Need to learn this fast?</Text>
-            <Text style={[styles.planText, { color: colors.textSecondary }]}>Build a guided route for this PowerPoint or your entire class.</Text>
+            <Text style={[styles.planText, { color: colors.textSecondary }]}>Build a guided route for this Study Pack or your entire class.</Text>
           </View>
-          <Pressable accessibilityRole="button" onPress={onPlan} style={[styles.planAction, { backgroundColor: colors.card }]}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Plan study for this pack" onPress={onPlan} style={[styles.planAction, { backgroundColor: colors.card }]}>
             <Icon name="arrow-right" color={colors.mint} />
           </Pressable>
         </Card>
@@ -413,6 +415,8 @@ function NoteBulletList({ points, color, onAsk }: { points: string[]; color: str
 
 function Notes({ deck, readOnly = false, onAskSection }: { deck: StudyPack; readOnly?: boolean; onAskSection: (note: NoteBlock) => void }) {
   const { colors, recordStudyEvent, updateDeck, toggleFlag, isFlagged } = useStudyBolt();
+  const recordStudyEventRef = useRef(recordStudyEvent);
+  recordStudyEventRef.current = recordStudyEvent;
   const [mode, setMode] = useState<NoteMode>('simplified');
   const mastery = calculateMastery(deck);
   const material: StudyPackMaterial = mode === 'detailed' ? 'detailedNotes' : 'simpleNotes';
@@ -421,6 +425,66 @@ function Notes({ deck, readOnly = false, onAskSection }: { deck: StudyPack; read
   const coverageTotal = deck.outline.length || notes.length;
   const coveredSections = Math.min(new Set(notes.map((note) => note.source.sectionId)).size, coverageTotal);
   const completeCoverage = coverageTotal > 0 && coveredSections >= coverageTotal;
+
+  useEffect(() => {
+    if (readOnly || !materialReady || notes.length === 0) return;
+
+    const isForeground = () => AppState.currentState === 'active'
+      && !(Platform.OS === 'web' && typeof document !== 'undefined' && document.hidden);
+    let activeSince = isForeground() ? Date.now() : null;
+    let unrecordedMs = 0;
+    const saveReadingTime = (minimumMs: number) => {
+      if (unrecordedMs < minimumMs) return;
+      recordStudyEventRef.current({
+        type: 'note-reading',
+        deckId: deck.id,
+        courseId: deck.courseId,
+        durationMinutes: unrecordedMs / 60_000,
+      });
+      unrecordedMs = 0;
+    };
+    const checkpoint = () => {
+      if (activeSince !== null) {
+        const now = Date.now();
+        unrecordedMs += Math.max(0, now - activeSince);
+        activeSince = now;
+      }
+      saveReadingTime(60_000);
+    };
+    const pause = () => {
+      if (activeSince !== null) {
+        unrecordedMs += Math.max(0, Date.now() - activeSince);
+        activeSince = null;
+      }
+      // Ignore only accidental taps; normal short reading sessions still count.
+      saveReadingTime(5_000);
+    };
+    const resume = () => {
+      if (activeSince === null) activeSince = Date.now();
+    };
+    const appStateSubscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') resume();
+      else pause();
+    });
+    const onVisibilityChange = () => {
+      if (document.hidden) pause();
+      else resume();
+    };
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onVisibilityChange);
+    }
+    const timer = setInterval(checkpoint, 15_000);
+
+    return () => {
+      clearInterval(timer);
+      appStateSubscription.remove();
+      if (Platform.OS === 'web' && typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onVisibilityChange);
+      }
+      pause();
+    };
+  }, [deck.courseId, deck.id, materialReady, notes.length, readOnly]);
+
   const toggleReviewed = (noteId: string) => {
     if (readOnly) return;
     const wasReviewed = deck.reviewedNoteIds.includes(noteId);
@@ -430,7 +494,7 @@ function Notes({ deck, readOnly = false, onAskSection }: { deck: StudyPack; read
         ? current.reviewedNoteIds.filter((id) => id !== noteId)
         : [...current.reviewedNoteIds, noteId],
     }));
-    if (!wasReviewed) recordStudyEvent({ type: 'note-review', deckId: deck.id, courseId: deck.courseId, noteId, durationMinutes: 3 });
+    if (!wasReviewed) recordStudyEvent({ type: 'note-review', deckId: deck.id, courseId: deck.courseId, noteId });
   };
   return (
     <>
@@ -441,7 +505,7 @@ function Notes({ deck, readOnly = false, onAskSection }: { deck: StudyPack; read
         ] as Array<{ id: NoteMode; label: string; icon: IconName }>).map((item) => {
           const active = mode === item.id;
           return (
-            <Pressable
+            <Pressable aria-selected={active}
               key={item.id}
               accessibilityRole="tab"
               accessibilityState={{ selected: active }}
@@ -544,11 +608,11 @@ function Notes({ deck, readOnly = false, onAskSection }: { deck: StudyPack; read
                 </View>
               ) : (
                 <View style={styles.noteActions}>
-                  <Pressable onPress={() => toggleReviewed(note.id)} style={[styles.reviewedButton, { backgroundColor: reviewed ? colors.mintSoft : colors.cardStrong }]}>
+                  <Pressable accessibilityRole="button" onPress={() => toggleReviewed(note.id)} style={[styles.reviewedButton, { backgroundColor: reviewed ? colors.mintSoft : colors.cardStrong }]}>
                     <Icon name={reviewed ? 'check-circle' : 'checkbox-blank-circle-outline'} size={18} color={reviewed ? colors.mint : colors.textMuted} />
                     <Text style={[styles.reviewedText, { color: reviewed ? colors.mint : colors.textSecondary }]}>{reviewed ? 'Reviewed' : 'Mark reviewed'}</Text>
                   </Pressable>
-                  <Pressable onPress={() => onAskSection(note)} style={[styles.reviewedButton, { backgroundColor: colors.purpleSoft }]}>
+                  <Pressable accessibilityRole="button" onPress={() => onAskSection(note)} style={[styles.reviewedButton, { backgroundColor: colors.purpleSoft }]}>
                     <Icon name="message-text-outline" size={17} color={colors.purple} />
                     <Text style={[styles.reviewedText, { color: colors.purple }]}>Ask about section</Text>
                   </Pressable>
@@ -611,7 +675,7 @@ function NotesToolkit({ deck, readOnly }: { deck: StudyPack; readOnly: boolean }
         <View style={{ flex: 1 }}><Text style={[styles.notesToolkitTitle, { color: colors.text }]}>Study tools</Text><Text style={[styles.notesToolkitSubtitle, { color: colors.textMuted }]}>Built from this Study Pack</Text></View>
       </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.notesToolRow}>
-        {tools.map((tool) => <Pressable key={tool.id} onPress={() => setActive((value) => value === tool.id ? undefined : tool.id)} style={[styles.notesToolChip, { backgroundColor: active === tool.id ? colors.primary : colors.card, borderColor: active === tool.id ? colors.primary : colors.border }]}><Icon name={tool.icon} size={15} color={active === tool.id ? colors.primaryText : colors.primary} /><Text style={[styles.notesToolText, { color: active === tool.id ? colors.primaryText : colors.textSecondary }]}>{tool.label}</Text></Pressable>)}
+        {tools.map((tool) => <Pressable accessibilityRole="button" key={tool.id} onPress={() => setActive((value) => value === tool.id ? undefined : tool.id)} style={[styles.notesToolChip, { backgroundColor: active === tool.id ? colors.primary : colors.card, borderColor: active === tool.id ? colors.primary : colors.border }]}><Icon name={tool.icon} size={15} color={active === tool.id ? colors.primaryText : colors.primary} /><Text style={[styles.notesToolText, { color: active === tool.id ? colors.primaryText : colors.textSecondary }]}>{tool.label}</Text></Pressable>)}
       </ScrollView>
       {active ? (
         <View style={[styles.notesToolOutput, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -628,6 +692,10 @@ function NotesToolkit({ deck, readOnly }: { deck: StudyPack; readOnly: boolean }
 
 function Flashcards({ deck, readOnly = false }: { deck: StudyPack; readOnly?: boolean }) {
   const { colors, recordStudyEvent, updateDeck, toggleFlag, isFlagged } = useStudyBolt();
+  const reducedMotion = useReducedMotion();
+  const [ratedIds, setRatedIds] = useState<string[]>([]);
+  useEffect(() => { setRatedIds([]); }, [deck.id]);
+  const revealOpacity = useRef(new Animated.Value(1)).current;
   const { width: screenWidth } = useWindowDimensions();
   const [index, setIndex] = useState(0);
   const [revealed, setRevealed] = useState(false);
@@ -653,12 +721,20 @@ function Flashcards({ deck, readOnly = false }: { deck: StudyPack; readOnly?: bo
     onStartShouldSetPanResponder: () => false,
     onMoveShouldSetPanResponder: (_event, gesture) => !swipeAnimating.current && Math.abs(gesture.dx) > 14 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.2,
     onPanResponderTerminationRequest: () => false,
-    onPanResponderMove: (_event, gesture) => swipeX.setValue(gesture.dx),
+    onPanResponderMove: (_event, gesture) => { if (!reducedMotion) swipeX.setValue(gesture.dx); },
     onPanResponderRelease: (_event, gesture) => {
       const direction = gesture.dx <= -45 ? -1 : gesture.dx >= 45 ? 1 : 0;
       const canNavigate = direction < 0
         ? index < deck.flashcards.length - 1
         : direction > 0 && index > 0;
+      if (reducedMotion) {
+        swipeX.setValue(0);
+        if (direction && canNavigate) {
+          setIndex((current) => Math.max(0, Math.min(deck.flashcards.length - 1, current - direction)));
+          setRevealed(false);
+        }
+        return;
+      }
       if (direction && canNavigate) {
         swipeAnimating.current = true;
         Animated.timing(swipeX, {
@@ -684,9 +760,10 @@ function Flashcards({ deck, readOnly = false }: { deck: StudyPack; readOnly?: bo
       }
     },
     onPanResponderTerminate: () => {
+      if (reducedMotion) { swipeX.setValue(0); return; }
       Animated.spring(swipeX, { toValue: 0, useNativeDriver: true, speed: 22, bounciness: 4 }).start();
     },
-  }), [deck.flashcards.length, index, screenWidth, swipeX]);
+  }), [deck.flashcards.length, index, reducedMotion, screenWidth, swipeX]);
 
   useEffect(() => {
     let mounted = true;
@@ -707,7 +784,15 @@ function Flashcards({ deck, readOnly = false }: { deck: StudyPack; readOnly?: bo
     };
   }, [deck.id, card?.id, card?.imagePath, card?.imageUrl]);
 
-  if (!card) return <EmptyTool icon="cards-outline" title="No flashcards yet" message="Regenerate this Study Pack after source processing is connected." />;
+  useEffect(() => {
+    revealOpacity.setValue(reducedMotion ? 1 : 0.72);
+    const animation = Animated.timing(revealOpacity, { toValue: 1, duration: reducedMotion ? 0 : 130, useNativeDriver: Platform.OS !== 'web' });
+    animation.start();
+    if (revealed && card && Platform.OS !== 'web') AccessibilityInfo.announceForAccessibility('Answer. ' + card.back);
+    return () => animation.stop();
+  }, [card?.id, revealed, reducedMotion, revealOpacity]);
+
+  if (!card) return <EmptyTool icon="cards-outline" title="No flashcards yet" message="Open another ready study tool, or check this pack’s generation status." />;
 
   const setConfidence = (rating: FlashcardReviewRating, confidence: FlashcardConfidence) => {
     if (readOnly) return;
@@ -726,6 +811,7 @@ function Flashcards({ deck, readOnly = false }: { deck: StudyPack; readOnly?: bo
       ...current,
       flashcards: current.flashcards.map((item) => (item.id === card.id ? { ...item, confidence } : item)),
     }));
+    setRatedIds((ids) => ids.includes(card.id) ? ids : [...ids, card.id]);
     setRevealed(false);
     setIndex((current) => Math.min(deck.flashcards.length - 1, current + 1));
   };
@@ -798,7 +884,9 @@ function Flashcards({ deck, readOnly = false }: { deck: StudyPack; readOnly?: bo
         </View>
         <Pill label={`${index + 1} / ${deck.flashcards.length}`} tone="purple" />
       </View>
-      <ProgressBar progress={((index + 1) / deck.flashcards.length) * 100} color={colors.purple} />
+      <ProgressBar accessibilityLabel="Card position, not completed reviews" progress={((index + 1) / deck.flashcards.length) * 100} color={colors.purple} />
+      {!readOnly ? <Text style={[styles.recallHint, { color: colors.textSecondary, marginTop: 8 }]}>{ratedIds.filter((id) => deck.flashcards.some((item) => item.id === id)).length} / {deck.flashcards.length} distinct cards rated this visit</Text> : null}
+      {!readOnly && deck.flashcards.every((item) => ratedIds.includes(item.id)) ? <View accessibilityLiveRegion="polite" style={[styles.reviewVisitNotice, { backgroundColor: colors.mintSoft }]}><Icon name="check-circle-outline" color={colors.mint} /><Text style={[styles.reviewVisitText, { color: colors.text }]}>You rated every card in this visit. Come back at your scheduled review time to check what sticks.</Text></View> : null}
       <View style={styles.flashcardToolbar}>
         <View style={styles.flashcardSource}>
           <Icon name="source-branch" size={15} color={colors.textMuted} />
@@ -824,9 +912,9 @@ function Flashcards({ deck, readOnly = false }: { deck: StudyPack; readOnly?: bo
       </View>
       <Animated.View
         {...swipeResponder.panHandlers}
-        style={{ marginTop: 20, transform: [{ translateX: swipeX }, { rotate: swipeRotation }] }}
+        style={{ marginTop: 20, opacity: revealOpacity, transform: reducedMotion ? [] : [{ translateX: swipeX }, { rotate: swipeRotation }] }}
       >
-        <Pressable accessibilityHint="Tap to reveal the answer. Swipe left for the next card or right for the previous card." onPress={() => {
+        <Pressable aria-expanded={revealed} accessibilityRole="button" accessibilityLabel={(revealed ? 'Answer. ' + card.back : 'Question. ' + card.front)} accessibilityState={{ expanded: revealed }} accessibilityHint="Tap to reveal the answer. Swipe left for the next card or right for the previous card." onPress={() => {
           if (speaking) stopReadAloud();
           setRevealed((value) => {
             if (!value && answerRevealedAt.current === null) answerRevealedAt.current = Date.now();
@@ -852,11 +940,11 @@ function Flashcards({ deck, readOnly = false }: { deck: StudyPack; readOnly?: bo
       </Animated.View>
 
       <View style={styles.cardNav}>
-        <Pressable accessibilityRole="button" accessibilityLabel="Previous card" disabled={index === 0} hitSlop={8} onPress={() => { setIndex((value) => Math.max(0, value - 1)); setRevealed(false); }} style={({ pressed }) => [styles.navButton, { backgroundColor: index === 0 ? colors.card : colors.purpleSoft, borderColor: index === 0 ? colors.border : `${colors.purple}38`, opacity: index === 0 ? 0.45 : pressed ? 0.82 : 1, transform: [{ scale: pressed && index > 0 ? 0.94 : 1 }] }]}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Previous card" disabled={index === 0} hitSlop={8} onPress={() => { setIndex((value) => Math.max(0, value - 1)); setRevealed(false); }} style={({ pressed }) => [styles.navButton, { backgroundColor: index === 0 ? colors.card : colors.purpleSoft, borderColor: index === 0 ? colors.border : `${colors.purple}38`, opacity: index === 0 ? 0.45 : pressed ? 0.82 : 1, transform: [{ scale: pressed && index > 0 && !reducedMotion ? 0.94 : 1 }] }]}>
           <Icon name="arrow-left" size={21} color={index === 0 ? colors.textMuted : colors.purple} />
         </Pressable>
         <Text style={[styles.confidenceHint, { color: colors.textMuted }]}>{readOnly ? 'Preview the answer, then save a copy to study' : revealed ? 'How well did you know it?' : 'Retrieve, then reveal'}</Text>
-        <Pressable accessibilityRole="button" accessibilityLabel="Next card" disabled={index === deck.flashcards.length - 1} hitSlop={8} onPress={() => { setIndex((value) => Math.min(deck.flashcards.length - 1, value + 1)); setRevealed(false); }} style={({ pressed }) => [styles.navButton, { backgroundColor: index === deck.flashcards.length - 1 ? colors.card : colors.purpleSoft, borderColor: index === deck.flashcards.length - 1 ? colors.border : `${colors.purple}38`, opacity: index === deck.flashcards.length - 1 ? 0.45 : pressed ? 0.82 : 1, transform: [{ scale: pressed && index < deck.flashcards.length - 1 ? 0.94 : 1 }] }]}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Next card" disabled={index === deck.flashcards.length - 1} hitSlop={8} onPress={() => { setIndex((value) => Math.min(deck.flashcards.length - 1, value + 1)); setRevealed(false); }} style={({ pressed }) => [styles.navButton, { backgroundColor: index === deck.flashcards.length - 1 ? colors.card : colors.purpleSoft, borderColor: index === deck.flashcards.length - 1 ? colors.border : `${colors.purple}38`, opacity: index === deck.flashcards.length - 1 ? 0.45 : pressed ? 0.82 : 1, transform: [{ scale: pressed && index < deck.flashcards.length - 1 && !reducedMotion ? 0.94 : 1 }] }]}>
           <Icon name="arrow-right" size={21} color={index === deck.flashcards.length - 1 ? colors.textMuted : colors.purple} />
         </Pressable>
       </View>
@@ -869,14 +957,14 @@ function Flashcards({ deck, readOnly = false }: { deck: StudyPack; readOnly?: bo
           <ConfidenceButton icon="lightning-bolt" label="Easy" color={colors.mint} background={colors.mintSoft} onPress={() => setConfidence('easy', 'known')} />
         </View>
       ) : null}
-      <Modal visible={editing} transparent animationType="slide" onRequestClose={() => setEditing(false)}>
+      <Modal visible={editing} transparent animationType={reducedMotion ? 'none' : 'slide'} onRequestClose={() => setEditing(false)}>
         <View style={styles.editorModalRoot}>
-          <Pressable accessibilityLabel="Close flashcard editor" style={StyleSheet.absoluteFill} onPress={() => setEditing(false)} />
+          <Pressable accessibilityRole="button" accessibilityLabel="Close flashcard editor" style={StyleSheet.absoluteFill} onPress={() => setEditing(false)} />
           <View style={[styles.editorSheet, { backgroundColor: colors.backgroundRaised, borderColor: colors.border }]}>
             <View style={[styles.editorHandle, { backgroundColor: colors.border }]} />
             <View style={styles.editorHeader}>
               <View style={{ flex: 1 }}><Text style={[styles.editorTitle, { color: colors.text }]}>Edit flashcard</Text><Text style={[styles.editorSubtitle, { color: colors.textMuted }]}>Changes stay in this Study Pack.</Text></View>
-              <Pressable accessibilityLabel="Close" hitSlop={10} onPress={() => setEditing(false)}><Icon name="close" color={colors.textMuted} /></Pressable>
+              <Pressable accessibilityRole="button" accessibilityLabel="Close" hitSlop={10} onPress={() => setEditing(false)}><Icon name="close" color={colors.textMuted} /></Pressable>
             </View>
             <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
               <EditorField label="FRONT" value={editFront} onChangeText={setEditFront} colors={colors} multiline />
@@ -903,7 +991,7 @@ function EditorField({ label, value, onChangeText, colors, multiline = false }: 
 
 function ConfidenceButton({ icon, label, color, background, onPress }: { icon: IconName; label: string; color: string; background: string; onPress: () => void }) {
   return (
-    <Pressable onPress={onPress} style={[styles.confidenceButton, { backgroundColor: background, borderColor: color }]}>
+    <Pressable accessibilityRole="button" accessibilityLabel={label + '. Record this review rating'} onPress={onPress} style={[styles.confidenceButton, { backgroundColor: background, borderColor: color }]}>
       <Icon name={icon} size={19} color={color} />
       <Text style={[styles.confidenceButtonText, { color }]}>{label}</Text>
     </Pressable>
@@ -1068,7 +1156,7 @@ function Quiz({ deck, readOnly = false, onOpenExam }: { deck: StudyPack; readOnl
           <Text style={[styles.resultTipText, { color: colors.textSecondary }]}>Try again after a short gap. Retrieval spaced over time is more useful than repeating immediately.</Text>
         </Card>
         {missedAnswers.length ? (
-          <Pressable onPress={() => setReviewingMistakes((value) => !value)} style={[styles.reviewMistakesButton, { backgroundColor: colors.purpleSoft, borderColor: colors.purple }]}>
+          <Pressable accessibilityRole="button" onPress={() => setReviewingMistakes((value) => !value)} style={[styles.reviewMistakesButton, { backgroundColor: colors.purpleSoft, borderColor: colors.purple }]}>
             <Icon name="book-alert-outline" size={18} color={colors.purple} />
             <Text style={[styles.reviewMistakesText, { color: colors.purple }]}>{reviewingMistakes ? 'Hide mistakes' : `Review ${missedAnswers.length} mistake${missedAnswers.length === 1 ? '' : 's'}`}</Text>
             <Icon name={reviewingMistakes ? 'chevron-up' : 'chevron-down'} size={18} color={colors.purple} />
@@ -1100,7 +1188,7 @@ function Quiz({ deck, readOnly = false, onOpenExam }: { deck: StudyPack; readOnl
         {(['practice', 'comprehensive'] as const).map((item) => {
           const active = kind === item;
           return (
-            <Pressable key={item} onPress={() => setKind(item)} style={[styles.assessmentMode, active && { backgroundColor: colors.card }]}>
+            <Pressable accessibilityRole="button" key={item} onPress={() => setKind(item)} style={[styles.assessmentMode, active && { backgroundColor: colors.card }]}>
               <Icon name={item === 'practice' ? 'clipboard-text-outline' : 'school-outline'} size={18} color={active ? colors.primary : colors.textMuted} />
               <Text style={[styles.assessmentModeText, { color: active ? colors.text : colors.textMuted }]}>{item === 'practice' ? 'Practice quiz' : 'Full test'}</Text>
             </Pressable>
@@ -1122,7 +1210,7 @@ function Quiz({ deck, readOnly = false, onOpenExam }: { deck: StudyPack; readOnl
             {([5, 10, 15, 20, 30] as QuizQuestionCount[]).map((count) => {
               const active = state.quizQuestionCount === count;
               return (
-                <Pressable
+                <Pressable accessibilityRole="button"
                   key={count}
                   onPress={() => setQuizQuestionCount(count)}
                   style={[styles.countChip, { backgroundColor: active ? colors.primary : colors.card, borderColor: active ? colors.primary : colors.border }]}
@@ -1135,11 +1223,11 @@ function Quiz({ deck, readOnly = false, onOpenExam }: { deck: StudyPack; readOnl
           <View style={styles.quizFilterBlock}>
             <Text style={[styles.quizFilterLabel, { color: colors.textMuted }]}>TOPICS</Text>
             <View style={styles.quizFilterRow}>
-              {(['all', 'weak'] as const).map((value) => <Pressable key={value} onPress={() => setScope(value)} style={[styles.quizFilterChip, { backgroundColor: scope === value ? colors.primary : colors.card, borderColor: scope === value ? colors.primary : colors.border }]}><Text style={[styles.quizFilterText, { color: scope === value ? colors.primaryText : colors.textSecondary }]}>{value === 'all' ? 'All topics' : 'Weak only'}</Text></Pressable>)}
+              {(['all', 'weak'] as const).map((value) => <Pressable accessibilityRole="button" key={value} onPress={() => setScope(value)} style={[styles.quizFilterChip, { backgroundColor: scope === value ? colors.primary : colors.card, borderColor: scope === value ? colors.primary : colors.border }]}><Text style={[styles.quizFilterText, { color: scope === value ? colors.primaryText : colors.textSecondary }]}>{value === 'all' ? 'All topics' : 'Weak only'}</Text></Pressable>)}
             </View>
             <Text style={[styles.quizFilterLabel, { color: colors.textMuted }]}>DIFFICULTY</Text>
             <View style={styles.quizFilterRow}>
-              {(['all', 'easy', 'medium', 'hard'] as const).map((value) => <Pressable key={value} onPress={() => setDifficulty(value)} style={[styles.quizFilterChip, { backgroundColor: difficulty === value ? colors.purple : colors.card, borderColor: difficulty === value ? colors.purple : colors.border }]}><Text style={[styles.quizFilterText, { color: difficulty === value ? colors.primaryText : colors.textSecondary }]}>{value === 'all' ? 'Mixed' : value[0]!.toUpperCase() + value.slice(1)}</Text></Pressable>)}
+              {(['all', 'easy', 'medium', 'hard'] as const).map((value) => <Pressable accessibilityRole="button" key={value} onPress={() => setDifficulty(value)} style={[styles.quizFilterChip, { backgroundColor: difficulty === value ? colors.purple : colors.card, borderColor: difficulty === value ? colors.purple : colors.border }]}><Text style={[styles.quizFilterText, { color: difficulty === value ? colors.primaryText : colors.textSecondary }]}>{value === 'all' ? 'Mixed' : value[0]!.toUpperCase() + value.slice(1)}</Text></Pressable>)}
             </View>
           </View>
           </>
@@ -1150,7 +1238,7 @@ function Quiz({ deck, readOnly = false, onOpenExam }: { deck: StudyPack; readOnl
           </View>
         )}
         {!readOnly && onOpenExam ? (
-          <Pressable onPress={() => onOpenExam(deck.id)} style={[styles.adaptiveExamLink, { backgroundColor: colors.card, borderColor: colors.primary }]}> 
+          <Pressable accessibilityRole="button" onPress={() => onOpenExam(deck.id)} style={[styles.adaptiveExamLink, { backgroundColor: colors.card, borderColor: colors.primary }]}>
             <Icon name="lightning-bolt" size={17} color={colors.primary} />
             <View style={{ flex: 1 }}><Text style={[styles.adaptiveExamLinkTitle, { color: colors.text }]}>Practice / Adaptive Exam</Text><Text style={[styles.adaptiveExamLinkText, { color: colors.textSecondary }]}>Timed mode · answers at the end · targeted concepts · readiness score</Text></View>
             <Icon name="arrow-right" size={18} color={colors.primary} />
@@ -1160,7 +1248,7 @@ function Quiz({ deck, readOnly = false, onOpenExam }: { deck: StudyPack; readOnl
 
       <View style={styles.toolHeadingRow}>
         <View>
-          <Text style={[styles.toolHeading, { color: colors.text }]}>{kind === 'practice' ? 'Practice Quiz' : 'Full PowerPoint Test'}</Text>
+          <Text style={[styles.toolHeading, { color: colors.text }]}>{kind === 'practice' ? 'Practice Quiz' : 'Full source test'}</Text>
           <Text style={[styles.toolSubheading, { color: colors.textSecondary }]}>{kind === 'practice' ? 'Feedback appears after each answer.' : 'A separate cumulative check across the whole source.'}</Text>
         </View>
         <Pill label={`${index + 1} / ${questions.length}`} tone="mint" />
@@ -1188,7 +1276,7 @@ function Quiz({ deck, readOnly = false, onOpenExam }: { deck: StudyPack; readOnl
             ] as Array<{ id: AnswerConfidence; label: string }>).map((item) => {
               const active = answerConfidence === item.id;
               return (
-                <Pressable
+                <Pressable accessibilityRole="button"
                   key={item.id}
                   disabled={selected !== null}
                   onPress={() => setAnswerConfidence(item.id)}
@@ -1208,7 +1296,7 @@ function Quiz({ deck, readOnly = false, onOpenExam }: { deck: StudyPack; readOnl
             const borderColor = isCorrect ? colors.mint : isWrong ? colors.danger : isSelected ? colors.primary : colors.border;
             const backgroundColor = isCorrect ? colors.mintSoft : isWrong ? `${colors.danger}12` : colors.cardStrong;
             return (
-              <Pressable key={option} onPress={() => choose(optionIndex)} style={[styles.option, { borderColor, backgroundColor }]}>
+              <Pressable aria-checked={isSelected} aria-disabled={selected !== null} key={option} accessibilityRole="radio" accessibilityLabel={option} accessibilityState={{ checked: isSelected, disabled: selected !== null }} onPress={() => choose(optionIndex)} style={[styles.option, { borderColor, backgroundColor }]}>
                 <View style={[styles.optionLetter, { backgroundColor: isCorrect ? colors.mint : isWrong ? colors.danger : colors.card, borderColor }]}>
                   {isCorrect || isWrong ? <Icon name={isCorrect ? 'check' : 'close'} size={15} color={colors.primaryText} /> : <Text style={[styles.optionLetterText, { color: colors.textSecondary }]}>{String.fromCharCode(65 + optionIndex)}</Text>}
                 </View>
@@ -1222,14 +1310,14 @@ function Quiz({ deck, readOnly = false, onOpenExam }: { deck: StudyPack; readOnl
         <Card style={[styles.feedback, { backgroundColor: selected === question.correctIndex ? colors.mintSoft : `${colors.danger}12`, borderColor: selected === question.correctIndex ? colors.mint : colors.danger }]}>
           <Icon name={selected === question.correctIndex ? 'check-circle' : 'alert-circle-outline'} color={selected === question.correctIndex ? colors.mint : colors.danger} />
           <View style={{ flex: 1 }}>
-            <Text style={[styles.feedbackTitle, { color: colors.text }]}>{selected === question.correctIndex ? 'Correct' : answerConfidence === 'very-sure' ? 'Confident, but incorrect' : 'Not quite'}</Text>
+            <Text accessibilityLiveRegion="polite" style={[styles.feedbackTitle, { color: colors.text }]}>{selected === question.correctIndex ? 'Correct' : answerConfidence === 'very-sure' ? 'Confident, but incorrect' : 'Not quite'}</Text>
             <Text style={[styles.feedbackText, { color: colors.textSecondary }]}>{question.explanation}</Text>
             {selected !== question.correctIndex ? <Text style={[styles.wrongAnswerWhy, { color: colors.textSecondary }]}>You chose “{question.options[selected]}.” The source supports “{question.options[question.correctIndex]},” so the selected option does not match this concept.</Text> : null}
             {simpleExplanation ? <Text style={[styles.simpleExplanation, { color: colors.text }]}><Text style={{ fontWeight: '900' }}>In simpler words: </Text>The key answer is “{question.options[question.correctIndex]}.” {question.explanation.split(/[.!?]/)[0]}.</Text> : null}
             {selected !== question.correctIndex && answerConfidence === 'very-sure' ? <Text style={[styles.confidentWrongText, { color: colors.danger }]}>High-priority misconception · added to adaptive review</Text> : null}
             <View style={styles.feedbackActions}>
-              <Pressable onPress={() => setSimpleExplanation((value) => !value)} style={[styles.feedbackAction, { backgroundColor: colors.card }]}><Icon name="creation" size={15} color={colors.primary} /><Text style={[styles.feedbackActionText, { color: colors.primary }]}>Explain simpler</Text></Pressable>
-              <Pressable onPress={trySimilarQuestion} style={[styles.feedbackAction, { backgroundColor: colors.card }]}><Icon name="refresh" size={15} color={colors.purple} /><Text style={[styles.feedbackActionText, { color: colors.purple }]}>Similar question</Text></Pressable>
+              <Pressable accessibilityRole="button" onPress={() => setSimpleExplanation((value) => !value)} style={[styles.feedbackAction, { backgroundColor: colors.card }]}><Icon name="creation" size={15} color={colors.primary} /><Text style={[styles.feedbackActionText, { color: colors.primary }]}>Explain simpler</Text></Pressable>
+              <Pressable accessibilityRole="button" onPress={trySimilarQuestion} style={[styles.feedbackAction, { backgroundColor: colors.card }]}><Icon name="refresh" size={15} color={colors.purple} /><Text style={[styles.feedbackActionText, { color: colors.purple }]}>Similar question</Text></Pressable>
             </View>
           </View>
         </Card>
@@ -1254,6 +1342,7 @@ function StudyCoach({ deck, onTool, onStartStudy, initialQuestion = '' }: { deck
   const [recallRevealed, setRecallRevealed] = useState(false);
   const [feedback, setFeedback] = useState<{ score: number; covered: string[]; missing: string[] }>();
   const [coachLoading, setCoachLoading] = useState(false);
+  const [coachNotice, setCoachNotice] = useState<string | null>(null);
   const note = deck.notes[noteIndex] ?? deck.notes[0];
 
   useEffect(() => {
@@ -1264,6 +1353,7 @@ function StudyCoach({ deck, onTool, onStartStudy, initialQuestion = '' }: { deck
 
   const answerPrompt = async (kind: 'important' | 'confuse' | 'weak' | 'custom') => {
     if (kind === 'important' || kind === 'confuse' || kind === 'custom') {
+      setCoachNotice(null);
       setCoachLoading(true);
       const accessToken = await getAccessToken();
       const result = await runStudyBoltAI({
@@ -1274,23 +1364,25 @@ function StudyCoach({ deck, onTool, onStartStudy, initialQuestion = '' }: { deck
         depth: kind === 'important' ? 'deep' : 'normal',
       });
       setCoachLoading(false);
+      setCoachNotice(result.error ?? null);
       if (result.response?.answer) {
         setAnswer({ title: kind === 'important' ? 'The highest-yield ideas' : kind === 'confuse' ? 'Likely points of confusion' : 'From your material', lines: result.response.answer.split(/\n+/).map((line) => line.replace(/^[-•*]\s*/, '').trim()).filter(Boolean).slice(0, 7) });
         return;
       }
       if (result.error && kind === 'important') {
-        setAnswer({ title: 'The highest-yield ideas', lines: deck.notes.slice(0, 5).map((item) => `${item.title}: ${item.keyIdea ?? item.summary ?? item.bullets[0]}`) });
+        setAnswer({ title: 'From your saved notes · AI unavailable', lines: deck.notes.slice(0, 5).map((item) => `${item.title}: ${item.keyIdea ?? item.summary ?? item.bullets[0]}`) });
       } else if (result.error && kind === 'confuse') {
         const connectionLines = deck.detailedNotes.flatMap((item) => item.connections ?? []).slice(0, 4);
-        setAnswer({ title: 'Likely points of confusion', lines: connectionLines.length ? connectionLines : deck.notes.slice(0, 3).map((item, index) => `Keep “${item.title}” separate from “${deck.notes[index + 1]?.title ?? deck.notes[0]?.title}”: ${item.keyIdea ?? item.bullets[0]}`) });
+        setAnswer({ title: 'Source connections · AI unavailable', lines: connectionLines.length ? connectionLines : deck.notes.slice(0, 3).map((item, index) => `Keep “${item.title}” separate from “${deck.notes[index + 1]?.title ?? deck.notes[0]?.title}”: ${item.keyIdea ?? item.bullets[0]}`) });
       } else if (result.error && kind === 'custom') {
         const terms = question.toLowerCase().split(/\W+/).filter((term) => term.length > 3);
         const matches = deck.notes.filter((item) => terms.some((term) => [item.title, item.summary, item.keyIdea, ...item.bullets].filter(Boolean).join(' ').toLowerCase().includes(term)));
-        setAnswer({ title: matches.length ? 'From your material' : 'StudyBolt is taking a pause', lines: matches.length ? matches.slice(0, 4).map((item) => `${item.title}: ${item.summary ?? item.keyIdea ?? item.bullets[0]}`) : [result.error] });
+        setAnswer({ title: matches.length ? 'Matching saved notes · AI unavailable' : 'StudyBolt is taking a pause', lines: matches.length ? matches.slice(0, 4).map((item) => `${item.title}: ${item.summary ?? item.keyIdea ?? item.bullets[0]}`) : [result.error] });
       }
       return;
     }
     if (kind === 'weak') {
+      setCoachNotice(null);
       const weak = deck.flashcards.filter((card) => card.confidence !== 'known');
       setAnswer({ title: 'Your weak-area test', lines: weak.length ? weak.slice(0, 5).map((card) => card.front) : ['No weak cards are marked right now. Run a mastery checkpoint to verify they still hold.'] });
       return;
@@ -1315,6 +1407,7 @@ function StudyCoach({ deck, onTool, onStartStudy, initialQuestion = '' }: { deck
       depth: 'normal',
     });
     setCoachLoading(false);
+    setCoachNotice(result.error ?? null);
     if (result.response?.answer) {
       setFeedback((current) => current ? { ...current, missing: [...current.missing, result.response!.answer] } : current);
     }
@@ -1333,7 +1426,7 @@ function StudyCoach({ deck, onTool, onStartStudy, initialQuestion = '' }: { deck
         ] as Array<{ id: CoachView; label: string; icon: IconName }>).map((item) => {
           const active = view === item.id;
           return (
-            <Pressable key={item.id} onPress={() => setView(item.id)} style={[styles.coachMode, active && { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Pressable accessibilityRole="button" key={item.id} onPress={() => setView(item.id)} style={[styles.coachMode, active && { backgroundColor: colors.card, borderColor: colors.border }]}>
               <Icon name={item.icon} size={17} color={active ? colors.primary : colors.textMuted} />
               <Text style={[styles.coachModeText, { color: active ? colors.text : colors.textMuted }]}>{item.label}</Text>
             </Pressable>
@@ -1354,6 +1447,7 @@ function StudyCoach({ deck, onTool, onStartStudy, initialQuestion = '' }: { deck
           </View>
           <Card style={styles.askBox}>
             <TextInput
+              accessibilityLabel="Ask about this Study Pack"
               value={question}
               onChangeText={setQuestion}
               multiline
@@ -1361,8 +1455,9 @@ function StudyCoach({ deck, onTool, onStartStudy, initialQuestion = '' }: { deck
               placeholderTextColor={colors.textMuted}
               style={[styles.askInput, { color: colors.text }]}
             />
-            <Pressable disabled={!question.trim() || coachLoading} onPress={() => void answerPrompt('custom')} style={[styles.askSend, { backgroundColor: colors.primary, opacity: question.trim() && !coachLoading ? 1 : 0.4 }]}><Icon name={coachLoading ? 'timer-sand' : 'arrow-up'} color={colors.primaryText} /></Pressable>
+            <Pressable aria-disabled={!question.trim() || coachLoading} aria-busy={coachLoading} accessibilityRole="button" accessibilityLabel="Send study question" accessibilityState={{ disabled: !question.trim() || coachLoading, busy: coachLoading }} disabled={!question.trim() || coachLoading} onPress={() => void answerPrompt('custom')} style={[styles.askSend, { backgroundColor: colors.primary, opacity: question.trim() && !coachLoading ? 1 : 0.4 }]}><Icon name={coachLoading ? 'timer-sand' : 'arrow-up'} color={colors.primaryText} /></Pressable>
           </Card>
+          {coachLoading ? <StudyBoltLoading variant="aiTutorThinking" colors={colors} compact message="Preparing your answer…" /> : null}
           {answer ? (
             <Card style={[styles.coachAnswer, { backgroundColor: colors.primarySoft }]}>
               <View style={styles.coachAnswerHeading}><Icon name="creation" color={colors.primary} /><Text style={[styles.coachAnswerTitle, { color: colors.text }]}>{answer.title}</Text></View>
@@ -1376,11 +1471,11 @@ function StudyCoach({ deck, onTool, onStartStudy, initialQuestion = '' }: { deck
       {view === 'teach' ? (
         <>
           <View style={styles.toolHeadingRow}>
-            <View style={{ flex: 1 }}><Text style={[styles.toolHeading, { color: colors.text }]}>Teach it back</Text><Text style={[styles.toolSubheading, { color: colors.textSecondary }]}>Explain naturally. StudyBolt checks ideas, not exact wording.</Text></View>
+            <View style={{ flex: 1 }}><Text style={[styles.toolHeading, { color: colors.text }]}>Teach it back</Text><Text style={[styles.toolSubheading, { color: colors.textSecondary }]}>Explain it in your own words, then compare with the source. Word overlap is a guide, not a comprehension grade.</Text></View>
             <Pill label="FEYNMAN" tone="purple" />
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.topicChips}>
-            {deck.notes.map((item, index) => <Pressable key={item.id} onPress={() => { setNoteIndex(index); setTeaching(''); setFeedback(undefined); }} style={[styles.topicChip, { backgroundColor: index === noteIndex ? colors.primary : colors.card, borderColor: index === noteIndex ? colors.primary : colors.border }]}><Text style={[styles.topicChipText, { color: index === noteIndex ? colors.primaryText : colors.textSecondary }]}>{item.title}</Text></Pressable>)}
+            {deck.notes.map((item, index) => <Pressable accessibilityRole="button" key={item.id} onPress={() => { setNoteIndex(index); setTeaching(''); setFeedback(undefined); }} style={[styles.topicChip, { backgroundColor: index === noteIndex ? colors.primary : colors.card, borderColor: index === noteIndex ? colors.primary : colors.border }]}><Text style={[styles.topicChipText, { color: index === noteIndex ? colors.primaryText : colors.textSecondary }]}>{item.title}</Text></Pressable>)}
           </ScrollView>
           <Card style={[styles.teachPromptCard, { backgroundColor: colors.purpleSoft }]}>
             <Text style={[styles.teachEyebrow, { color: colors.purple }]}>EXPLAIN IT TO A CLASSMATE</Text>
@@ -1397,11 +1492,11 @@ function StudyCoach({ deck, onTool, onStartStudy, initialQuestion = '' }: { deck
           </Card>
           {feedback ? (
             <Card style={[styles.teachFeedback, { borderColor: feedback.score >= 70 ? colors.mint : colors.warning }]}>
-              <View style={styles.teachFeedbackTop}><View><Text style={[styles.teachFeedbackLabel, { color: colors.textMuted }]}>IDEA COVERAGE</Text><Text style={[styles.teachScore, { color: feedback.score >= 70 ? colors.mint : colors.warning }]}>{feedback.score}%</Text></View><Icon name={feedback.score >= 70 ? 'check-decagram-outline' : 'puzzle-outline'} size={35} color={feedback.score >= 70 ? colors.mint : colors.warning} /></View>
+              <View style={styles.teachFeedbackTop}><View><Text style={[styles.teachFeedbackLabel, { color: colors.textMuted }]}>KEYWORD COVERAGE</Text><Text style={[styles.teachScore, { color: feedback.score >= 70 ? colors.mint : colors.warning }]}>{feedback.score}%</Text></View><Icon name={feedback.score >= 70 ? 'check-decagram-outline' : 'puzzle-outline'} size={35} color={feedback.score >= 70 ? colors.mint : colors.warning} /></View>
               <ProgressBar progress={feedback.score} color={feedback.score >= 70 ? colors.mint : colors.warning} />
-              <Text style={[styles.feedbackSectionLabel, { color: colors.mint }]}>YOU COVERED</Text>
+              <Text style={[styles.feedbackSectionLabel, { color: colors.mint }]}>SOURCE WORDS FOUND</Text>
               <Text style={[styles.feedbackSectionText, { color: colors.textSecondary }]}>{feedback.covered.length ? feedback.covered.join(' ') : 'You started an explanation, but the source’s central ideas did not appear clearly yet.'}</Text>
-              {feedback.missing.length ? <><Text style={[styles.feedbackSectionLabel, { color: colors.warning }]}>ADD OR CLARIFY</Text><Text style={[styles.feedbackSectionText, { color: colors.textSecondary }]}>{feedback.missing.slice(0, 2).join(' ')}</Text></> : null}
+              {feedback.missing.length ? <><Text style={[styles.feedbackSectionLabel, { color: colors.warning }]}>SOURCE IDEAS & TUTOR FEEDBACK</Text><Text style={[styles.feedbackSectionText, { color: colors.textSecondary }]}>{feedback.missing.slice(0, 2).join(' ')}</Text></> : null}
             </Card>
           ) : null}
         </>
@@ -1414,7 +1509,7 @@ function StudyCoach({ deck, onTool, onStartStudy, initialQuestion = '' }: { deck
             <Pill label="NO CUES" tone="blue" />
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.topicChips}>
-            {deck.notes.map((item, index) => <Pressable key={item.id} onPress={() => { setNoteIndex(index); setRecallText(''); setRecallRevealed(false); }} style={[styles.topicChip, { backgroundColor: index === noteIndex ? colors.primary : colors.card, borderColor: index === noteIndex ? colors.primary : colors.border }]}><Text style={[styles.topicChipText, { color: index === noteIndex ? colors.primaryText : colors.textSecondary }]}>{item.title}</Text></Pressable>)}
+            {deck.notes.map((item, index) => <Pressable accessibilityRole="button" key={item.id} onPress={() => { setNoteIndex(index); setRecallText(''); setRecallRevealed(false); }} style={[styles.topicChip, { backgroundColor: index === noteIndex ? colors.primary : colors.card, borderColor: index === noteIndex ? colors.primary : colors.border }]}><Text style={[styles.topicChipText, { color: index === noteIndex ? colors.primaryText : colors.textSecondary }]}>{item.title}</Text></Pressable>)}
           </ScrollView>
           <Card style={[styles.teachPromptCard, { backgroundColor: colors.primarySoft }]}>
             <Text style={[styles.teachEyebrow, { color: colors.primary }]}>FROM MEMORY ONLY</Text>
@@ -1439,7 +1534,7 @@ function StudyCoach({ deck, onTool, onStartStudy, initialQuestion = '' }: { deck
             <Pill label={`${deck.notes.length} NODES`} tone="mint" />
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.topicChips}>
-            {deck.notes.map((item, index) => <Pressable key={item.id} onPress={() => setNoteIndex(index)} style={[styles.topicChip, { backgroundColor: index === noteIndex ? colors.purple : colors.card, borderColor: index === noteIndex ? colors.purple : colors.border }]}><Text style={[styles.topicChipText, { color: index === noteIndex ? colors.primaryText : colors.textSecondary }]}>{item.title}</Text></Pressable>)}
+            {deck.notes.map((item, index) => <Pressable accessibilityRole="button" key={item.id} onPress={() => setNoteIndex(index)} style={[styles.topicChip, { backgroundColor: index === noteIndex ? colors.purple : colors.card, borderColor: index === noteIndex ? colors.purple : colors.border }]}><Text style={[styles.topicChipText, { color: index === noteIndex ? colors.primaryText : colors.textSecondary }]}>{item.title}</Text></Pressable>)}
           </ScrollView>
           <View style={styles.mapWrap}>
             <View style={[styles.mapNode, styles.mapNodeCenter, { backgroundColor: colors.primary, shadowColor: colors.shadow }]}><Icon name="hexagon-multiple-outline" color={colors.primaryText} /><Text style={styles.mapCenterTitle}>{note.title}</Text></View>
@@ -1462,7 +1557,7 @@ function StudyCoach({ deck, onTool, onStartStudy, initialQuestion = '' }: { deck
 
 function AskSuggestion({ icon, label, onPress }: { icon: IconName; label: string; onPress: () => void }) {
   const { colors } = useStudyBolt();
-  return <Pressable onPress={onPress} style={[styles.askSuggestion, { backgroundColor: colors.card, borderColor: colors.border }]}><Icon name={icon} size={19} color={colors.primary} /><Text style={[styles.askSuggestionText, { color: colors.textSecondary }]}>{label}</Text><Icon name="chevron-right" size={17} color={colors.textMuted} /></Pressable>;
+  return <Pressable accessibilityRole="button" onPress={onPress} style={[styles.askSuggestion, { backgroundColor: colors.card, borderColor: colors.border }]}><Icon name={icon} size={19} color={colors.primary} /><Text style={[styles.askSuggestionText, { color: colors.textSecondary }]}>{label}</Text><Icon name="chevron-right" size={17} color={colors.textMuted} /></Pressable>;
 }
 
 function SeekProgress({ progress, color, onSeek, currentPosition, total }: { progress: number; color: string; onSeek: (progress: number) => void; currentPosition: number; total: number }) {
@@ -1485,7 +1580,7 @@ function SeekProgress({ progress, color, onSeek, currentPosition, total }: { pro
   }), [width]);
   const safeProgress = Math.max(0, Math.min(100, progress));
   return (
-    <View
+    <View aria-valuemin={0} aria-valuemax={total} aria-valuenow={currentPosition}
       {...responder.panHandlers}
       onLayout={(event) => setWidth(Math.max(1, event.nativeEvent.layout.width))}
       accessibilityRole="adjustable"
@@ -1508,6 +1603,7 @@ function SeekProgress({ progress, color, onSeek, currentPosition, total }: { pro
 }
 
 function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPack; readOnly?: boolean; onRequireAuth?: () => void }) {
+  const reducedMotion = useReducedMotion();
   const { colors, recordStudyEvent, updateDeck } = useStudyBolt();
   const { user, getAccessToken } = useAuth();
   const { width: audioWindowWidth, fontScale: audioFontScale } = useWindowDimensions();
@@ -2129,7 +2225,7 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
           const active = mode === item.id;
           const disabled = item.id === 'flashcards' && deck.flashcards.length === 0;
           return (
-            <Pressable
+            <Pressable aria-checked={active} aria-disabled={disabled}
               key={item.id}
               accessibilityRole="radio"
               accessibilityState={{ checked: active, disabled }}
@@ -2149,7 +2245,7 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
         <StudyCastArtwork playing={playing} colors={colors} visible={!driveModeVisible} />
         <View style={[styles.nowPlayingBadge, { backgroundColor: colors.primarySoft }]}><Icon name="headphones" size={12} color={colors.primary} /><Text style={[styles.nowPlaying, { color: colors.primary }]}>{mode === 'original' ? 'ORIGINAL STUDYCAST' : mode === 'flashcards' ? 'FLASHCARD LISTENING' : 'QUICK REVIEW'}</Text></View>
         <Text style={[styles.audioTitle, { color: colors.text }]}>{deck.title}</Text>
-        <Text style={[styles.audioCourse, { color: colors.textSecondary }]}>{deck.courseName} · {remainingMinutes || '< 1'} min remaining</Text>
+        <Text style={[styles.audioCourse, { color: colors.textSecondary }]}>{deck.courseName} · About {remainingMinutes || '< 1'} min remaining</Text>
         <View style={[styles.currentSection, { backgroundColor: colors.mode === 'dark' ? '#213441' : '#FFFFFFB3', borderColor: colors.mode === 'dark' ? '#344B57' : '#E5EDF3' }]}><Text style={[styles.currentSectionLabel, { color: colors.textSecondary }]}>CURRENT SECTION</Text><Text numberOfLines={2} style={[styles.currentSectionTitle, { color: colors.text }]}>{tutorContext.currentChunk.title}</Text></View>
         <View style={styles.audioProgress}><SeekProgress progress={progress} color={colors.primary} onSeek={seekToProgress} currentPosition={position} total={words.length} /></View>
         <View style={styles.timeRow}>
@@ -2184,11 +2280,12 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
       </View>
       <View style={styles.contextActions}>
         {([{ id: 'explain', label: 'Explain', icon: 'lightbulb-on-outline' }, { id: 'simplify', label: 'Simplify', icon: 'creation' }, { id: 'example', label: 'Example', icon: 'flask-outline' }, { id: 'quiz', label: 'Quiz me', icon: 'brain' }] as Array<{ id: AiTutorAction; label: string; icon: IconName }>).map((action) => (
-          <Pressable key={action.id} onPress={() => void openAsk(action.id)} style={[styles.contextAction, { backgroundColor: colors.purpleSoft }]}><Icon name={action.icon} size={16} color={colors.purple} /><Text style={[styles.contextActionText, { color: colors.purple }]}>{action.label}</Text></Pressable>
+          <Pressable accessibilityRole="button" key={action.id} onPress={() => void openAsk(action.id)} style={[styles.contextAction, { backgroundColor: colors.purpleSoft }]}><Icon name={action.icon} size={16} color={colors.purple} /><Text style={[styles.contextActionText, { color: colors.purple }]}>{action.label}</Text></Pressable>
         ))}
       </View>
+      {Platform.OS !== 'web' ? <Text style={[styles.webAudio, { color: colors.textSecondary }]}>Voice input is unavailable in this native build. You can type a question and hear the answer aloud.</Text> : null}
       <View style={styles.interactiveRow}>
-        <Pressable accessibilityRole="switch" accessibilityState={{ checked: interactiveMode }} onPress={() => void toggleInteractive()} style={[styles.interactiveCard, { backgroundColor: interactiveMode ? colors.mintSoft : colors.card, borderColor: interactiveMode ? colors.mint : colors.border }]}>
+        <Pressable aria-checked={interactiveMode} accessibilityRole="switch" accessibilityState={{ checked: interactiveMode }} onPress={() => void toggleInteractive()} style={[styles.interactiveCard, { backgroundColor: interactiveMode ? colors.mintSoft : colors.card, borderColor: interactiveMode ? colors.mint : colors.border }]}>
           <View style={[styles.interactiveIcon, { backgroundColor: interactiveMode ? colors.mint : colors.primarySoft }]}><Icon name="account-voice" size={18} color={interactiveMode ? colors.primaryText : colors.primary} /></View>
           <View style={styles.interactiveCopy}><Text style={[styles.interactiveTitle, { color: colors.text }]}>Interactive StudyCast</Text><Text style={[styles.interactiveText, { color: colors.textSecondary }]}>{interactiveMode ? `${interactionStateLabel(voiceSessionState)} · pauses for recall` : 'Pause after sections and quiz yourself'}</Text></View>
           <Icon name={interactiveMode ? 'check-circle' : 'chevron-right'} size={19} color={interactiveMode ? colors.mint : colors.textMuted} />
@@ -2219,21 +2316,21 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
         onClose={closeAsk}
         onQuizAnswered={(correct) => { if (!readOnly) recordStudyEvent({ type: 'tutor-quiz', deckId: deck.id, courseId: deck.courseId, tutorQuizCorrect: correct }); }}
       />
-      <Modal visible={driveModeVisible} animationType="fade" onRequestClose={() => void closeDriveMode()}>
+      <Modal visible={driveModeVisible} animationType={reducedMotion ? 'none' : 'fade'} onRequestClose={() => void closeDriveMode()}>
         <View style={[styles.driveRoot, { backgroundColor: colors.mode === 'dark' ? '#09111B' : '#11162F' }]}>
-          <View style={styles.driveTop}><View><Text style={styles.driveEyebrow}>STUDYBOLT DRIVE MODE</Text><Text style={styles.driveTitle}>{deck.title}</Text></View><Pressable accessibilityLabel="Exit Drive mode" onPress={() => void closeDriveMode()} style={styles.driveClose}><Icon name="close" color="#E8E9F7" size={23} /></Pressable></View>
+          <View style={styles.driveTop}><View><Text style={styles.driveEyebrow}>STUDYBOLT DRIVE MODE</Text><Text style={styles.driveTitle}>{deck.title}</Text></View><Pressable accessibilityRole="button" accessibilityLabel="Exit Drive mode" onPress={() => void closeDriveMode()} style={styles.driveClose}><Icon name="close" color="#E8E9F7" size={23} /></Pressable></View>
           <View style={styles.driveCenter}>
-            <View style={[styles.driveOrb, { backgroundColor: colors.purple }]}>{voiceSessionState === 'processing' || tutorLoading ? <ActivityIndicator color={colors.primaryText} size="large" /> : <Icon name={playing || voiceSessionState === 'speaking' ? 'volume-high' : voiceSessionState === 'listening' || voiceSessionState === 'interrupted' ? 'microphone' : 'pause'} color={colors.primaryText} size={44} />}</View>
+            <View style={[styles.driveOrb, { backgroundColor: colors.purple }]}>{voiceSessionState === 'processing' || tutorLoading ? <LoadingArtwork variant="aiTutorThinking" colors={{ ...colors, primary: colors.primaryText }} /> : <Icon name={playing || voiceSessionState === 'speaking' ? 'volume-high' : voiceSessionState === 'listening' || voiceSessionState === 'interrupted' ? 'microphone' : 'pause'} color={colors.primaryText} size={44} />}</View>
             <Text style={styles.driveState}>{playing ? 'StudyCast is playing' : interactionStateLabel(voiceSessionState)}</Text>
             <Text style={styles.driveSection}>{tutorContext.currentChunk.title}</Text>
             <View style={styles.driveProgress}><ProgressBar progress={progress} color={colors.purple} /></View>
             {voiceTranscript ? <View style={styles.driveTranscript}><Text style={styles.driveMessageLabel}>YOU</Text><Text numberOfLines={2} style={styles.driveTranscriptText}>{voiceTranscript}</Text></View> : null}
             {voiceReply ? <View style={styles.driveReply}><Text style={styles.driveMessageLabel}>STUDYBOLT</Text><Text numberOfLines={5} style={styles.driveReplyText}>{voiceReply}</Text></View> : null}
             {voiceError ? <Text style={styles.driveError}>{voiceError}</Text> : <Text style={styles.driveHint}>{voiceRecognizerAvailable === false ? 'Text fallback is active. Answers still use your device voice unless muted.' : 'Ask about this section, say “quiz me,” or say pause, repeat, back, skip, continue, or exit.'}</Text>}
-            {!user && !onDeviceTutorPossible && onRequireAuth ? <Pressable onPress={onRequireAuth} style={styles.driveSignIn}><Icon name="account-lock-outline" color="#C8B5FF" /><Text style={styles.driveSignInText}>Sign in for secure cloud answers</Text></Pressable> : null}
+            {!user && !onDeviceTutorPossible && onRequireAuth ? <Pressable accessibilityRole="button" onPress={onRequireAuth} style={styles.driveSignIn}><Icon name="account-lock-outline" color="#C8B5FF" /><Text style={styles.driveSignInText}>Sign in for secure cloud answers</Text></Pressable> : null}
           </View>
-          <View style={styles.driveInputRow}><TextInput accessibilityLabel="Type a voice tutor question" value={voiceTextInput} onChangeText={setVoiceTextInput} onSubmitEditing={submitVoiceText} returnKeyType="send" placeholder="Type if speech input is unavailable…" placeholderTextColor="#7F819E" style={styles.driveInput} /><Pressable accessibilityLabel="Send typed tutor question" disabled={!voiceTextInput.trim() || voiceSessionState === 'processing'} onPress={submitVoiceText} style={[styles.driveSend, (!voiceTextInput.trim() || voiceSessionState === 'processing') && styles.driveControlDisabled]}><Icon name="arrow-up" color="#FFFFFF" size={20} /></Pressable></View>
-          <View style={styles.driveControls}><Pressable onPress={() => voiceSessionState === 'paused' || voiceSessionState === 'error' ? startVoiceInput() : void pauseVoiceSession()} style={styles.driveControl}><Icon name={voiceSessionState === 'paused' || voiceSessionState === 'error' ? 'play' : 'pause'} color="#E8E9F7" size={28} /><Text style={styles.driveControlText}>{voiceSessionState === 'paused' || voiceSessionState === 'error' ? 'Resume' : 'Pause'}</Text></Pressable><Pressable accessibilityLabel={voiceSessionState === 'speaking' ? 'Interrupt StudyBolt and speak' : 'Start listening'} onPress={() => voiceSessionState === 'speaking' ? void interruptVoice() : startVoiceInput()} style={[styles.drivePlay, { backgroundColor: colors.purple }]}><Icon name={voiceSessionState === 'speaking' ? 'hand-back-right-outline' : 'microphone'} color={colors.primaryText} size={35} /></Pressable><Pressable onPress={() => { const nextMuted = !voiceMuted; setVoiceMuted(nextMuted); if (nextMuted && voiceSessionState === 'speaking') void interruptVoice(); }} style={styles.driveControl}><Icon name={voiceMuted ? 'volume-off' : 'volume-high'} color="#E8E9F7" size={27} /><Text style={styles.driveControlText}>{voiceMuted ? 'Unmute' : 'Mute'}</Text></Pressable></View>
+          <View style={styles.driveInputRow}><TextInput accessibilityLabel="Type a voice tutor question" value={voiceTextInput} onChangeText={setVoiceTextInput} onSubmitEditing={submitVoiceText} returnKeyType="send" placeholder="Type if speech input is unavailable…" placeholderTextColor="#7F819E" style={styles.driveInput} /><Pressable accessibilityRole="button" accessibilityLabel="Send typed tutor question" disabled={!voiceTextInput.trim() || voiceSessionState === 'processing'} onPress={submitVoiceText} style={[styles.driveSend, (!voiceTextInput.trim() || voiceSessionState === 'processing') && styles.driveControlDisabled]}><Icon name="arrow-up" color="#FFFFFF" size={20} /></Pressable></View>
+          <View style={styles.driveControls}><Pressable accessibilityRole="button" onPress={() => voiceSessionState === 'paused' || voiceSessionState === 'error' ? startVoiceInput() : void pauseVoiceSession()} style={styles.driveControl}><Icon name={voiceSessionState === 'paused' || voiceSessionState === 'error' ? 'play' : 'pause'} color="#E8E9F7" size={28} /><Text style={styles.driveControlText}>{voiceSessionState === 'paused' || voiceSessionState === 'error' ? 'Resume' : 'Pause'}</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel={voiceSessionState === 'speaking' ? 'Interrupt StudyBolt and speak' : 'Start listening'} onPress={() => voiceSessionState === 'speaking' ? void interruptVoice() : startVoiceInput()} style={[styles.drivePlay, { backgroundColor: colors.purple }]}><Icon name={voiceSessionState === 'speaking' ? 'hand-back-right-outline' : 'microphone'} color={colors.primaryText} size={35} /></Pressable><Pressable accessibilityRole="button" onPress={() => { const nextMuted = !voiceMuted; setVoiceMuted(nextMuted); if (nextMuted && voiceSessionState === 'speaking') void interruptVoice(); }} style={styles.driveControl}><Icon name={voiceMuted ? 'volume-off' : 'volume-high'} color="#E8E9F7" size={27} /><Text style={styles.driveControlText}>{voiceMuted ? 'Unmute' : 'Mute'}</Text></Pressable></View>
         </View>
       </Modal>
     </>
@@ -2260,6 +2357,7 @@ function MaterialUnavailable({ deck, material }: { deck: StudyPack; material: St
   const { colors, retryStudyPackMaterial } = useStudyBolt();
   const state = deck.generation?.materials[material];
   const failed = state?.status === 'failed';
+  const generating = state?.status === 'generating';
   const label = material === 'simpleNotes' ? 'Simplified Notes'
     : material === 'detailedNotes' ? 'Detailed Notes'
       : material === 'keyConcepts' ? 'Key Concepts'
@@ -2267,8 +2365,14 @@ function MaterialUnavailable({ deck, material }: { deck: StudyPack; material: St
           : material === 'audio' ? 'Audio Summary' : 'Practice Quiz';
   return (
     <View style={styles.emptyTool}>
+      {generating ? <StudyBoltLoading
+        variant={material === 'flashcards' ? 'flashcardGeneration' : material === 'quiz' ? 'quizGeneration' : material === 'audio' ? 'studyCastGeneration' : 'documentProcessing'}
+        colors={colors}
+        message={material === 'audio' ? 'Preparing your StudyCast…' : `Preparing ${label.toLowerCase()}…`}
+        detail={state?.stage || 'Your request is in progress. This tool will open when it is ready.'}
+      /> : <>
       <View style={[styles.materialStateIcon, { backgroundColor: failed ? `${colors.danger}15` : colors.primarySoft }]}>
-        {failed ? <Icon name="alert-outline" size={30} color={colors.danger} /> : <ActivityIndicator color={colors.primary} />}
+        <Icon name={failed ? 'alert-outline' : 'clock-outline'} size={30} color={failed ? colors.danger : colors.primary} />
       </View>
       <Text
         numberOfLines={1}
@@ -2277,279 +2381,283 @@ function MaterialUnavailable({ deck, material }: { deck: StudyPack; material: St
         minimumFontScale={0.72}
         style={[styles.emptyTitle, styles.materialEmptyTitle, { color: colors.text }]}
       >
-        {failed ? `${label} needs another try` : `${label} is being created`}
+        {failed ? `${label} needs another try` : `${label} is queued`}
       </Text>
-      <Text style={[styles.emptyText, { color: colors.textSecondary }]}>{failed ? state?.error || 'This item failed without affecting the rest of your Study Pack.' : state?.stage || 'This item will become available as soon as it is ready.'}</Text>
+      <Text style={[styles.emptyText, { color: colors.textSecondary }]}>{failed ? state?.error || 'This item failed without affecting the rest of your Study Pack.' : 'Waiting for the other study tools. You can start with anything that is ready.'}</Text>
+      </>}
       {failed ? <PrimaryButton label={`Retry ${label}`} icon="refresh" onPress={() => retryStudyPackMaterial(deck.id, material)} style={styles.materialRetry} /> : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  reviewVisitNotice: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, padding: 13, borderRadius: 14, marginTop: 12 },
+  reviewVisitText: { flex: 1, fontSize: 14, lineHeight: 21 },
+  coachNotice: { padding: 13, borderRadius: 14, fontSize: 14, lineHeight: 21, marginBottom: 12 },
   page: { flex: 1 },
   horizontalPadding: { paddingHorizontal: 20 },
   headerRightRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  shareButton: { width: 37, height: 37, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  shareButton: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   sharedBanner: { marginHorizontal: 20, marginBottom: 2, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },
   sharedBannerIcon: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   sharedBannerCopy: { flex: 1 },
-  sharedBannerTitle: { fontSize: 12, fontWeight: '900' },
-  sharedBannerText: { fontSize: 10, lineHeight: 14, marginTop: 2 },
+  sharedBannerTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  sharedBannerText: { fontSize: 14, lineHeight: 21, marginTop: 2 },
   sharedSaveButton: { paddingHorizontal: 11, paddingVertical: 9, borderRadius: 11 },
-  sharedSaveText: { color: '#FFFFFF', fontSize: 10, fontWeight: '900' },
+  sharedSaveText: { color: '#FFFFFF', fontSize: 14, lineHeight: 21, fontWeight: '700' },
   tabScroller: { flexGrow: 0, flexShrink: 0, minHeight: 45, borderBottomWidth: StyleSheet.hairlineWidth },
   tabs: { flexGrow: 1, paddingHorizontal: 16, paddingBottom: 10, gap: 4 },
   tab: { paddingHorizontal: 11, paddingVertical: 9, borderRadius: 11 },
-  tabText: { fontSize: 12, fontWeight: '800' },
+  tabText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   content: { padding: 20, paddingBottom: 80 },
   missing: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30, gap: 15 },
   missingTitle: { fontSize: 18, fontWeight: '800' },
   deckHero: { flexDirection: 'row', gap: 14, alignItems: 'center', marginBottom: 17 },
   deckHeroCopy: { flex: 1 },
   deckLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  slideCount: { fontSize: 10 },
+  slideCount: { fontSize: 14, lineHeight: 21 },
   deckTitle: { fontSize: 21, lineHeight: 26, fontWeight: '900', letterSpacing: -0.6, marginTop: 7 },
-  deckSubtitle: { fontSize: 12, marginTop: 2 },
-  sourceFiles: { fontSize: 10, lineHeight: 14, marginTop: 4 },
+  deckSubtitle: { fontSize: 16, lineHeight: 24, marginTop: 2 },
+  sourceFiles: { fontSize: 12, lineHeight: 18, marginTop: 4 },
   previewHint: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 13, marginBottom: 12 },
-  previewHintText: { flex: 1, fontSize: 11, lineHeight: 15 },
+  previewHintText: { flex: 1, fontSize: 14, lineHeight: 21 },
   masteryCard: { marginBottom: 12 },
   masteryTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
-  masteryLabel: { fontSize: 9, fontWeight: '900', letterSpacing: 1 },
+  masteryLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 1 },
   masteryValue: { fontSize: 30, lineHeight: 34, fontWeight: '900', marginTop: 2 },
   masteryRing: { width: 48, height: 48, borderRadius: 24, borderWidth: 4, alignItems: 'center', justifyContent: 'center' },
-  masteryHint: { fontSize: 10, marginTop: 8 },
+  masteryHint: { fontSize: 14, lineHeight: 21, marginTop: 8 },
   toolGrid: { gap: 8 },
   toolCard: { minHeight: 66, flexDirection: 'row', alignItems: 'center', gap: 11, padding: 11 },
   toolIcon: { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   toolCopy: { flex: 1, minWidth: 0 },
-  toolTitle: { fontSize: 13, fontWeight: '800' },
-  toolDetail: { fontSize: 10, lineHeight: 14, marginTop: 2 },
+  toolTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  toolDetail: { fontSize: 14, lineHeight: 21, marginTop: 2 },
   speedReviewBanner: { marginTop: 10, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: StyleSheet.hairlineWidth },
   speedReviewBannerIcon: { width: 43, height: 43, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   speedReviewBannerCopy: { flex: 1 },
-  speedReviewBannerTitle: { fontSize: 13, fontWeight: '900' },
-  speedReviewBannerText: { fontSize: 10, lineHeight: 15, marginTop: 2 },
+  speedReviewBannerTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  speedReviewBannerText: { fontSize: 14, lineHeight: 21, marginTop: 2 },
   coachBanner: { marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 11 },
   coachBannerIcon: { width: 46, height: 46, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
-  coachBannerTitle: { fontSize: 13, fontWeight: '900' },
-  coachBannerText: { fontSize: 10, lineHeight: 15, marginTop: 3 },
+  coachBannerTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  coachBannerText: { fontSize: 14, lineHeight: 21, marginTop: 3 },
   deckAdaptiveActions: { flexDirection: 'row', gap: 9, marginTop: 10 },
   deckAdaptivePrimary: { flex: 1, minHeight: 62, borderRadius: 16, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 9 },
   deckAdaptiveSecondary: { flex: 1, minHeight: 62, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 9 },
-  deckAdaptiveTitle: { fontSize: 11, fontWeight: '900' },
-  deckAdaptiveText: { fontSize: 8, marginTop: 2, opacity: 0.78 },
-  overviewText: { fontSize: 13, lineHeight: 20 },
+  deckAdaptiveTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  deckAdaptiveText: { fontSize: 14, lineHeight: 21, marginTop: 2, opacity: 0.78 },
+  overviewText: { fontSize: 14, lineHeight: 21 },
   visualReviewBanner: { marginTop: 12, padding: 13, flexDirection: 'row', alignItems: 'center', gap: 11, borderWidth: StyleSheet.hairlineWidth },
   visualReviewIcon: { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
-  visualReviewTitle: { fontSize: 13, fontWeight: '900' },
-  visualReviewText: { fontSize: 10, lineHeight: 15, marginTop: 3 },
+  visualReviewTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  visualReviewText: { fontSize: 14, lineHeight: 21, marginTop: 3 },
   outlineList: { gap: 8 },
   outlineCard: { flexDirection: 'row', alignItems: 'center', padding: 12, gap: 11 },
   outlineNumber: { width: 35, height: 35, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  outlineNumberText: { fontSize: 12, fontWeight: '900' },
-  outlineTitle: { fontSize: 12, fontWeight: '800' },
-  outlineRange: { fontSize: 10, marginTop: 3 },
+  outlineNumberText: { fontSize: 12, lineHeight: 18, fontWeight: '700' },
+  outlineTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  outlineRange: { fontSize: 14, lineHeight: 21, marginTop: 3 },
   planCard: { marginTop: 22, flexDirection: 'row', alignItems: 'center', gap: 11 },
   planIcon: { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
-  planTitle: { fontSize: 13, fontWeight: '800' },
-  planText: { fontSize: 10, lineHeight: 14, marginTop: 3 },
-  planAction: { width: 37, height: 37, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  planTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  planText: { fontSize: 14, lineHeight: 21, marginTop: 3 },
+  planAction: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   flatCard: { shadowOpacity: 0, elevation: 0 },
   noteModeSwitcher: { flexDirection: 'row', borderRadius: 16, padding: 4, gap: 4, marginBottom: 20 },
   noteMode: { flex: 1, minHeight: 43, borderRadius: 13, borderWidth: StyleSheet.hairlineWidth, borderColor: 'transparent', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
-  noteModeText: { fontSize: 11, fontWeight: '900' },
+  noteModeText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   toolHeadingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 15 },
   toolHeading: { fontSize: 25, lineHeight: 30, fontWeight: '900', letterSpacing: -0.7 },
-  toolSubheading: { fontSize: 12, marginTop: 3 },
+  toolSubheading: { fontSize: 16, lineHeight: 24, marginTop: 3 },
   noteGuide: { flexDirection: 'row', alignItems: 'center', gap: 9, borderRadius: 14, padding: 12, marginBottom: 12 },
-  noteGuideText: { flex: 1, fontSize: 11, lineHeight: 15 },
+  noteGuideText: { flex: 1, fontSize: 14, lineHeight: 21 },
   notesToolkit: { padding: 14, marginBottom: 14 },
   notesToolkitHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   notesToolkitIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  notesToolkitTitle: { fontSize: 13, fontWeight: '900' },
-  notesToolkitSubtitle: { fontSize: 9, marginTop: 2 },
+  notesToolkitTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  notesToolkitSubtitle: { fontSize: 16, lineHeight: 24, marginTop: 2 },
   notesToolRow: { gap: 7, paddingTop: 12, paddingBottom: 3 },
   notesToolChip: { minHeight: 38, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10 },
-  notesToolText: { fontSize: 9, fontWeight: '900' },
+  notesToolText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   notesToolOutput: { borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, padding: 12, marginTop: 10 },
   toolPoint: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, marginVertical: 5 },
-  toolPointNumber: { width: 18, fontSize: 10, lineHeight: 16, fontWeight: '900' },
-  toolPointText: { flex: 1, fontSize: 10, lineHeight: 16 },
+  toolPointNumber: { width: 18, fontSize: 12, lineHeight: 18, fontWeight: '700' },
+  toolPointText: { flex: 1, fontSize: 14, lineHeight: 21 },
   termRow: { marginVertical: 6 },
-  termTitle: { fontSize: 11, fontWeight: '900' },
-  termDefinition: { fontSize: 10, lineHeight: 15, marginTop: 2 },
+  termTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  termDefinition: { fontSize: 14, lineHeight: 21, marginTop: 2 },
   compareRow: { flexDirection: 'row', gap: 8 },
   compareColumn: { flex: 1, borderRadius: 12, padding: 10 },
-  compareTitle: { fontSize: 10, fontWeight: '900' },
-  compareText: { fontSize: 9, lineHeight: 14, marginTop: 5 },
+  compareTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  compareText: { fontSize: 14, lineHeight: 21, marginTop: 5 },
   exampleToolRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, marginVertical: 6 },
-  exampleToolTitle: { fontSize: 10, fontWeight: '900' },
-  exampleToolText: { fontSize: 9, lineHeight: 14, marginTop: 2 },
-  practiceToolText: { fontSize: 10, lineHeight: 16 },
+  exampleToolTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  exampleToolText: { fontSize: 14, lineHeight: 21, marginTop: 2 },
+  practiceToolText: { fontSize: 14, lineHeight: 21 },
   practiceToolButton: { marginTop: 11 },
   noteList: { gap: 12 },
   noteCard: { padding: 18 },
   noteTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 11 },
   noteNumber: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  noteNumberText: { fontSize: 12, fontWeight: '900' },
+  noteNumberText: { fontSize: 12, lineHeight: 18, fontWeight: '700' },
   noteHeadingCopy: { flex: 1, minWidth: 0 },
   noteTitle: { flexShrink: 1, fontSize: 16, lineHeight: 21, fontWeight: '900' },
-  source: { fontSize: 9, marginTop: 3, fontWeight: '600' },
+  source: { fontSize: 12, lineHeight: 18, marginTop: 3, fontWeight: '600' },
   noteSummary: { borderRadius: 13, padding: 13, marginTop: 16 },
-  noteSummaryText: { fontSize: 12, lineHeight: 18, fontWeight: '700', marginTop: 4 },
-  noteSectionLabel: { fontSize: 9, fontWeight: '900', letterSpacing: 0.8, marginTop: 17 },
+  noteSummaryText: { fontSize: 14, lineHeight: 21, fontWeight: '700', marginTop: 4 },
+  noteSectionLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 0.8, marginTop: 17 },
   bullets: { gap: 10, marginTop: 16 },
   bulletRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
   bullet: { width: 5, height: 5, borderRadius: 3, marginTop: 7 },
-  bulletText: { flex: 1, fontSize: 12, lineHeight: 18 },
+  bulletText: { flex: 1, fontSize: 14, lineHeight: 21 },
   askBullet: { width: 29, height: 29, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
   detailSection: { borderTopWidth: StyleSheet.hairlineWidth, marginTop: 18, paddingTop: 16 },
   detailSectionHeading: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   detailSectionIcon: { width: 28, height: 28, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
-  detailSectionTitle: { flex: 1, fontSize: 13, lineHeight: 17, fontWeight: '900' },
+  detailSectionTitle: { flex: 1, fontSize: 14, lineHeight: 21, fontWeight: '700' },
   noteBlockHeading: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  noteBlockLabel: { fontSize: 9, lineHeight: 12, fontWeight: '900', letterSpacing: 0.7 },
+  noteBlockLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 0.7 },
   connectionBlock: { borderRadius: 13, padding: 13, marginTop: 17 },
   exampleBlock: { borderRadius: 13, padding: 13, marginTop: 10, gap: 7 },
-  exampleText: { fontSize: 11, lineHeight: 16 },
+  exampleText: { fontSize: 14, lineHeight: 21 },
   keyIdea: { flexDirection: 'row', gap: 9, marginTop: 16, padding: 12, borderRadius: 13 },
-  keyIdeaLabel: { fontSize: 9, fontWeight: '900', letterSpacing: 0.7 },
-  keyIdeaText: { fontSize: 11, lineHeight: 16, marginTop: 2 },
+  keyIdeaLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 0.7 },
+  keyIdeaText: { fontSize: 14, lineHeight: 21, marginTop: 2 },
   recallBlock: { borderRadius: 13, borderWidth: 1, padding: 13, marginTop: 10 },
-  recallHint: { fontSize: 10, lineHeight: 14, marginTop: 5, marginBottom: 8 },
+  recallHint: { fontSize: 14, lineHeight: 21, marginTop: 5, marginBottom: 8 },
   recallPrompt: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, marginTop: 7 },
-  recallNumber: { width: 18, height: 18, fontSize: 9, lineHeight: 18, textAlign: 'center', fontWeight: '900' },
-  recallText: { flex: 1, fontSize: 11, lineHeight: 16, fontWeight: '700' },
+  recallNumber: { width: 18, height: 18, fontSize: 12, lineHeight: 18, textAlign: 'center', fontWeight: '700' },
+  recallText: { flex: 1, fontSize: 14, lineHeight: 21, fontWeight: '700' },
   reviewedButton: { alignSelf: 'flex-start', flexDirection: 'row', gap: 6, alignItems: 'center', marginTop: 14, paddingHorizontal: 11, paddingVertical: 8, borderRadius: 11 },
-  reviewedText: { fontSize: 11, fontWeight: '800' },
+  reviewedText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   noteActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   flashcard: { minHeight: 390, padding: 20 },
   flashcardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  flashcardToolbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 16, marginBottom: 4 },
-  flashcardSource: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  flashcardToolbar: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'center', justifyContent: 'space-between', marginTop: 16, marginBottom: 4 },
+  flashcardSource: { flexDirection: 'row', flexShrink: 1, alignItems: 'center', gap: 5 },
   flashcardToolbarActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  iconToolButton: { width: 36, height: 36, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center' },
-  readAloudButton: { minHeight: 36, paddingHorizontal: 10, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
-  readAloudText: { fontSize: 10, fontWeight: '800' },
+  iconToolButton: { width: 44, height: 44, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center' },
+  readAloudButton: { minHeight: 44, paddingHorizontal: 10, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  readAloudText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   flashcardCenter: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, gap: 17 },
   flashcardImageFrame: { width: '100%', height: 170, borderRadius: 14, overflow: 'hidden' },
   flashcardImage: { width: '100%', height: '100%' },
   flashcardText: { fontSize: 23, lineHeight: 31, textAlign: 'center', fontWeight: '800', letterSpacing: -0.5 },
-  flashcardExplanation: { textAlign: 'center', fontSize: 12, lineHeight: 18 },
+  flashcardExplanation: { textAlign: 'center', fontSize: 14, lineHeight: 21 },
   tapHint: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 13, flexDirection: 'row', gap: 7, justifyContent: 'center', alignItems: 'center' },
-  tapHintText: { fontSize: 10 },
+  tapHintText: { flexShrink: 1, fontSize: 14, lineHeight: 21 },
   cardNav: { marginTop: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   navButton: { width: 48, height: 48, borderRadius: 24, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  confidenceHint: { fontSize: 10, fontWeight: '700' },
-  confidenceRow: { flexDirection: 'row', gap: 8, marginTop: 15 },
-  confidenceButton: { flex: 1, minHeight: 58, borderRadius: 15, borderWidth: 1, alignItems: 'center', justifyContent: 'center', gap: 4 },
-  confidenceButtonText: { fontSize: 10, fontWeight: '900' },
+  confidenceHint: { flex: 1, textAlign: 'center', paddingHorizontal: 8, fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  confidenceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 15 },
+  confidenceButton: { flexGrow: 1, flexBasis: '45%', minHeight: 58, paddingHorizontal: 8, paddingVertical: 10, borderRadius: 15, borderWidth: 1, alignItems: 'center', justifyContent: 'center', gap: 4 },
+  confidenceButtonText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   editorModalRoot: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(13,18,38,0.45)' },
   editorSheet: { width: '100%', maxWidth: 560, maxHeight: '88%', alignSelf: 'center', borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 20, paddingTop: 10, paddingBottom: Platform.OS === 'ios' ? 28 : 20 },
   editorHandle: { width: 42, height: 4, borderRadius: 3, alignSelf: 'center', marginBottom: 16 },
   editorHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 10 },
   editorTitle: { fontSize: 21, lineHeight: 26, fontWeight: '900' },
-  editorSubtitle: { fontSize: 10, marginTop: 3 },
+  editorSubtitle: { fontSize: 16, lineHeight: 24, marginTop: 3 },
   editorField: { marginTop: 13 },
-  editorLabel: { fontSize: 8, fontWeight: '900', letterSpacing: 0.8, marginBottom: 6 },
-  editorInput: { minHeight: 47, borderRadius: 14, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, fontSize: 12 },
+  editorLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 0.8, marginBottom: 6 },
+  editorInput: { minHeight: 47, borderRadius: 14, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, lineHeight: 22 },
   editorInputMultiline: { minHeight: 82, textAlignVertical: 'top' },
   editorSave: { marginTop: 18 },
   assessmentSwitcher: { flexDirection: 'row', borderRadius: 16, padding: 4, gap: 4, marginBottom: 12 },
   assessmentMode: { flex: 1, minHeight: 43, borderRadius: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
-  assessmentModeText: { fontSize: 11, fontWeight: '800' },
+  assessmentModeText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   quizSetup: { padding: 14, marginBottom: 18 },
   quizSetupTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
-  quizSetupTitle: { fontSize: 13, fontWeight: '900' },
-  quizSetupText: { fontSize: 10, lineHeight: 15, marginTop: 3 },
+  quizSetupTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  quizSetupText: { fontSize: 14, lineHeight: 21, marginTop: 3 },
   countChoices: { flexDirection: 'row', gap: 6, marginTop: 13 },
-  countChip: { flex: 1, height: 39, borderRadius: 12, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  countText: { fontSize: 12, fontWeight: '900' },
+  countChip: { flex: 1, minHeight: 44, paddingVertical: 7, borderRadius: 12, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  countText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   quizFilterBlock: { gap: 7, marginTop: 13 },
-  quizFilterLabel: { fontSize: 8, fontWeight: '900', letterSpacing: 0.8, marginTop: 2 },
+  quizFilterLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 0.8, marginTop: 2 },
   quizFilterRow: { flexDirection: 'row', gap: 6 },
   quizFilterChip: { flex: 1, minHeight: 34, borderRadius: 10, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
-  quizFilterText: { fontSize: 9, fontWeight: '900' },
+  quizFilterText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   coverageRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 12 },
-  coverageText: { flex: 1, fontSize: 10, fontWeight: '700' },
+  coverageText: { flex: 1, fontSize: 14, lineHeight: 21, fontWeight: '700' },
   adaptiveExamLink: { flexDirection: 'row', alignItems: 'center', gap: 9, borderWidth: 1, borderRadius: 14, padding: 10, marginTop: 13 },
-  adaptiveExamLinkTitle: { fontSize: 11, fontWeight: '900' },
-  adaptiveExamLinkText: { fontSize: 9, lineHeight: 13, marginTop: 2 },
+  adaptiveExamLinkTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  adaptiveExamLinkText: { fontSize: 14, lineHeight: 21, marginTop: 2 },
   questionCard: { marginTop: 18, padding: 18 },
   questionMeta: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   questionMetaRight: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   question: { fontSize: 20, lineHeight: 27, fontWeight: '800', marginTop: 20, letterSpacing: -0.4 },
   answerConfidenceBlock: { marginTop: 18, gap: 9 },
   answerConfidenceHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  answerConfidenceLabel: { fontSize: 10, fontWeight: '900' },
-  answerConfidenceOptional: { fontSize: 8 },
+  answerConfidenceLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700' },
+  answerConfidenceOptional: { fontSize: 14, lineHeight: 21 },
   answerConfidenceChoices: { flexDirection: 'row', gap: 7 },
   answerConfidenceChoice: { flex: 1, minHeight: 34, borderRadius: 10, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5 },
-  answerConfidenceChoiceText: { fontSize: 9, fontWeight: '800' },
+  answerConfidenceChoiceText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   options: { gap: 10, marginTop: 14 },
   option: { minHeight: 60, borderWidth: 1, borderRadius: 15, flexDirection: 'row', alignItems: 'center', gap: 11, padding: 11 },
   optionLetter: { width: 32, height: 32, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  optionLetterText: { fontSize: 11, fontWeight: '900' },
-  optionText: { flex: 1, fontSize: 12, lineHeight: 17, fontWeight: '600' },
+  optionLetterText: { fontSize: 12, lineHeight: 18, fontWeight: '700' },
+  optionText: { flex: 1, fontSize: 14, lineHeight: 21, fontWeight: '600' },
   feedback: { marginTop: 12, flexDirection: 'row', gap: 10, alignItems: 'flex-start', borderWidth: 1 },
-  feedbackTitle: { fontSize: 13, fontWeight: '900' },
-  feedbackText: { fontSize: 11, lineHeight: 16, marginTop: 3 },
-  wrongAnswerWhy: { fontSize: 10, lineHeight: 15, marginTop: 7 },
-  simpleExplanation: { fontSize: 10, lineHeight: 15, marginTop: 8 },
+  feedbackTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  feedbackText: { fontSize: 14, lineHeight: 21, marginTop: 3 },
+  wrongAnswerWhy: { fontSize: 14, lineHeight: 21, marginTop: 7 },
+  simpleExplanation: { fontSize: 14, lineHeight: 21, marginTop: 8 },
   feedbackActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 10 },
   feedbackAction: { minHeight: 35, borderRadius: 10, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 9 },
-  feedbackActionText: { fontSize: 9, fontWeight: '900' },
-  confidentWrongText: { fontSize: 9, lineHeight: 13, fontWeight: '900', marginTop: 6 },
+  feedbackActionText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  confidentWrongText: { fontSize: 14, lineHeight: 21, fontWeight: '700', marginTop: 6 },
   nextButton: { marginTop: 14 },
   results: { alignItems: 'center', paddingTop: 35, gap: 9 },
   resultIcon: { width: 86, height: 86, borderRadius: 43, alignItems: 'center', justifyContent: 'center' },
   resultTitle: { fontSize: 23, fontWeight: '900', marginTop: 9 },
   resultScore: { fontSize: 52, lineHeight: 58, fontWeight: '900' },
-  resultText: { textAlign: 'center', fontSize: 12, lineHeight: 18, maxWidth: 310 },
+  resultText: { textAlign: 'center', fontSize: 14, lineHeight: 21, maxWidth: 310 },
   resultTip: { flexDirection: 'row', gap: 10, alignItems: 'center', marginVertical: 15 },
-  resultTipText: { flex: 1, fontSize: 11, lineHeight: 16 },
+  resultTipText: { flex: 1, fontSize: 14, lineHeight: 21 },
   reviewMistakesButton: { alignSelf: 'stretch', minHeight: 48, borderRadius: 14, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
-  reviewMistakesText: { flex: 1, fontSize: 11, fontWeight: '900' },
+  reviewMistakesText: { flex: 1, fontSize: 14, lineHeight: 21, fontWeight: '700' },
   mistakeReviewList: { alignSelf: 'stretch', gap: 9 },
   mistakeReviewCard: { borderWidth: StyleSheet.hairlineWidth },
-  mistakeReviewQuestion: { fontSize: 12, lineHeight: 17, fontWeight: '900' },
-  mistakeReviewChoice: { fontSize: 10, lineHeight: 15, marginTop: 5 },
-  mistakeReviewExplanation: { fontSize: 10, lineHeight: 15, marginTop: 7 },
+  mistakeReviewQuestion: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  mistakeReviewChoice: { fontSize: 14, lineHeight: 21, marginTop: 5 },
+  mistakeReviewExplanation: { fontSize: 14, lineHeight: 21, marginTop: 7 },
   emptyQuizReset: { alignSelf: 'stretch', marginTop: 8 },
   coachSwitcher: { flexDirection: 'row', borderRadius: 16, padding: 4, gap: 4, marginBottom: 20 },
   coachMode: { flex: 1, minHeight: 43, borderRadius: 13, borderWidth: StyleSheet.hairlineWidth, borderColor: 'transparent', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
-  coachModeText: { fontSize: 10, fontWeight: '900' },
+  coachModeText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   coachSpark: { width: 43, height: 43, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   askSuggestions: { gap: 8 },
   askSuggestion: { minHeight: 53, borderWidth: StyleSheet.hairlineWidth, borderRadius: 15, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  askSuggestionText: { flex: 1, fontSize: 11, fontWeight: '800' },
+  askSuggestionText: { flex: 1, fontSize: 14, lineHeight: 21, fontWeight: '700' },
   askBox: { marginTop: 11, padding: 11, flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
-  askInput: { flex: 1, minHeight: 48, maxHeight: 110, paddingHorizontal: 4, paddingVertical: 8, fontSize: 12, lineHeight: 18, textAlignVertical: 'top' },
-  askSend: { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  askInput: { flex: 1, minHeight: 48, maxHeight: 110, paddingHorizontal: 4, paddingVertical: 8, fontSize: 15, lineHeight: 22, textAlignVertical: 'top' },
+  askSend: { width: 44, height: 44, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   coachAnswer: { marginTop: 12 },
   coachAnswerHeading: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
   coachAnswerTitle: { fontSize: 14, fontWeight: '900' },
   coachAnswerLine: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, marginTop: 9 },
   coachAnswerNumber: { width: 24, height: 24, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  coachAnswerNumberText: { fontSize: 9, fontWeight: '900' },
-  coachAnswerText: { flex: 1, fontSize: 11, lineHeight: 16 },
+  coachAnswerNumberText: { fontSize: 12, lineHeight: 18, fontWeight: '700' },
+  coachAnswerText: { flex: 1, fontSize: 14, lineHeight: 21 },
   coachAnswerButton: { minHeight: 48, marginTop: 15 },
   topicChips: { gap: 7, paddingBottom: 13 },
   topicChip: { borderRadius: 999, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 12, paddingVertical: 9 },
-  topicChipText: { fontSize: 10, fontWeight: '800' },
+  topicChipText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   teachPromptCard: { padding: 16 },
-  teachEyebrow: { fontSize: 8, fontWeight: '900', letterSpacing: 0.9 },
+  teachEyebrow: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 0.9 },
   teachPrompt: { fontSize: 19, lineHeight: 26, fontWeight: '900', marginTop: 7 },
-  teachInput: { minHeight: 150, borderWidth: 1, borderRadius: 15, padding: 13, marginVertical: 15, fontSize: 12, lineHeight: 19, textAlignVertical: 'top' },
+  teachInput: { minHeight: 150, borderWidth: 1, borderRadius: 15, padding: 13, marginVertical: 15, fontSize: 15, lineHeight: 22, textAlignVertical: 'top' },
   teachFeedback: { marginTop: 12, borderWidth: 1 },
   recallFeedbackCard: { marginTop: 12, borderWidth: 1 },
-  recallSelfCheck: { fontSize: 9, lineHeight: 14, marginTop: 12 },
+  recallSelfCheck: { fontSize: 14, lineHeight: 21, marginTop: 12 },
   teachFeedbackTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
-  teachFeedbackLabel: { fontSize: 8, fontWeight: '900', letterSpacing: 0.8 },
+  teachFeedbackLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 0.8 },
   teachScore: { fontSize: 28, fontWeight: '900', marginTop: 2 },
-  feedbackSectionLabel: { fontSize: 8, fontWeight: '900', letterSpacing: 0.8, marginTop: 14 },
-  feedbackSectionText: { fontSize: 11, lineHeight: 17, marginTop: 5 },
+  feedbackSectionLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 0.8, marginTop: 14 },
+  feedbackSectionText: { fontSize: 14, lineHeight: 21, marginTop: 5 },
   mapWrap: { alignItems: 'center', paddingTop: 9 },
   mapNode: { borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   mapNodeCenter: { minWidth: 175, maxWidth: 250, minHeight: 86, padding: 15, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.16, shadowRadius: 18, elevation: 4 },
@@ -2558,22 +2666,22 @@ const styles = StyleSheet.create({
   connectionList: { alignSelf: 'stretch', gap: 9 },
   connectionNode: { minHeight: 65, flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12 },
   connectionDot: { width: 37, height: 37, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  connectionText: { flex: 1, fontSize: 10, lineHeight: 15 },
+  connectionText: { flex: 1, fontSize: 14, lineHeight: 21 },
   connectionHint: { flexDirection: 'row', alignItems: 'center', gap: 9, padding: 12, borderRadius: 14, marginTop: 12 },
-  connectionHintText: { flex: 1, fontSize: 9, lineHeight: 14 },
+  connectionHintText: { flex: 1, fontSize: 14, lineHeight: 21 },
   audioModeSwitch: { flexDirection: 'row', borderRadius: 15, padding: 4, marginBottom: 14 },
   audioMode: { flex: 1, minWidth: 0, flexDirection: 'row', gap: 4, alignItems: 'center', justifyContent: 'center', paddingVertical: 10, borderRadius: 12 },
   audioModeDisabled: { opacity: 0.42 },
-  audioModeText: { flexShrink: 1, fontSize: 10, fontWeight: '800' },
+  audioModeText: { flexShrink: 1, fontSize: 14, lineHeight: 21, fontWeight: '700' },
   player: { padding: 20, borderRadius: 26, alignItems: 'center' },
   playerWash: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, borderRadius: 26, pointerEvents: 'none' },
   nowPlayingBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20, marginTop: 2 },
-  nowPlaying: { fontSize: 9, fontWeight: '800', letterSpacing: 1.1 },
+  nowPlaying: { fontSize: 14, lineHeight: 21, fontWeight: '700', letterSpacing: 1.1 },
   audioTitle: { fontSize: 20, lineHeight: 27, fontWeight: '800', letterSpacing: -0.4, marginTop: 10, textAlign: 'center' },
-  audioCourse: { fontSize: 12, lineHeight: 18, marginTop: 4, textAlign: 'center' },
+  audioCourse: { fontSize: 14, lineHeight: 21, marginTop: 4, textAlign: 'center' },
   currentSection: { alignSelf: 'stretch', alignItems: 'center', borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 11, marginTop: 18 },
-  currentSectionLabel: { fontSize: 8, fontWeight: '800', letterSpacing: 1 },
-  currentSectionTitle: { fontSize: 11, lineHeight: 16, fontWeight: '700', marginTop: 4, textAlign: 'center' },
+  currentSectionLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 1 },
+  currentSectionTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700', marginTop: 4, textAlign: 'center' },
   audioProgress: { width: '100%', marginTop: 5 },
   seekTouchArea: { width: '100%', height: 44, justifyContent: 'center' },
   seekTrack: { width: '100%', height: 6, borderRadius: 4, justifyContent: 'center' },
@@ -2581,7 +2689,7 @@ const styles = StyleSheet.create({
   seekThumb: { position: 'absolute', width: 20, height: 20, borderRadius: 10, marginLeft: -10, top: -7, borderWidth: 2, borderColor: '#F2EDFF' },
   seekThumbActive: { width: 24, height: 24, borderRadius: 12, marginLeft: -12, top: -9, borderWidth: 2.5, elevation: 3, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 3, shadowOffset: { width: 0, height: 1 } },
   timeRow: { width: '100%', flexDirection: 'row', justifyContent: 'space-between' },
-  timeText: { fontSize: 10, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  timeText: { fontSize: 14, lineHeight: 21, fontWeight: '600', fontVariant: ['tabular-nums'] },
   controls: { alignSelf: 'stretch', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 18 },
   smallControl: { width: 44, height: 44, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   playButton: { flex: 1, maxWidth: 178, minHeight: 56, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 18, flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center' },
@@ -2589,61 +2697,61 @@ const styles = StyleSheet.create({
   askStudyBoltButton: { alignSelf: 'stretch', minHeight: 62, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 10, marginTop: 18 },
   askStudyBoltIcon: { width: 35, height: 35, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   askStudyBoltCopy: { flex: 1 },
-  askStudyBoltTitle: { fontSize: 12, fontWeight: '800' },
-  askStudyBoltText: { fontSize: 10, lineHeight: 15, marginTop: 2 },
-  audioSettings: { flexDirection: 'row', gap: 10, marginTop: 12 },
-  audioSettingCard: { width: '48.5%', flexDirection: 'row', alignItems: 'center', gap: 9, padding: 12 },
-  settingArrow: { width: 22, height: 36, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
+  askStudyBoltTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  askStudyBoltText: { fontSize: 14, lineHeight: 21, marginTop: 2 },
+  audioSettings: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 12 },
+  audioSettingCard: { flexGrow: 1, flexBasis: 210, flexDirection: 'row', alignItems: 'center', gap: 9, padding: 12 },
+  settingArrow: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   settingArrowDisabled: { opacity: 0.35 },
   settingCenter: { flex: 1, minWidth: 0, minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: 8 },
   settingCopy: { flex: 1, minWidth: 0 },
-  settingLabel: { fontSize: 8, fontWeight: '900', letterSpacing: 0.8 },
-  settingValue: { fontSize: 11, fontWeight: '800', marginTop: 2 },
-  contextActions: { flexDirection: 'row', gap: 6, marginTop: 9 },
-  contextAction: { flex: 1, minHeight: 39, borderRadius: 12, alignItems: 'center', justifyContent: 'center', gap: 2, paddingHorizontal: 2 },
-  contextActionText: { fontSize: 8, fontWeight: '900' },
-  interactiveRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
-  interactiveCard: { flex: 1, minHeight: 66, borderRadius: 16, borderWidth: 1, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 9 },
+  settingLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 0.8 },
+  settingValue: { fontSize: 14, lineHeight: 21, fontWeight: '700', marginTop: 2 },
+  contextActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 9 },
+  contextAction: { flexGrow: 1, flexBasis: 72, minHeight: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center', gap: 2, paddingHorizontal: 4, paddingVertical: 6 },
+  contextActionText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  interactiveRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
+  interactiveCard: { flexGrow: 1, flexBasis: 190, minHeight: 66, borderRadius: 16, borderWidth: 1, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 9 },
   interactiveIcon: { width: 34, height: 34, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   interactiveCopy: { flex: 1 },
-  interactiveTitle: { fontSize: 11, fontWeight: '900' },
-  interactiveText: { fontSize: 9, lineHeight: 13, marginTop: 3 },
-  driveButton: { width: 92, borderRadius: 16, borderWidth: 1, alignItems: 'center', justifyContent: 'center', gap: 4 },
-  driveButtonText: { fontSize: 10, fontWeight: '900' },
+  interactiveTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  interactiveText: { fontSize: 14, lineHeight: 21, marginTop: 3 },
+  driveButton: { flexGrow: 1, flexBasis: 92, minHeight: 66, padding: 10, borderRadius: 16, borderWidth: 1, alignItems: 'center', justifyContent: 'center', gap: 4 },
+  driveButtonText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   audioInfo: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, marginTop: 12 },
-  audioInfoText: { flex: 1, fontSize: 10, lineHeight: 15 },
-  webAudio: { fontSize: 10, textAlign: 'center', marginTop: 12 },
+  audioInfoText: { flex: 1, fontSize: 14, lineHeight: 21 },
+  webAudio: { fontSize: 14, lineHeight: 21, textAlign: 'center', marginTop: 12 },
   driveRoot: { flex: 1, paddingHorizontal: 24, paddingTop: 64, paddingBottom: 36 },
   driveTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
-  driveEyebrow: { color: '#AFA9D4', fontSize: 10, fontWeight: '900', letterSpacing: 1.5 },
+  driveEyebrow: { color: '#AFA9D4', fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 1.5 },
   driveTitle: { color: '#F4F4FF', fontSize: 20, lineHeight: 25, fontWeight: '900', maxWidth: 280, marginTop: 7 },
-  driveClose: { width: 42, height: 42, borderRadius: 15, backgroundColor: 'rgba(255,255,255,0.12)', alignItems: 'center', justifyContent: 'center' },
+  driveClose: { width: 44, height: 44, borderRadius: 15, backgroundColor: 'rgba(255,255,255,0.12)', alignItems: 'center', justifyContent: 'center' },
   driveCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   driveOrb: { width: 108, height: 108, borderRadius: 54, alignItems: 'center', justifyContent: 'center', marginBottom: 24 },
   driveState: { color: '#F4F4FF', fontSize: 16, fontWeight: '900' },
-  driveSection: { color: '#B9BAD0', fontSize: 12, fontWeight: '700', textAlign: 'center', marginTop: 8 },
+  driveSection: { color: '#B9BAD0', fontSize: 14, lineHeight: 21, fontWeight: '700', textAlign: 'center', marginTop: 8 },
   driveProgress: { width: '100%', marginTop: 26 },
-  driveHint: { color: '#8F91AB', fontSize: 11, lineHeight: 17, textAlign: 'center', maxWidth: 300, marginTop: 22 },
+  driveHint: { color: '#8F91AB', fontSize: 14, lineHeight: 21, textAlign: 'center', maxWidth: 300, marginTop: 22 },
   driveTranscript: { width: '100%', borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.08)', padding: 11, marginTop: 16 },
   driveReply: { width: '100%', borderRadius: 14, backgroundColor: 'rgba(139,92,246,0.18)', padding: 11, marginTop: 8 },
-  driveMessageLabel: { color: '#AFA9D4', fontSize: 8, fontWeight: '900', letterSpacing: 1 },
-  driveTranscriptText: { color: '#E4E5F2', fontSize: 11, lineHeight: 16, marginTop: 4 },
-  driveReplyText: { color: '#F4F4FF', fontSize: 11, lineHeight: 17, marginTop: 4 },
-  driveError: { color: '#FFB9C2', fontSize: 10, lineHeight: 15, textAlign: 'center', maxWidth: 330, marginTop: 15 },
+  driveMessageLabel: { color: '#AFA9D4', fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 1 },
+  driveTranscriptText: { color: '#E4E5F2', fontSize: 14, lineHeight: 21, marginTop: 4 },
+  driveReplyText: { color: '#F4F4FF', fontSize: 14, lineHeight: 21, marginTop: 4 },
+  driveError: { color: '#FFB9C2', fontSize: 14, lineHeight: 21, textAlign: 'center', maxWidth: 330, marginTop: 15 },
   driveSignIn: { flexDirection: 'row', alignItems: 'center', gap: 7, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.09)', paddingHorizontal: 12, paddingVertical: 10, marginTop: 12 },
-  driveSignInText: { color: '#E7E3FF', fontSize: 10, fontWeight: '900' },
+  driveSignInText: { color: '#E7E3FF', fontSize: 14, lineHeight: 21, fontWeight: '700' },
   driveInputRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 15, backgroundColor: 'rgba(255,255,255,0.09)', paddingLeft: 13, paddingRight: 6, marginBottom: 14 },
-  driveInput: { flex: 1, minWidth: 0, color: '#F4F4FF', fontSize: 11, paddingVertical: 11 },
-  driveSend: { width: 38, height: 38, borderRadius: 12, backgroundColor: '#7656F6', alignItems: 'center', justifyContent: 'center' },
+  driveInput: { flex: 1, minWidth: 0, color: '#F4F4FF', fontSize: 15, lineHeight: 22, paddingVertical: 11 },
+  driveSend: { width: 44, height: 44, borderRadius: 12, backgroundColor: '#7656F6', alignItems: 'center', justifyContent: 'center' },
   driveControlDisabled: { opacity: 0.35 },
   driveControls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around' },
   driveControl: { width: 74, minHeight: 66, alignItems: 'center', justifyContent: 'center', gap: 6 },
-  driveControlText: { color: '#D9DCF0', fontSize: 10, fontWeight: '900' },
+  driveControlText: { color: '#D9DCF0', fontSize: 14, lineHeight: 21, fontWeight: '700' },
   drivePlay: { width: 76, height: 76, borderRadius: 38, alignItems: 'center', justifyContent: 'center' },
   emptyTool: { paddingVertical: 80, alignItems: 'center', gap: 11 },
   emptyTitle: { fontSize: 19, fontWeight: '800' },
   materialEmptyTitle: { width: '100%', maxWidth: '100%', fontSize: 17, letterSpacing: -0.35, textAlign: 'center' },
-  emptyText: { textAlign: 'center', fontSize: 12, lineHeight: 18, maxWidth: 300 },
+  emptyText: { textAlign: 'center', fontSize: 14, lineHeight: 21, maxWidth: 300 },
   materialStateIcon: { width: 58, height: 58, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   materialRetry: { minWidth: 200, marginTop: 8 },
 });

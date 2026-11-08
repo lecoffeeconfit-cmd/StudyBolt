@@ -9,7 +9,7 @@ export interface TodaysPlanFocus {
   countLabel: string;
   actionLabel: string;
   actionDetail: string | null;
-  medium: 'practice' | 'audio' | 'notes' | 'materials';
+  medium: 'practice' | 'audio' | 'notes' | 'materials' | 'pack';
   examLabel: string | null;
 }
 
@@ -27,6 +27,11 @@ export function getTodaysPlanFocus(dashboard: HomeDashboard): TodaysPlanFocus {
     tip: 'Pick the lecture or topic you want to understand next.',
     count: null, countLabel: 'start here', actionLabel: 'Add course material', actionDetail: null, medium: 'materials',
   };
+  if (next.kind === 'pack') return {
+    ...base, title: next.title, reason: next.why,
+    tip: 'Each study tool keeps its own progress and retry options.',
+    count: null, countLabel: 'study tools', actionLabel: 'View Study Pack', actionDetail: null, medium: 'pack',
+  };
   if (next.kind === 'resume') return {
     ...base, title: 'Pick up your StudyCast', reason: 'Continue from your saved listening position.',
     tip: 'Pause after a key idea and explain it in your own words.', count: null, countLabel: 'saved spot',
@@ -37,7 +42,7 @@ export function getTodaysPlanFocus(dashboard: HomeDashboard): TodaysPlanFocus {
     const courses = [...new Set(dashboard.decks.filter((pack) => dashboard.mistakeIds.some((id) => id.startsWith(`${pack.id}:`))).map((pack) => pack.courseName))];
     return {
       ...base, source: courses.length ? courses.join(' · ') : null,
-      title: 'Turn mistakes into understanding', reason: 'Give repeatedly missed questions another try, then check why the answer works.',
+      title: `Revisit ${count} missed ${count === 1 ? 'question' : 'questions'}`, reason: 'These questions were missed repeatedly. Review the explanation, then check your understanding in the pack quiz.',
       tip: 'Explain the correction before you move on.', count, countLabel: 'to revisit',
       actionLabel: 'Review missed questions', actionDetail: `${count} ${count === 1 ? 'question' : 'questions'}`,
     };
@@ -55,17 +60,34 @@ export function getTodaysPlanFocus(dashboard: HomeDashboard): TodaysPlanFocus {
   // Smart Study opens with its existing 10-minute setting: ceil(10 / 1.4) = 8 prompts.
   const count = cards.length ? Math.min(8, cards.length) : null;
   if (count === null) return {
-    ...base, title: next.kind === 'weak' ? next.title : 'Make sense of your class notes',
+    ...base, title: next.kind === 'weak' ? next.title : `Review ${deck?.courseName ?? 'your class'} notes`,
     reason: 'Review a section, then look away and explain the main idea from memory.',
     tip: 'Use your notes to check what you missed.', count: null, countLabel: 'read & recall',
     actionLabel: 'Review notes', actionDetail: null, medium: 'notes',
   };
   return {
-    ...base, title: next.kind === 'weak' || next.kind === 'exam' ? next.title : 'Find your next learning gap',
+    ...base, title: next.kind === 'weak' || next.kind === 'exam' ? next.title : `Practice ${deck?.courseName ?? 'your material'}`,
     reason: next.kind === 'weak' ? next.why : next.kind === 'exam'
       ? 'Practice your selected exam material and check what you can explain without notes.'
       : 'A short recall check helps you see what you know and where to focus next.',
     tip: 'Try first. Check the explanation. Learn from the miss.', count, countLabel: 'planned prompts',
     actionLabel: 'Start study session', actionDetail: `${count} ${count === 1 ? 'prompt' : 'prompts'}`,
+  };
+}
+
+/** Completion describes the existing dated plan only, never all available study. */
+export function getTodaysPlanStatus(dashboard: HomeDashboard) {
+  const today = dashboard.today;
+  const complete = today.planTotal > 0 && today.planCompleted === today.planTotal;
+  const hasActivity = today.reviewedCards > 0 || today.quizSessions > 0 || today.totalAnswers > 0 || today.completedAudio > 0 || today.focusSessions > 0;
+  if (today.planTotal > 0) return {
+    complete, hasActivity,
+    title: complete ? 'Your planned work is complete' : 'Your plan today',
+    detail: `${today.planCompleted} of ${today.planTotal} plan tasks marked complete`,
+  };
+  return {
+    complete: false, hasActivity,
+    title: hasActivity ? 'A useful step forward today' : dashboard.decks.length ? 'A good place to begin' : 'Built around your material',
+    detail: hasActivity ? 'Your recorded work appears in Learning progress below.' : dashboard.decks.length ? 'Start small. Your answers will guide what comes next.' : 'Add one lecture to turn your material into practice.',
   };
 }
