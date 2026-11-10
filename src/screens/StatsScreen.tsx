@@ -6,6 +6,8 @@ import { AppState, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, useW
 import { Card, Header, Icon, Pill, ProgressBar, Screen } from '../components/ui';
 import { SubjectIcon } from '../components/SubjectIcon';
 import { LearningMasteryHero } from '../components/LearningMasteryHero';
+import { StatsLearningDashboard } from '../components/StatsLearningDashboard';
+import { statsClassState } from '../components/statsLearningPresentation';
 import type { IconName } from '../components/ui';
 import { learningEvidence } from '../data/learningScience';
 import { makeStatDetail } from '../data/statExplanations';
@@ -45,12 +47,20 @@ export function StatsScreen({ onOpenDeck, onAddMaterial }: {
   const [tab, setTab] = useState<StatsTab>('overview');
   const [selectedDetail, setSelectedDetail] = useState<StatsDetail | null>(null);
   const [includeSamples, setIncludeSamples] = useState(false);
+  const [allClasses, setAllClasses] = useState(false);
+  const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
   const [activityEpoch, setActivityEpoch] = useState(0);
   const personalState = useMemo(() => personalStatisticsState(state), [state]);
   const hasSamples = state.decks.some((deck) => deck.fileType === 'demo');
-  const analytics = useMemo(() => buildAnalytics(includeSamples ? state : personalState), [activityEpoch, includeSamples, personalState, state]);
   const courseGroups = useMemo(() => buildLearningMastery(state), [activityEpoch, state]);
-  const topicEvidence = useMemo(() => new Set(courseGroups.flatMap(group => group.practicedTopicIds)), [courseGroups]);
+  const selectedClass = courseGroups.find(group => group.id === selectedClassId) ?? courseGroups[0]!;
+  const classState = useMemo(() => statsClassState(personalState, selectedClass), [personalState, selectedClass]);
+  const displayState = allClasses ? includeSamples ? state : personalState : classState;
+  const analytics = useMemo(() => buildAnalytics(displayState), [activityEpoch, displayState]);
+  const displayGroups = allClasses ? courseGroups : [selectedClass];
+  const topicEvidence = useMemo(() => new Set((allClasses ? courseGroups : [selectedClass]).flatMap(group => group.practicedTopicIds)), [allClasses, courseGroups, selectedClass]);
+  const selectClass = (id: string) => { setSelectedClassId(id); setAllClasses(false); setIncludeSamples(false); };
+
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', next => { if (next === 'active') setActivityEpoch(value => value + 1); });
@@ -67,11 +77,11 @@ export function StatsScreen({ onOpenDeck, onAddMaterial }: {
 
   const showAbout = () => setSelectedDetail({
     ...makeStatDetail('About your statistics', capitalize(analytics.evidenceLevel) + ' evidence', analytics.historyMessage, {
-      description: includeSamples ? 'Detailed tabs currently include bundled examples and older totals. Course readiness and study actions always use your own saved material.' : 'Your personal view excludes bundled examples, seeded history, and mixed sample sessions. Statistics come from this account’s saved material and activity.',
+      description: includeSamples ? 'Detailed tabs currently include bundled examples and older totals. Course readiness and study actions always use your own saved material.' : 'Your personal view excludes bundled examples, seeded history, and mixed sample sessions. The class selector scopes the dashboard and detailed tabs. All classes includes the existing totals and mixed-class sessions.',
       calculation: 'Counts describe recorded activity. A dash means a result is not yet assessed. Course readiness uses repeated recall across identified topics; study progress and coverage describe completed activities. Evidence level describes the amount of history, not your ability.',
       whyItMatters: 'Use a result to choose your next practice, then open its explanation if you want the calculation. Learning estimates are not predictions of an exam grade.',
     }),
-    action: { label: includeSamples ? 'Return to personal progress' : hasSamples ? 'Explore sample statistics' : 'Show all recorded statistics', onPress: () => { setIncludeSamples(value => !value); setSelectedDetail(null); } },
+    action: { label: includeSamples ? 'Return to personal progress' : hasSamples ? 'Explore sample statistics' : 'Show all recorded statistics', onPress: () => { setIncludeSamples(value => !value); setAllClasses(true); setSelectedDetail(null); } },
   });
 
   return (
@@ -92,23 +102,28 @@ export function StatsScreen({ onOpenDeck, onAddMaterial }: {
               </Pressable>
             )}
           />
-          <Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>Your progress</Text>
-          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Your practice, progress, and next steps.</Text>
+          <Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>Your learning, made clear.</Text>
+          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>What you know. What is growing. What to study next.</Text>
           <Pressable accessibilityRole="button" accessibilityLabel={includeSamples ? 'Sample and personal data. Change statistics scope' : 'Personal progress. About your statistics'} onPress={showAbout} style={styles.scopeRow}>
             <Icon name={includeSamples ? 'layers-outline' : 'account-check-outline'} size={16} color={includeSamples ? colors.warning : colors.primary} />
             <Text style={[styles.scopeLabel, { color: includeSamples ? colors.warning : colors.textSecondary }]}>{includeSamples ? 'Includes sample and older totals' : 'Your saved material only'}</Text>
             <Icon name="chevron-down" size={16} color={colors.textMuted} />
           </Pressable>
+          {!hydrated ? <View accessibilityState={{ busy: true }} style={styles.loadingState}><LoadingArtwork colors={colors} /><Text style={[styles.subtitle, { color: colors.textSecondary }]}>Loading your progress…</Text></View> : <>
+          <LearningMasteryHero groups={courseGroups} selectedId={selectedClass.id} onSelect={selectClass} onExplore={setSelectedDetail} />
+          <View style={styles.classScope} accessibilityRole="tablist" accessibilityLabel="Statistics scope">
+            {[{ all: false, label: 'Selected class' }, { all: true, label: 'All classes' }].map(option => <Pressable key={option.label} accessibilityRole="tab" accessibilityState={{ selected: allClasses === option.all }} aria-selected={allClasses === option.all} onPress={() => { setAllClasses(option.all); if (!option.all) setIncludeSamples(false); }} style={[styles.classScopeButton, { backgroundColor: allClasses === option.all ? colors.primarySoft : colors.card, borderColor: allClasses === option.all ? colors.primary : colors.border }]}><Text style={[styles.classScopeText, { color: allClasses === option.all ? colors.primary : colors.textSecondary }]}>{option.label}</Text></Pressable>)}
+          </View>
+          <Text style={[styles.inlineHint, { color: colors.textMuted }]}>{allClasses ? includeSamples ? 'All classes · includes sample and older totals' : 'All classes · your personal progress' : selectedClass.name + ' · all sections below follow this class'}</Text>
           <StatsTabs tab={tab} onChange={setTab} />
           <Text style={[styles.inlineHint, { color: colors.textMuted }]}>Tap a stat to explore its meaning and evidence.</Text>
-          {!hydrated ? <View accessibilityState={{ busy: true }} style={styles.loadingState}><LoadingArtwork colors={colors} /><Text style={[styles.subtitle, { color: colors.textSecondary }]}>Loading your progress…</Text></View> : <>
-          {tab === 'overview' ? <LearningMasteryHero groups={courseGroups} onExplore={setSelectedDetail} onPractice={openPractice} onAddMaterial={onAddMaterial} /> : null}
-          {tab === 'overview' ? <Overview analytics={analytics} groups={courseGroups} onPractice={openPractice} onAddMaterial={onAddMaterial} /> : null}
+          {tab === 'overview' && !allClasses ? <><StatsLearningDashboard key={selectedClass.id} state={classState} group={selectedClass} analytics={analytics} onDetail={setSelectedDetail} onPractice={openPractice} onAddMaterial={onAddMaterial} /><StatsDisclosure title="More study activity" subtitle="Your existing activity, coverage, and session details"><Overview analytics={analytics} groups={displayGroups} onPractice={openPractice} onAddMaterial={onAddMaterial} /></StatsDisclosure></> : null}
+          {tab === 'overview' && allClasses ? <Overview analytics={analytics} groups={courseGroups} onPractice={openPractice} onAddMaterial={onAddMaterial} /> : null}
           {tab === 'insights' ? <AdvancedInsights analytics={analytics} topicEvidence={includeSamples ? undefined : topicEvidence} /> : null}
           {tab === 'mastery' ? <MasteryAnalytics analytics={analytics} topicEvidence={includeSamples ? undefined : topicEvidence} /> : null}
           {tab === 'quizzes' ? <QuizAnalytics analytics={analytics} /> : null}
           {tab === 'activity' ? <ActivityAnalytics analytics={analytics} goalMinutes={state.dailyStudyGoalMinutes} /> : null}
-          {tab === 'methods' ? <MethodAnalytics analytics={analytics} classCount={includeSamples ? state.classes.length : courseGroups.filter(group => group.kind === 'class').length} presentationCount={courseGroups.reduce((sum, group) => sum + group.powerpoints, 0)} /> : null}
+          {tab === 'methods' ? <MethodAnalytics analytics={analytics} classCount={allClasses ? includeSamples ? state.classes.length : courseGroups.filter(group => group.kind === 'class').length : selectedClass.kind === 'class' ? 1 : 0} presentationCount={displayGroups.reduce((sum, group) => sum + group.powerpoints, 0)} /> : null}
           </>}
           </View>
         </Screen>
@@ -1136,6 +1151,9 @@ function getNextStudyAdjustment(analytics: AnalyticsSnapshot): StatDetail {
 }
 
 const styles = StyleSheet.create({
+  classScope: { flexDirection: 'row', gap: 8, marginTop: 16 },
+  classScopeButton: { flex: 1, minHeight: 44, borderWidth: 1, borderRadius: 13, alignItems: 'center', justifyContent: 'center', padding: 9 },
+  classScopeText: { fontSize: 13, lineHeight: 20, fontWeight: '700' },
   contentWidth: { width: '100%', maxWidth: 760, alignSelf: 'center' },
   sectionHeading: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline', justifyContent: 'space-between', columnGap: 10, rowGap: 3, marginTop: 26, marginBottom: 12 },
   sectionHeadingTitle: { ...typography.sectionTitle, maxWidth: '100%' },
