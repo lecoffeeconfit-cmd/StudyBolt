@@ -198,7 +198,7 @@ export function HomeScreen({
         <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{!dashboard.decks.length ? 'Start with one class. Build a routine that works for you.' : dashboard.exam ? 'One focused step toward your next exam.' : 'A clear next step, built from your learning.'}</Text>
       </View>
 
-      <TodaysPlanCard dashboard={dashboard} colors={colors} onStartSession={startRecommended} onOpenPriority={setPriority} onOpenPlan={onOpenPlanner} />
+      <TodaysPlanCard dashboard={dashboard} colors={colors} onStartSession={startRecommended} onOpenPriority={setPriority} onOpenPlan={onOpenPlanner} onOpenDeck={onOpenDeck} onStartStudy={onStartStudy} onOpenMistakes={onOpenMistakes} onOpenLibrary={onOpenLibrary} onAddMaterial={pickDocument} />
 
       <AddStudyMaterialCard
         colors={colors}
