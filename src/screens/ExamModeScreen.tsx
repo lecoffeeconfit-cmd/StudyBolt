@@ -1,7 +1,9 @@
+import { LoadingArtwork } from '../components/StudyBoltLoading';
+import { PageEntrance } from '../components/PagePresentation';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Speech from 'expo-speech';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { AppState, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '../AuthContext';
@@ -520,7 +522,7 @@ export function ExamModeScreen({ deckId, onBack, onStudyWeakAreas, onUpdateStudy
     </View>;
   };
 
-  const renderReview = () => <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}><View style={styles.reviewHero}><View style={[styles.heroIcon, { backgroundColor: unansweredCount ? colors.warning : colors.mint }]}>{submitting ? <ActivityIndicator color={colors.primaryText} /> : <Icon name={unansweredCount ? 'clipboard-alert-outline' : 'check'} color={colors.primaryText} size={25} />}</View><Text style={[styles.heroTitle, { color: colors.text }]}>{submitting ? 'Grading your exam' : unansweredCount ? 'Review before submitting' : 'Ready to submit'}</Text><Text style={[styles.heroText, { color: colors.textSecondary }]}>{submitting ? 'StudyBolt is checking open responses semantically when secure AI is available. Offline scoring remains ready as a fallback.' : unansweredCount ? `${unansweredCount} unanswered question${unansweredCount === 1 ? '' : 's'}. You can go back and finish them or submit with skips.` : 'Your answers are recorded. Submit when you are ready to see your full breakdown.'}</Text></View><Card style={styles.reviewList}>{questions.map((item, itemIndex) => { const draft = draftFor(item); const answered = Boolean(draft.openAnswer.trim() || draft.selectedIndices.length); return <Pressable accessibilityRole="button" key={item.id} disabled={submitting} onPress={() => { setIndex(itemIndex); setView('taking'); }} style={[styles.reviewRow, { borderBottomColor: colors.border }]}><View style={[styles.reviewNumber, { backgroundColor: answered ? colors.mintSoft : `${colors.warning}18` }]}><Text style={[styles.reviewNumberText, { color: answered ? colors.mint : colors.warning }]}>{itemIndex + 1}</Text></View><View style={{ flex: 1 }}><Text numberOfLines={2} style={[styles.reviewPrompt, { color: colors.text }]}>{item.prompt}</Text><Text style={[styles.reviewMeta, { color: colors.textMuted }]}>{answered ? 'Answered' : 'Unanswered'} · {item.conceptTitle ?? item.source.label}</Text></View><Icon name={flags[item.id] ? 'flag' : 'chevron-right'} color={flags[item.id] ? colors.warning : colors.textMuted} /></Pressable>; })}</Card><PrimaryButton label={submitting ? 'Grading…' : 'Submit exam'} icon="check" disabled={submitting} onPress={() => void finishExam()} style={styles.startButton} /><Pressable accessibilityRole="button" onPress={() => setView('taking')} style={[styles.historyLink, submitting && { opacity: 0.4 }]} pointerEvents={submitting ? 'none' : 'auto'}><Text style={[styles.historyLinkText, { color: colors.primary }]}>Continue answering</Text></Pressable></ScrollView>;
+  const renderReview = () => <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}><View style={styles.reviewHero}><View style={[styles.heroIcon, { backgroundColor: unansweredCount ? colors.warning : colors.mint }]}>{submitting ? <View accessibilityRole="progressbar" accessibilityLabel="Grading your exam" accessibilityState={{ busy: true }}><LoadingArtwork compact colors={{ ...colors, primary: colors.primaryText }} /></View> : <Icon name={unansweredCount ? 'clipboard-alert-outline' : 'check'} color={colors.primaryText} size={25} />}</View><Text style={[styles.heroTitle, { color: colors.text }]}>{submitting ? 'Grading your exam' : unansweredCount ? 'Review before submitting' : 'Ready to submit'}</Text><Text style={[styles.heroText, { color: colors.textSecondary }]}>{submitting ? 'StudyBolt is checking open responses semantically when secure AI is available. Offline scoring remains ready as a fallback.' : unansweredCount ? `${unansweredCount} unanswered question${unansweredCount === 1 ? '' : 's'}. You can go back and finish them or submit with skips.` : 'Your answers are recorded. Submit when you are ready to see your full breakdown.'}</Text></View><Card style={styles.reviewList}>{questions.map((item, itemIndex) => { const draft = draftFor(item); const answered = Boolean(draft.openAnswer.trim() || draft.selectedIndices.length); return <Pressable accessibilityRole="button" key={item.id} disabled={submitting} onPress={() => { setIndex(itemIndex); setView('taking'); }} style={[styles.reviewRow, { borderBottomColor: colors.border }]}><View style={[styles.reviewNumber, { backgroundColor: answered ? colors.mintSoft : `${colors.warning}18` }]}><Text style={[styles.reviewNumberText, { color: answered ? colors.mint : colors.warning }]}>{itemIndex + 1}</Text></View><View style={{ flex: 1 }}><Text numberOfLines={2} style={[styles.reviewPrompt, { color: colors.text }]}>{item.prompt}</Text><Text style={[styles.reviewMeta, { color: colors.textMuted }]}>{answered ? 'Answered' : 'Unanswered'} · {item.conceptTitle ?? item.source.label}</Text></View><Icon name={flags[item.id] ? 'flag' : 'chevron-right'} color={flags[item.id] ? colors.warning : colors.textMuted} /></Pressable>; })}</Card><PrimaryButton label={submitting ? 'Grading…' : 'Submit exam'} icon="check" disabled={submitting} onPress={() => void finishExam()} style={styles.startButton} /><Pressable accessibilityRole="button" onPress={() => setView('taking')} style={[styles.historyLink, submitting && { opacity: 0.4 }]} pointerEvents={submitting ? 'none' : 'auto'}><Text style={[styles.historyLinkText, { color: colors.primary }]}>Continue answering</Text></Pressable></ScrollView>;
 
   const renderResults = () => {
     if (!attempt) return <EmptyState title="No result yet" detail="Complete an exam to see results." />;
@@ -568,7 +570,7 @@ export function ExamModeScreen({ deckId, onBack, onStudyWeakAreas, onUpdateStudy
   };
 
   const sheetContextReady = Boolean(tutorContext);
-  return <View style={[styles.page, { backgroundColor: colors.background, paddingTop: insets.top + 5 }]}><View style={styles.headerWrap}><Header title={view === 'taking' ? 'Exam in progress' : 'Exam Mode'} subtitle={view === 'history' ? 'Saved runs' : view === 'results' ? attempt?.title : 'Adaptive preparation'} onBack={view === 'taking' ? () => { if (build) recordStudyEvent({ type: 'exam-abandoned', examId: build.id, examName: build.title, sourceDeckIds: build.sourceDeckIds, deckId: build.sourceDeckIds[0], assessmentKind: settings.mode === 'targeted' ? 'targeted' : 'adaptive' }); onBack(); } : view === 'setup' ? onBack : () => setView('setup')} right={view !== 'taking' ? <Pill label={view === 'history' ? 'HISTORY' : view === 'results' ? 'RESULTS' : 'ONE SYSTEM'} tone="purple" /> : null} /></View>{view === 'setup' ? renderSetup() : view === 'taking' ? renderTaking() : view === 'review' ? renderReview() : view === 'results' ? renderResults() : renderHistory()}<AskStudyBoltSheet visible={tutorVisible && sheetContextReady} sectionTitle={tutorQuestion?.conceptTitle ?? tutorQuestion?.source.label ?? 'Exam question'} signedIn={Boolean(user) || canAttemptOnDeviceAI(onDeviceAI)} configured={canAttemptOnDeviceAI(onDeviceAI) || isAiTutorConfigured} quota={provider === 'cloud' ? tutorQuota : undefined} loading={tutorLoading} error={tutorError} response={tutorResponse} provider={provider} providerDetail={providerDetail} initialQuestion={lastTutorRequest.current.question} onAsk={(action, request) => void runTutor(action, request)} onRetry={() => void runTutor(lastTutorRequest.current.action, lastTutorRequest.current.question)} onSpeak={(text) => { void Speech.stop().then(async () => Speech.speak(text, await getNarrationSpeechOptions())); }} onResume={() => setTutorVisible(false)} onRequireAuth={onRequireAuth} onClose={() => { void Speech.stop(); setTutorVisible(false); }} onQuizAnswered={(correct) => { if (attempt) recordStudyEvent({ type: 'tutor-quiz', deckId: attempt.sourceDeckIds[0], examId: attempt.examId, examAttemptId: attempt.id, tutorQuizCorrect: correct }); }} /></View>;
+  return <PageEntrance style={[styles.page, { backgroundColor: colors.background, paddingTop: insets.top + 5 }]}><View style={styles.headerWrap}><Header title={view === 'taking' ? 'Exam in progress' : 'Exam Mode'} subtitle={view === 'history' ? 'Saved runs' : view === 'results' ? attempt?.title : 'Adaptive preparation'} onBack={view === 'taking' ? () => { if (build) recordStudyEvent({ type: 'exam-abandoned', examId: build.id, examName: build.title, sourceDeckIds: build.sourceDeckIds, deckId: build.sourceDeckIds[0], assessmentKind: settings.mode === 'targeted' ? 'targeted' : 'adaptive' }); onBack(); } : view === 'setup' ? onBack : () => setView('setup')} right={view !== 'taking' ? <Pill label={view === 'history' ? 'HISTORY' : view === 'results' ? 'RESULTS' : 'ONE SYSTEM'} tone="purple" /> : null} /></View>{view === 'setup' ? renderSetup() : view === 'taking' ? renderTaking() : view === 'review' ? renderReview() : view === 'results' ? renderResults() : renderHistory()}<AskStudyBoltSheet visible={tutorVisible && sheetContextReady} sectionTitle={tutorQuestion?.conceptTitle ?? tutorQuestion?.source.label ?? 'Exam question'} signedIn={Boolean(user) || canAttemptOnDeviceAI(onDeviceAI)} configured={canAttemptOnDeviceAI(onDeviceAI) || isAiTutorConfigured} quota={provider === 'cloud' ? tutorQuota : undefined} loading={tutorLoading} error={tutorError} response={tutorResponse} provider={provider} providerDetail={providerDetail} initialQuestion={lastTutorRequest.current.question} onAsk={(action, request) => void runTutor(action, request)} onRetry={() => void runTutor(lastTutorRequest.current.action, lastTutorRequest.current.question)} onSpeak={(text) => { void Speech.stop().then(async () => Speech.speak(text, await getNarrationSpeechOptions())); }} onResume={() => setTutorVisible(false)} onRequireAuth={onRequireAuth} onClose={() => { void Speech.stop(); setTutorVisible(false); }} onQuizAnswered={(correct) => { if (attempt) recordStudyEvent({ type: 'tutor-quiz', deckId: attempt.sourceDeckIds[0], examId: attempt.examId, examAttemptId: attempt.id, tutorQuizCorrect: correct }); }} /></PageEntrance>;
 }
 
 function SectionLabel({ title, detail }: { title: string; detail?: string }) {
@@ -616,12 +618,12 @@ function EmptyState({ title, detail }: { title: string; detail: string }) {
 const styles = StyleSheet.create({
   page: { flex: 1 },
   headerWrap: { paddingHorizontal: 20 },
-  content: { paddingHorizontal: 20, paddingBottom: 120 },
-  heroRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 11, marginBottom: 16 },
+  content: { paddingHorizontal: 20, paddingBottom: 120, width: '100%', maxWidth: 760, alignSelf: 'center' },
+  heroRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 14, marginBottom: 22, marginTop: 12 },
   heroIcon: { width: 47, height: 47, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
-  heroTitle: { fontSize: 25, lineHeight: 30, fontWeight: '900', letterSpacing: -0.6 },
+  heroTitle: { fontSize: 28, lineHeight: 36, fontWeight: '800', letterSpacing: -0.6 },
   heroText: { fontSize: 14, lineHeight: 21, marginTop: 3 },
-  adaptiveCard: { padding: 15, marginBottom: 5 },
+  adaptiveCard: { padding: 20, marginBottom: 5, borderRadius: 22 },
   adaptiveTop: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
   adaptiveBolt: { width: 35, height: 35, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   adaptiveTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
@@ -673,21 +675,21 @@ const styles = StyleSheet.create({
   timerText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   warningBanner: { marginHorizontal: 20, marginTop: 10, padding: 10, borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 7 },
   warningText: { flex: 1, fontSize: 14, lineHeight: 21, fontWeight: '700' },
-  questionScroll: { padding: 20, paddingBottom: 110 },
+  questionScroll: { padding: 20, paddingBottom: 110, width: '100%', maxWidth: 760, alignSelf: 'center' },
   questionHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   questionRight: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 10 },
   sourceText: { maxWidth: 150, fontSize: 12, lineHeight: 18, fontWeight: '700' },
-  questionText: { fontSize: 22, lineHeight: 29, fontWeight: '900', marginTop: 20, letterSpacing: -0.4 },
+  questionText: { fontSize: 23, lineHeight: 32, fontWeight: '700', marginTop: 20, letterSpacing: -0.4 },
   helperText: { fontSize: 14, lineHeight: 21, marginTop: 8 },
   confidenceRow: { flexDirection: 'row', gap: 7, marginTop: 18 },
-  confidenceChoice: { flex: 1, minHeight: 34, borderWidth: 1, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  confidenceChoice: { flex: 1, minHeight: 44, borderWidth: 1, borderRadius: 10, alignItems: 'center', justifyContent: 'center', paddingVertical: 8 },
   confidenceText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   answerOptions: { gap: 9, marginTop: 17 },
-  answerOption: { minHeight: 62, borderWidth: 1, borderRadius: 15, padding: 11, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  answerOption: { minHeight: 68, borderWidth: 1, borderRadius: 18, padding: 15, flexDirection: 'row', alignItems: 'center', gap: 10 },
   answerMarker: { width: 32, height: 32, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   answerMarkerText: { fontSize: 12, lineHeight: 18, fontWeight: '700' },
   answerOptionText: { flex: 1, fontSize: 14, lineHeight: 21, fontWeight: '600' },
-  openInput: { minHeight: 170, borderWidth: 1, borderRadius: 15, padding: 13, marginTop: 17, fontSize: 15, lineHeight: 22, textAlignVertical: 'top' },
+  openInput: { minHeight: 170, borderWidth: 1, borderRadius: 18, padding: 16, marginTop: 17, fontSize: 16, lineHeight: 25, textAlignVertical: 'top' },
   inlineFeedback: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, borderWidth: 1, borderRadius: 14, padding: 12, marginTop: 13 },
   feedbackTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   feedbackBody: { fontSize: 14, lineHeight: 21, marginTop: 4 },
@@ -702,7 +704,7 @@ const styles = StyleSheet.create({
   pauseOverlay: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, zIndex: 5, alignItems: 'center', justifyContent: 'center', padding: 30 },
   pauseIcon: { width: 70, height: 70, borderRadius: 35, alignItems: 'center', justifyContent: 'center' },
   pauseTitle: { fontSize: 24, fontWeight: '900', marginTop: 16 },
-  pauseText: { fontSize: 14, lineHeight: 21, marginTop: 6 },
+  pauseText: { fontSize: 14, lineHeight: 21, marginTop: 6, textAlign: 'center' },
   pauseButton: { minWidth: 210, marginTop: 20 },
   reviewHero: { alignItems: 'center', paddingTop: 20, paddingBottom: 15 },
   reviewList: { paddingVertical: 2 },
@@ -719,8 +721,8 @@ const styles = StyleSheet.create({
   masteryChange: { marginTop: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   masteryChangeValue: { fontSize: 20, fontWeight: '900', marginTop: 4 },
   estimateNote: { fontSize: 14, lineHeight: 21, marginTop: 9 },
-  metricGrid: { flexDirection: 'row', gap: 8, marginTop: 10 },
-  metric: { flex: 1, alignItems: 'center', paddingVertical: 13, paddingHorizontal: 5 },
+  metricGrid: { flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' },
+  metric: { alignItems: 'center', paddingVertical: 13, paddingHorizontal: 5, flexBasis: 100, flexGrow: 1, minWidth: 100, padding: 16 },
   metricValue: { fontSize: 18, fontWeight: '900' },
   metricLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', marginTop: 4, textAlign: 'center' },
   breakdown: { marginTop: 19 },
@@ -744,7 +746,7 @@ const styles = StyleSheet.create({
   rememberText: { flex: 1, fontSize: 14, lineHeight: 21 },
   missedActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 12 },
   missedSource: { flex: 1, fontSize: 12, lineHeight: 18 },
-  askButton: { borderRadius: 10, paddingHorizontal: 9, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 5 },
+  askButton: { borderRadius: 10, paddingHorizontal: 9, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 5, minHeight: 44 },
   askButtonText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   emptyResult: { flexDirection: 'row', gap: 8, alignItems: 'center', marginTop: 10 },
   emptyResultText: { flex: 1, fontSize: 14, lineHeight: 21 },
@@ -753,17 +755,17 @@ const styles = StyleSheet.create({
   flaggedResultRow: { minHeight: 55, borderWidth: 1, borderRadius: 13, paddingHorizontal: 11, marginTop: 7, flexDirection: 'row', alignItems: 'center', gap: 8 },
   flaggedResultText: { flex: 1, fontSize: 14, lineHeight: 21, fontWeight: '700' },
   actionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 18 },
-  actionButton: { width: '48.5%', minHeight: 52, borderWidth: 1, borderRadius: 14, paddingHorizontal: 9, flexDirection: 'row', alignItems: 'center', gap: 7 },
+  actionButton: { minHeight: 52, borderWidth: 1, borderRadius: 14, paddingHorizontal: 9, flexDirection: 'row', alignItems: 'center', gap: 7, flexBasis: 145, flexGrow: 1, paddingVertical: 14 },
   actionButtonText: { flex: 1, fontSize: 14, lineHeight: 21, fontWeight: '700' },
   toolHeading: { marginTop: 10 },
-  historyCard: { minHeight: 76, borderWidth: 1, borderRadius: 15, padding: 11, flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 9 },
+  historyCard: { minHeight: 90, borderWidth: 1, borderRadius: 20, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 9 },
   historyScore: { width: 52, height: 52, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   historyScoreText: { fontSize: 15, fontWeight: '900' },
   historyTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   historyMeta: { fontSize: 12, lineHeight: 18, marginTop: 3 },
   historyWeak: { fontSize: 14, lineHeight: 21, marginTop: 5 },
   loadMore: { minHeight: 46, borderWidth: 1, borderRadius: 13, marginTop: 13, alignItems: 'center', justifyContent: 'center' },
-  emptyState: { padding: 70, alignItems: 'center', gap: 10 },
+  emptyState: { padding: 24, alignItems: 'center', gap: 10, paddingVertical: 44 },
   emptyStateTitle: { fontSize: 18, fontWeight: '900' },
   emptyStateText: { maxWidth: 290, textAlign: 'center', fontSize: 14, lineHeight: 21 },
 });

@@ -1,8 +1,9 @@
+import { PolishedScreen as Screen } from '../components/PagePresentation';
 import React, { useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { BoltMark, Card, Header, Icon, Pill, PrimaryButton, ProgressBar, Screen } from '../components/ui';
+import { BoltMark, Card, Header, Icon, Pill, PrimaryButton, ProgressBar } from '../components/ui';
 import type { IconName } from '../components/ui';
 import { useStudyBolt } from '../StudyBoltContext';
 import type { AnswerConfidence, QuizAnswerRecord } from '../models';
@@ -208,7 +209,7 @@ export function SmartStudyScreen({ initialMode = 'smart', focusDeckId, focusSect
         </ScrollView>
 
         <View style={styles.lengthHeading}>
-          <View>
+          <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={[styles.lengthTitle, { color: colors.text }]}>Session length</Text>
             <Text style={[styles.lengthHint, { color: colors.textMuted }]}>StudyBolt fills the time with your highest priority prompts.</Text>
           </View>
@@ -406,13 +407,13 @@ function ReviewMetric({ value, label, color }: { value: string; label: string; c
 }
 
 const styles = StyleSheet.create({
-  introHero: { borderRadius: 22, padding: 19, marginTop: 5, overflow: 'hidden' },
+  introHero: { borderRadius: 24, padding: 22, marginTop: 5, overflow: 'hidden' },
   heroGoldGlow: { position: 'absolute', width: 170, height: 170, borderRadius: 85, right: -72, top: -92, opacity: 0.55 },
   heroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   heroBolt: { width: 48, height: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   heroEyebrow: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 1.3, marginTop: 18 },
-  heroTitle: { fontSize: 26, lineHeight: 32, fontWeight: '900', letterSpacing: -0.8, marginTop: 7 },
-  heroText: { fontSize: 14, lineHeight: 21, marginTop: 7 },
+  heroTitle: { fontSize: 28, lineHeight: 36, fontWeight: '800', letterSpacing: -0.8, marginTop: 7 },
+  heroText: { fontSize: 15, lineHeight: 24, marginTop: 7 },
   heroEstimate: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 18 },
   heroEstimateText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   modeRow: { gap: 8, paddingVertical: 14 },
@@ -439,7 +440,7 @@ const styles = StyleSheet.create({
   activeHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 17, minHeight: 48 },
   closeButton: { width: 35, height: 35, alignItems: 'center', justifyContent: 'center' },
   counter: { width: 38, textAlign: 'right', fontSize: 12, lineHeight: 18, fontWeight: '700' },
-  activeContent: { paddingHorizontal: 20, paddingTop: 22, paddingBottom: 150 },
+  activeContent: { paddingHorizontal: 20, paddingTop: 22, paddingBottom: 150, width: '100%', maxWidth: 760, alignSelf: 'center' },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   courseLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', marginTop: 13 },
   prompt: { fontSize: 25, lineHeight: 33, fontWeight: '900', letterSpacing: -0.7, marginTop: 8 },
@@ -447,7 +448,7 @@ const styles = StyleSheet.create({
   reasonText: { fontSize: 14, lineHeight: 21, fontWeight: '700', textTransform: 'capitalize' },
   confidenceTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700', marginTop: 23, marginBottom: 9 },
   confidenceChoices: { flexDirection: 'row', gap: 7 },
-  confidenceChoice: { flex: 1, minHeight: 46, borderWidth: 1, borderRadius: 13, alignItems: 'center', justifyContent: 'center', gap: 3 },
+  confidenceChoice: { flex: 1, minHeight: 44, borderWidth: 1, borderRadius: 13, alignItems: 'center', justifyContent: 'center', gap: 3 },
   confidenceChoiceText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   options: { gap: 9, marginTop: 19 },
   option: { minHeight: 62, borderRadius: 16, borderWidth: 1, padding: 11, flexDirection: 'row', alignItems: 'center', gap: 11 },
@@ -466,15 +467,15 @@ const styles = StyleSheet.create({
   dangerHint: { fontSize: 14, lineHeight: 21, fontWeight: '700', marginTop: 7 },
   bottomBar: { position: 'absolute', left: 0, right: 0, bottom: 0, borderTopWidth: StyleSheet.hairlineWidth, padding: 13, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', gap: 10 },
   bottomHint: { flex: 1, fontSize: 14, lineHeight: 21 },
-  nextButton: { minHeight: 48, minWidth: 143 },
+  nextButton: { minHeight: 50, minWidth: 143 },
   reviewIcon: { width: 88, height: 88, borderRadius: 28, alignSelf: 'center', alignItems: 'center', justifyContent: 'center', marginTop: 25 },
-  reviewTitle: { textAlign: 'center', fontSize: 27, fontWeight: '900', marginTop: 16 },
+  reviewTitle: { textAlign: 'center', fontSize: 28, fontWeight: '800', marginTop: 16, lineHeight: 36 },
   reviewSubtitle: { textAlign: 'center', fontSize: 16, lineHeight: 24, marginTop: 6, paddingHorizontal: 22 },
-  reviewGrid: { flexDirection: 'row', gap: 8, marginTop: 23 },
-  reviewMetric: { flex: 1, borderWidth: StyleSheet.hairlineWidth, borderRadius: 16, alignItems: 'center', paddingVertical: 15 },
+  reviewGrid: { flexDirection: 'row', gap: 8, marginTop: 23, flexWrap: 'wrap' },
+  reviewMetric: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 16, alignItems: 'center', paddingVertical: 15, flexBasis: 100, flexGrow: 1, minWidth: 100, padding: 16 },
   reviewMetricValue: { fontSize: 21, fontWeight: '900' },
   reviewMetricLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', marginTop: 3 },
-  issueCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 11, marginTop: 15 },
+  issueCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 11, marginTop: 15, padding: 18, borderRadius: 20 },
   issueIcon: { width: 39, height: 39, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   issueLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 0.8 },
   issueText: { fontSize: 14, lineHeight: 21, fontWeight: '700', marginTop: 4 },

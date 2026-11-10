@@ -1,10 +1,11 @@
+import { PolishedScreen as Screen, PolishedSectionHeader as SectionHeader } from '../components/PagePresentation';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import { typography } from '../theme';
 import React, { useEffect, useState } from 'react';
 import { Linking, Modal, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Card, Header, Icon, Pill, PrimaryButton, Screen, SectionHeader } from '../components/ui';
+import { Card, Header, Icon, Pill, PrimaryButton } from '../components/ui';
 import type { IconName } from '../components/ui';
 import { useStudyBolt } from '../StudyBoltContext';
 import type { RetentionMode, StudyType, ThemePreference } from '../models';
@@ -99,7 +100,7 @@ export function ProfileScreen({ onOpenOnboarding, onOpenAuth, onManageAccount, o
   return (
     <Screen>
       <Header title="Settings" right={<Pill label={user ? 'Signed in' : 'Guest'} tone={user ? 'mint' : 'neutral'} />} />
-      <View style={styles.profileTop}>
+      <View style={[styles.profileTop, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: StyleSheet.hairlineWidth }]}>
         <View style={[styles.avatar, { backgroundColor: colors.primarySoft }]}><Text style={[styles.avatarText, { color: colors.primary }]}>{initial}</Text></View>
         <Text style={[styles.title, { color: colors.text }]}>{user ? profile?.displayName || 'Account ready' : 'Your StudyBolt'}</Text>
         <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{user?.email ?? 'Studying locally as a guest'}</Text>
@@ -469,11 +470,11 @@ function Setting({ icon, title, detail, last = false, onPress }: { icon: IconNam
 }
 
 const styles = StyleSheet.create({
-  profileTop: { alignItems: 'center', paddingVertical: 17 },
-  avatar: { width: 70, height: 70, borderRadius: 35, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { fontSize: 26, fontWeight: '900' },
+  profileTop: { alignItems: 'center', paddingVertical: 17, padding: 22, marginTop: 12, borderRadius: 22 },
+  avatar: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { fontSize: 26, fontWeight: '700' },
   title: { ...typography.pageTitle,  marginTop: 12, },
-  subtitle: { fontSize: 16, lineHeight: 24, marginTop: 3 },
+  subtitle: { fontSize: 14, lineHeight: 21, marginTop: 3 },
   syncCard: { marginTop: 6 },
   syncRow: { flexDirection: 'row', gap: 12, alignItems: 'center' },
   syncIcon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
@@ -488,28 +489,28 @@ const styles = StyleSheet.create({
   studyTypeLabel: { flex: 1, fontSize: 12, lineHeight: 18, fontWeight: '700' },
   studyTypeNotice: { fontSize: 14, lineHeight: 21, fontWeight: '700', marginTop: 10 },
   themeCard: { padding: 12 },
-  themeOptions: { flexDirection: 'row', gap: 8 },
-  themeOption: { flex: 1, borderRadius: 13, borderWidth: 1, alignItems: 'center', paddingVertical: 13, gap: 5 },
+  themeOptions: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  themeOption: { flex: 1, borderRadius: 13, borderWidth: 1, alignItems: 'center', paddingVertical: 13, gap: 5, minHeight: 70, minWidth: 84, flexGrow: 1 },
   themeLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700' },
-  themeHint: { fontSize: 14, lineHeight: 21, marginTop: 12, paddingHorizontal: 3 },
+  themeHint: { fontSize: 12, lineHeight: 19, marginTop: 12, paddingHorizontal: 3 },
   narrationCard: { padding: 13 },
   narrationTop: { flexDirection: 'row', alignItems: 'center', gap: 11 },
   narrationIcon: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   narrationTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   narrationSubtitle: { fontSize: 16, lineHeight: 24, marginTop: 3 },
-  narrationSummary: { minHeight: 59, flexDirection: 'row', alignItems: 'center', borderRadius: 14, paddingHorizontal: 11, gap: 10, marginTop: 13 },
+  narrationSummary: { minHeight: 59, flexDirection: 'row', alignItems: 'center', borderRadius: 16, paddingHorizontal: 11, gap: 10, marginTop: 13, padding: 15 },
   narrationSummaryCopy: { flex: 1, minWidth: 0, paddingVertical: 9 },
   narrationSummaryLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 0.7 },
   narrationSummaryValue: { fontSize: 14, lineHeight: 21, fontWeight: '700', marginTop: 3 },
   narrationSummaryDivider: { width: StyleSheet.hairlineWidth, height: 31 },
-  narrationButton: { minHeight: 48, borderRadius: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16, paddingVertical: 10, gap: 10, marginTop: 10 },
+  narrationButton: { minHeight: 50, borderRadius: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16, paddingVertical: 10, gap: 10, marginTop: 10 },
   narrationButtonIcon: { width: 24, height: 24, flexShrink: 0, alignItems: 'center', justifyContent: 'center' },
   narrationButtonText: { fontSize: 14, lineHeight: 21, fontWeight: '700', flex: 1, minWidth: 0, textAlign: 'center' },
   narrationError: { fontSize: 14, lineHeight: 21, marginTop: 9 },
-  settingsCard: { paddingVertical: 1 },
-  setting: { minHeight: 67, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  settingsCard: { paddingVertical: 1, paddingHorizontal: 18, borderRadius: 22 },
+  setting: { minHeight: 76, flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 15 },
   settingIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  settingTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  settingTitle: { fontSize: 16, lineHeight: 23, fontWeight: '600' },
   settingDetail: { fontSize: 14, lineHeight: 21, marginTop: 3 },
   footer: { textAlign: 'center', fontSize: 14, lineHeight: 21, fontWeight: '700', marginTop: 26 },
   evidenceCard: { paddingVertical: 1 },
@@ -524,7 +525,7 @@ const styles = StyleSheet.create({
   retentionTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   retentionText: { fontSize: 14, lineHeight: 21, marginTop: 3 },
   retentionOptions: { flexDirection: 'row', gap: 7, marginTop: 14 },
-  retentionOption: { flex: 1, minHeight: 67, borderRadius: 13, borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, paddingVertical: 8, gap: 2 },
+  retentionOption: { flex: 1, minHeight: 52, borderRadius: 13, borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, paddingVertical: 12, gap: 2 },
   retentionOptionLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700' },
   retentionOptionDetail: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   retentionHint: { fontSize: 14, lineHeight: 21, marginTop: 11, paddingHorizontal: 2 },

@@ -1,6 +1,7 @@
+import { LoadingArtwork } from './StudyBoltLoading';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Animated, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import type { ImportAsset, StudyPack } from '../models';
@@ -78,7 +79,7 @@ export function AddStudyMaterialCard({ colors, onPress, onDropAssets, opening, p
             <Text style={[styles.limit, { color: colors.textSecondary }]}>{MAX_IMPORT_BYTES / 1024 / 1024} MB per file · Multiple PowerPoints, or one other file</Text>
           </View>
           <Pressable accessibilityRole="button" accessibilityLabel={opening ? 'Opening file picker' : 'Choose Files'} accessibilityHint="Choose one PDF, Word, or text file, or one or more PowerPoints. Creating a Study Pack requires sign-in and a connection." accessibilityState={{ disabled: opening, busy: opening }} disabled={opening} onPress={onPress} onPressIn={() => animatePress(true)} onPressOut={() => animatePress(false)} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} style={({ pressed }) => [styles.action, wide && styles.actionWide, { backgroundColor: primaryAction ? actionBackground : colors.primarySoft, opacity: opening || pressed ? 0.75 : 1 }]}>
-            {opening ? <ActivityIndicator color={primaryAction ? colors.primaryText : blue} /> : <MaterialCommunityIcons name="folder-open-outline" size={21} color={primaryAction ? colors.primaryText : blue} accessible={false} />}
+            {opening ? <LoadingArtwork compact colors={{ ...colors, primary: primaryAction ? colors.primaryText : blue }} /> : <MaterialCommunityIcons name="folder-open-outline" size={21} color={primaryAction ? colors.primaryText : blue} accessible={false} />}
             <Text style={[styles.actionText, { color: primaryAction ? colors.primaryText : blue }]}>{opening ? 'Opening files…' : 'Choose Files'}</Text>
             <MaterialCommunityIcons name="arrow-right" size={20} color={primaryAction ? colors.primaryText : blue} accessible={false} />
           </Pressable>
@@ -103,7 +104,7 @@ function GenerationStatus({ status, colors, reducedMotion, onOpen }: { status: H
     onPress={onOpen}
     style={({ pressed }) => [styles.generation, { borderTopColor: colors.border, opacity: pressed ? 0.75 : 1 }]}
   >
-    {creating && !reducedMotion ? <ActivityIndicator size="small" color={tone} /> : <MaterialCommunityIcons name={creating ? 'clock-outline' : ready ? 'check-circle-outline' : 'alert-circle-outline'} color={tone} size={22} accessible={false} />}
+    {creating && !reducedMotion ? <LoadingArtwork compact colors={{ ...colors, primary: tone }} /> : <MaterialCommunityIcons name={creating ? 'clock-outline' : ready ? 'check-circle-outline' : 'alert-circle-outline'} color={tone} size={22} accessible={false} />}
     <View style={styles.copy} accessibilityLiveRegion="polite">
       <Text style={[styles.generationTitle, { color: colors.text }]}>{title}</Text>
       <Text style={[styles.generationDetail, { color: colors.textSecondary }]}>{status.deck.title} · {status.ready} / {status.total} tools ready{status.failed ? ' · ' + status.failed + ' need retry' : ''}{status.missing ? ' · Some status information is unavailable' : ''}</Text>

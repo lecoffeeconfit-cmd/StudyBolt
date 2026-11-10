@@ -1,5 +1,6 @@
+import { LoadingArtwork } from './StudyBoltLoading';
 import React, { useEffect, useRef, useState } from 'react';
-import { AccessibilityInfo, ActivityIndicator, Animated, FlatList, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { AccessibilityInfo, Animated, FlatList, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle } from 'react-native-svg';
 
@@ -71,7 +72,7 @@ export function LearningMasteryHero({ groups, onExplore, onPractice, onAddMateri
     list.current?.scrollToOffset({ offset: index * width, animated: !reducedMotion });
   };
 
-  if (!hydrated) return <Card style={styles.card}><View accessibilityState={{ busy: true }} style={styles.loading}><ActivityIndicator color={colors.primary} /><Text style={[styles.copy, { color: colors.textSecondary }]}>Loading your course progress…</Text></View></Card>;
+  if (!hydrated) return <Card style={styles.card}><View accessibilityState={{ busy: true }} style={styles.loading}><LoadingArtwork colors={colors} /><Text style={[styles.copy, { color: colors.textSecondary }]}>Loading your course progress…</Text></View></Card>;
 
   return (
     <Card style={styles.card}>

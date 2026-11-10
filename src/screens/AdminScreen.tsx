@@ -1,9 +1,10 @@
+import { PolishedSectionHeader as SectionHeader, PageEntrance } from '../components/PagePresentation';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { StudyBoltLoading } from '../components/StudyBoltLoading';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../AuthContext';
-import { Card, Header, Icon, Pill, PrimaryButton, SectionHeader } from '../components/ui';
+import { Card, Header, Icon, Pill, PrimaryButton } from '../components/ui';
 import type { IconName } from '../components/ui';
 import { useStudyBolt } from '../StudyBoltContext';
 import { AdminAccessError, fetchAdminFeedback, fetchAdminOverview, fetchAdminUsers, performAdminUserAction, updateAdminFeedback } from '../services/admin';
@@ -108,7 +109,7 @@ export function AdminScreen({ onBack }: { onBack: () => void }) {
   const metrics = overview?.metrics;
 
   return (
-    <View style={[styles.root, { backgroundColor: colors.background }]}>
+    <PageEntrance style={[styles.root, { backgroundColor: colors.background }]}>
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 28 }]} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load(true)} tintColor={colors.primary} />}>
         <Header title="Admin Center" subtitle="StudyBolt" onBack={onBack} right={<Pill label="Admin" tone="purple" />} />
         <Card style={{ backgroundColor: colors.primarySoft }}>
@@ -193,7 +194,7 @@ export function AdminScreen({ onBack }: { onBack: () => void }) {
           </View>
         </KeyboardAvoidingView>
       </Modal>
-    </View>
+    </PageEntrance>
   );
 }
 
@@ -222,14 +223,14 @@ function Pagination({ page, total, onChange }: { page: number; total: number; on
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 }, content: { paddingHorizontal: 20, gap: 12 }, flex: { flex: 1, minWidth: 0 }, row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  heroIcon: { width: 50, height: 50, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }, heroTitle: { fontSize: 20, fontWeight: '900', lineHeight: 27 },
-  title: { fontSize: 15, fontWeight: '800', lineHeight: 21 }, eyebrow: { fontSize: 12, lineHeight: 18, letterSpacing: 1, fontWeight: '700', marginBottom: 5 }, copy: { fontSize: 14, lineHeight: 21 }, note: { fontSize: 14, lineHeight: 21 }, gap: { marginTop: 12 },
-  tabs: { flexDirection: 'row', padding: 4, borderRadius: 14 }, tab: { flex: 1, borderRadius: 11, alignItems: 'center', paddingVertical: 12 }, tabText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 }, metric: { flexBasis: '47%', flexGrow: 1, gap: 6 }, metricValue: { fontSize: 30, fontWeight: '900' },
+  root: { flex: 1 }, content: { paddingHorizontal: 20, gap: 14, width: '100%', maxWidth: 960, alignSelf: 'center' }, flex: { flex: 1, minWidth: 0 }, row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  heroIcon: { width: 50, height: 50, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }, heroTitle: { fontSize: 24, fontWeight: '700', lineHeight: 32 },
+  title: { fontSize: 16, fontWeight: '700', lineHeight: 23 }, eyebrow: { fontSize: 12, lineHeight: 18, letterSpacing: 1, fontWeight: '700', marginBottom: 5 }, copy: { fontSize: 14, lineHeight: 21 }, note: { fontSize: 14, lineHeight: 21 }, gap: { marginTop: 12 },
+  tabs: { flexDirection: 'row', padding: 4, borderRadius: 14, flexWrap: 'wrap', gap: 7 }, tab: { flex: 1, borderRadius: 11, alignItems: 'center', paddingVertical: 10, minHeight: 44, paddingHorizontal: 12 }, tabText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 }, metric: { flexBasis: '47%', flexGrow: 1, gap: 6, minWidth: 120 }, metricValue: { fontSize: 30, fontWeight: '900' },
   dataRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingVertical: 9 }, dataValue: { fontSize: 14, lineHeight: 21, fontWeight: '700', maxWidth: '43%', textAlign: 'right' },
   choices: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 }, choice: { paddingHorizontal: 11, paddingVertical: 10, borderRadius: 12, borderWidth: 1 }, choiceText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
-  input: { borderWidth: 1, borderRadius: 12, padding: 13, fontSize: 14, marginTop: 8 }, actionButton: { borderWidth: 1, borderRadius: 12, padding: 12, marginTop: 9, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }, actionText: { fontSize: 14, lineHeight: 21, fontWeight: '700', flexShrink: 1, textAlign: 'center' },
+  input: { borderWidth: 1, borderRadius: 12, padding: 13, fontSize: 16, marginTop: 8, minHeight: 50, lineHeight: 24 }, actionButton: { borderWidth: 1, borderRadius: 12, padding: 12, marginTop: 9, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }, actionText: { fontSize: 14, lineHeight: 21, fontWeight: '700', flexShrink: 1, textAlign: 'center' },
   pagination: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }, loading: { paddingVertical: 35, alignItems: 'center', gap: 12 },
   timeRow: { marginBottom: 10 }, track: { height: 5, borderRadius: 5, overflow: 'hidden' }, bar: { height: 5, borderRadius: 5 }, replyBox: { borderRadius: 12, padding: 12, marginTop: 12 },
   modalBackdrop: { flex: 1, backgroundColor: '#00000088', justifyContent: 'center', padding: 20 }, modal: { maxHeight: '85%', borderRadius: 22, borderWidth: 1, padding: 20, width: '100%', maxWidth: 560, alignSelf: 'center' }, replyInput: { minHeight: 120 },

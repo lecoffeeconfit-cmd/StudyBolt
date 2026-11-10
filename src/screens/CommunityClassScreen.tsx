@@ -1,3 +1,4 @@
+import { PolishedScreen as Screen, PolishedSectionHeader as SectionHeader } from '../components/PagePresentation';
 import React, { useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { StudyBoltLoading } from '../components/StudyBoltLoading';
@@ -5,7 +6,7 @@ import { StudyBoltLoading } from '../components/StudyBoltLoading';
 import { useAuth } from '../AuthContext';
 import { CommunitySetCard } from '../components/CommunitySetCard';
 import { SubjectIcon } from '../components/SubjectIcon';
-import { Card, Header, Icon, Pill, PrimaryButton, Screen, SectionHeader } from '../components/ui';
+import { Card, Header, Icon, Pill, PrimaryButton } from '../components/ui';
 import type { CommunityClass, DiscoverStudySet } from '../models';
 import { useStudyBolt } from '../StudyBoltContext';
 import { getCommunityClass, joinCommunityClass, leaveCommunityClass, listPublicStudySets } from '../services/community';
@@ -142,12 +143,12 @@ function MiniStat({ icon, value, label, textValue = false }: { icon: 'bookshelf'
 
 const styles = StyleSheet.create({
   loading: { minHeight: 320, alignItems: 'center', justifyContent: 'center', gap: 12 },
-  loadingText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
-  errorCard: { alignItems: 'center', paddingVertical: 30, marginTop: 20 },
-  errorTitle: { fontSize: 17, fontWeight: '900', marginTop: 12 },
-  errorText: { maxWidth: 300, fontSize: 14, lineHeight: 21, textAlign: 'center', marginTop: 5 },
-  retry: { minWidth: 170, marginTop: 17 },
-  hero: { flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 16, padding: 17 },
+  loadingText: { fontSize: 14, lineHeight: 22, fontWeight: '700' },
+  errorCard: { alignItems: 'center', paddingVertical: 30, marginTop: 20, padding: 24, borderRadius: 22 },
+  errorTitle: { fontSize: 23, fontWeight: '700', marginTop: 12, lineHeight: 31 },
+  errorText: { maxWidth: '100%', fontSize: 14, lineHeight: 21, textAlign: 'center', marginTop: 5, width: '100%' },
+  retry: { minWidth: 170, marginTop: 17, minHeight: 50 },
+  hero: { flexDirection: 'row', alignItems: 'flex-start', gap: 14, marginTop: 16, padding: 20, borderRadius: 22 },
   heroCopy: { flex: 1 },
   code: { fontSize: 14, lineHeight: 21, fontWeight: '700', letterSpacing: 0.8 },
   name: { fontSize: 20, lineHeight: 25, fontWeight: '900', marginTop: 3 },
@@ -167,6 +168,6 @@ const styles = StyleSheet.create({
   list: { gap: 10 },
   empty: { alignItems: 'center', paddingVertical: 27 },
   emptyIcon: { width: 55, height: 55, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  emptyTitle: { fontSize: 14, fontWeight: '900', marginTop: 11 },
-  emptyText: { maxWidth: 290, fontSize: 14, lineHeight: 21, textAlign: 'center', marginTop: 4 },
+  emptyTitle: { fontSize: 22, fontWeight: '700', marginTop: 11, lineHeight: 29, maxWidth: '100%' },
+  emptyText: { maxWidth: '100%', fontSize: 14, lineHeight: 21, textAlign: 'center', marginTop: 4 },
 });

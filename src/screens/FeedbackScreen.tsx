@@ -1,8 +1,9 @@
+import { PolishedScreen as Screen, PolishedSectionHeader as SectionHeader, PageIntro } from '../components/PagePresentation';
 import React, { useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { StudyBoltLoading } from '../components/StudyBoltLoading';
 import { useAuth } from '../AuthContext';
-import { Card, Header, Pill, PrimaryButton, Screen, SectionHeader } from '../components/ui';
+import { Card, Header, Pill, PrimaryButton } from '../components/ui';
 import { useStudyBolt } from '../StudyBoltContext';
 import { fetchMyFeedback, submitFeedback, type FeedbackReport } from '../services/admin';
 
@@ -39,7 +40,7 @@ export function FeedbackScreen({ onBack, onRequireAuth }: { onBack: () => void; 
 
   return <Screen>
     <Header title="Help & support" onBack={onBack} />
-    <Card><Text style={[styles.title, { color: colors.text }]}>Help us improve StudyBolt</Text><Text style={[styles.copy, { color: colors.textSecondary }]}>Report a problem, suggest an idea, or ask a question. Describe what happened without including private study material or passwords.</Text></Card>
+    <PageIntro icon="lifebuoy" title="Help us improve StudyBolt" description="Report a problem, suggest an idea, or ask a question. Describe what happened without including private study material or passwords." />
     {!user ? <Card><Text style={[styles.copy, { color: colors.textSecondary }]}>Sign in to send a request and receive replies from StudyBolt support.</Text><PrimaryButton label="Sign in for support" icon="login" onPress={onRequireAuth} style={styles.gap} /></Card> : <>
       <Card>
         <View style={styles.options}>{(['bug', 'idea', 'question'] as const).map(item => <Pressable aria-pressed={category === item} key={item} accessibilityRole="button" accessibilityState={{ selected: category === item }} onPress={() => setCategory(item)} style={[styles.option, { backgroundColor: category === item ? colors.primary : colors.cardStrong }]}><Text style={[styles.optionLabel, { color: category === item ? colors.primaryText : colors.textSecondary }]}>{item === 'bug' ? 'Problem' : item === 'idea' ? 'Idea' : 'Question'}</Text></Pressable>)}</View>
@@ -57,7 +58,7 @@ export function FeedbackScreen({ onBack, onRequireAuth }: { onBack: () => void; 
 }
 
 const styles = StyleSheet.create({
-  title: { fontSize: 16, fontWeight: '800', lineHeight: 23 }, copy: { fontSize: 14, lineHeight: 21, marginTop: 6 }, gap: { marginTop: 14 }, flex: { flex: 1 },
-  options: { flexDirection: 'row', gap: 8 }, option: { flex: 1, padding: 12, borderRadius: 12, alignItems: 'center' }, optionLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700' },
-  input: { borderWidth: 1, borderRadius: 12, padding: 13, marginTop: 14, fontSize: 14 }, message: { minHeight: 120 }, reportHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 }, reply: { padding: 13, borderRadius: 12, marginTop: 14 },
+  title: { fontSize: 18, fontWeight: '700', lineHeight: 25 }, copy: { fontSize: 14, lineHeight: 22, marginTop: 6 }, gap: { marginTop: 14 }, flex: { flex: 1 },
+  options: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' }, option: { flex: 1, padding: 12, borderRadius: 14, alignItems: 'center', minHeight: 48, minWidth: 80 }, optionLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700' },
+  input: { borderWidth: 1, borderRadius: 16, padding: 15, marginTop: 14, fontSize: 16, minHeight: 52, lineHeight: 24 }, message: { minHeight: 150 }, reportHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' }, reply: { padding: 16, borderRadius: 16, marginTop: 14 },
 });

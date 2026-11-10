@@ -1,7 +1,8 @@
+import { StudyBoltLoading } from './StudyBoltLoading';
 import type { Voice } from 'expo-speech';
 import * as Speech from 'expo-speech';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Easing, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Animated, Easing, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useReducedMotion } from '../hooks/useReducedMotion';
@@ -197,7 +198,7 @@ export function NarrationSettingsSheet({
               {visibleLanguages.map(({ code, label }) => (
                 <OptionRow key={code} title={label} detail={code} active={preferences.language === code} color={colors.primary} textColor={colors.text} mutedColor={colors.textMuted} borderColor={colors.border} onSelect={() => selectLanguage(code)} />
               ))}
-              {loading ? <ActivityIndicator color={colors.primary} style={styles.loading} /> : null}
+              {loading ? <View style={styles.loading}><StudyBoltLoading compact colors={colors} message="Loading narration options…" /></View> : null}
               {!loading && !languages.length ? <EmptyState text="No built-in speech languages were found on this phone." /> : null}
               {!loading && languages.length > 0 && !visibleLanguages.length ? <EmptyState text="No languages match that search." /> : null}
             </> : <>
@@ -219,7 +220,7 @@ export function NarrationSettingsSheet({
               {visibleVoices.map((voice) => (
                 <OptionRow key={voice.identifier} title={voice.name} detail={`${narrationLanguageLabel(voice.language)}${voice.quality === Speech.VoiceQuality.Enhanced ? ' · Enhanced' : ''}`} active={preferences.voiceIdentifier === voice.identifier} color={colors.mint} textColor={colors.text} mutedColor={colors.textMuted} borderColor={colors.border} onSelect={() => selectVoice(voice)} onPreview={() => preview(voice)} />
               ))}
-              {loading ? <ActivityIndicator color={colors.primary} style={styles.loading} /> : null}
+              {loading ? <View style={styles.loading}><StudyBoltLoading compact colors={colors} message="Loading narration options…" /></View> : null}
               {!loading && !visibleVoices.length ? <EmptyState text={preferences.language ? 'No voices are installed for this language. Choose another language or add voices in your phone settings.' : 'No built-in voices were found on this phone.'} /> : null}
             </>}
           </ScrollView>

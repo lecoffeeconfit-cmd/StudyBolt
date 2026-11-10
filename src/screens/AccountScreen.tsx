@@ -1,10 +1,11 @@
+import { PolishedScreen as Screen, PolishedSectionHeader as SectionHeader } from '../components/PagePresentation';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Animated, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '../AuthContext';
 import { AuthField } from '../components/AuthField';
-import { Card, Header, Icon, PrimaryButton, Screen, SectionHeader } from '../components/ui';
+import { Card, Header, Icon, PrimaryButton } from '../components/ui';
 import { useStudyBolt } from '../StudyBoltContext';
 import { radius } from '../theme';
 import { checkAppleSubscriptionForDeletion, openAppleSubscriptionManagement } from '../services/subscriptions';
@@ -110,7 +111,7 @@ export function AccountScreen({ onBack, onSignedOut, onDeleted }: { onBack: () =
 
   return (
     <>
-      <Screen>
+      <Screen animate={false}>
         <Header title="Account" subtitle="Security & access" onBack={onBack} />
         <Animated.View style={{ opacity: entrance, transform: [{ translateY: entrance.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) }] }}>
           <View style={styles.identity}>
@@ -228,17 +229,17 @@ function AccountAction({ icon, title, detail, onPress, loading }: { icon: 'lock-
 }
 
 const styles = StyleSheet.create({
-  identity: { flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 10 },
+  identity: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 20, flexWrap: 'wrap' },
   avatar: { width: 50, height: 50, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { fontSize: 20, fontWeight: '900' },
-  identityTitle: { fontSize: 14, fontWeight: '900' },
+  avatarText: { fontSize: 20, fontWeight: '700' },
+  identityTitle: { fontSize: 18, fontWeight: '700', lineHeight: 25 },
   identityEmail: { fontSize: 14, lineHeight: 21, marginTop: 3 },
   securePill: { borderRadius: radius.pill, paddingHorizontal: 9, paddingVertical: 6, flexDirection: 'row', gap: 4, alignItems: 'center' },
   secureText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
-  notice: { borderRadius: 14, marginTop: 10, paddingHorizontal: 13, paddingVertical: 11, flexDirection: 'row', alignItems: 'center', gap: 9 },
+  notice: { borderRadius: 16, marginTop: 10, paddingHorizontal: 13, paddingVertical: 11, flexDirection: 'row', alignItems: 'center', gap: 9, padding: 16 },
   noticeText: { flex: 1, fontSize: 14, lineHeight: 21, fontWeight: '700' },
-  formCard: { gap: 12 },
-  helper: { fontSize: 14, lineHeight: 21 },
+  formCard: { gap: 12, padding: 20, borderRadius: 22 },
+  helper: { fontSize: 13, lineHeight: 21 },
   cardButton: { minHeight: 48 },
   actionCard: { paddingVertical: 2 },
   accountAction: { minHeight: 67, flexDirection: 'row', alignItems: 'center', gap: 11 },
@@ -246,7 +247,7 @@ const styles = StyleSheet.create({
   actionTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   actionDetail: { fontSize: 14, lineHeight: 21, marginTop: 3 },
   separator: { height: StyleSheet.hairlineWidth },
-  dangerCard: { marginBottom: 10 },
+  dangerCard: { marginBottom: 10, padding: 20, borderRadius: 22 },
   dangerTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 11 },
   dangerIcon: { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   dangerTitle: { fontSize: 14, fontWeight: '900' },

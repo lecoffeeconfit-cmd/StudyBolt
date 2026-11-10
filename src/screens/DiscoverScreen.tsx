@@ -1,10 +1,11 @@
+import { PolishedScreen as Screen } from '../components/PagePresentation';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { StudyBoltLoading } from '../components/StudyBoltLoading';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { LoadingArtwork, StudyBoltLoading } from '../components/StudyBoltLoading';
 
 import { CommunitySetCard } from '../components/CommunitySetCard';
 import { SubjectIcon } from '../components/SubjectIcon';
-import { Card, Header, Icon, Pill, Screen } from '../components/ui';
+import { Card, Header, Icon, Pill } from '../components/ui';
 import type { CommunityClass, DiscoverSort, DiscoverStudySet, StudyPack } from '../models';
 import { useStudyBolt } from '../StudyBoltContext';
 import { isCommunityConfigured, listCommunityClasses, listPublicStudySets } from '../services/community';
@@ -164,7 +165,7 @@ export function DiscoverScreen({
 
       {hasMore && !loading ? (
         <Pressable accessibilityRole="button" disabled={loadingMore} onPress={loadMore} style={[styles.moreButton, { backgroundColor: colors.cardStrong }]}>
-          {loadingMore ? <ActivityIndicator size="small" color={colors.primary} /> : <Icon name="chevron-down" size={19} color={colors.primary} />}
+          {loadingMore ? <LoadingArtwork compact colors={colors} /> : <Icon name="chevron-down" size={19} color={colors.primary} />}
           <Text style={[styles.moreText, { color: colors.primary }]}>{loadingMore ? 'Loading…' : 'Show more'}</Text>
         </Pressable>
       ) : null}
@@ -229,12 +230,12 @@ function SharedList({ decks, query, onOpenDeck }: { decks: StudyPack[]; query: s
 
 const styles = StyleSheet.create({
   pageIntro: { marginTop: 13 },
-  title: { fontSize: 28, lineHeight: 33, fontWeight: '900', letterSpacing: -0.9 },
-  subtitle: { fontSize: 16, lineHeight: 24, marginTop: 4 },
-  search: { minHeight: 48, borderRadius: 14, flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 13, marginTop: 16 },
-  searchInput: { flex: 1, minWidth: 0, fontSize: 15, lineHeight: 22, paddingVertical: 12 },
-  tabs: { flexDirection: 'row', gap: 4, marginTop: 10 },
-  tab: { flex: 1, minHeight: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  title: { fontSize: 28, lineHeight: 36, fontWeight: '800', letterSpacing: -0.65 },
+  subtitle: { fontSize: 14, lineHeight: 21, marginTop: 6 },
+  search: { minHeight: 52, borderRadius: 18, flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 13, marginTop: 16 },
+  searchInput: { flex: 1, minWidth: 0, fontSize: 16, lineHeight: 24, paddingVertical: 12 },
+  tabs: { flexDirection: 'row', gap: 6, marginTop: 10, flexWrap: 'wrap' },
+  tab: { minHeight: 44, borderRadius: 11, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, minWidth: 84, paddingVertical: 10, flexBasis: '45%', flexGrow: 1 },
   tabText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   sorts: { flexDirection: 'row', gap: 7, marginTop: 12 },
   sort: { minHeight: 34, borderRadius: 17, borderWidth: 1, justifyContent: 'center', paddingHorizontal: 12 },
@@ -244,11 +245,11 @@ const styles = StyleSheet.create({
   skeleton: { height: 112, borderRadius: 18 },
   stateCard: { alignItems: 'center', marginTop: 16, paddingVertical: 26 },
   stateIcon: { width: 56, height: 56, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  stateTitle: { fontSize: 15, fontWeight: '900', marginTop: 12 },
-  stateText: { maxWidth: 300, fontSize: 14, lineHeight: 21, textAlign: 'center', marginTop: 4 },
+  stateTitle: { fontSize: 15, fontWeight: '900', marginTop: 12, maxWidth: '100%' },
+  stateText: { maxWidth: '100%', fontSize: 14, lineHeight: 21, textAlign: 'center', marginTop: 4 },
   retry: { minHeight: 38, borderRadius: 12, justifyContent: 'center', paddingHorizontal: 15, marginTop: 13 },
   retryText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
-  classCard: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12 },
+  classCard: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 18, borderRadius: 20 },
   classCopy: { flex: 1, minWidth: 0 },
   classTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   classCode: { flexShrink: 1, fontSize: 14, fontWeight: '900' },

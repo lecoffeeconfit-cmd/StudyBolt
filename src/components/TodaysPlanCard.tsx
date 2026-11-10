@@ -1,6 +1,7 @@
+import { LoadingArtwork } from './StudyBoltLoading';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Easing, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Animated, Easing, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import type { HomeDashboard } from '../services/homeDashboard';
@@ -101,7 +102,7 @@ export function TodaysPlanCard({ dashboard, colors, onStartSession, onOpenPriori
 
       <Animated.View style={{ marginTop: 18, transform: reducedMotion ? [] : [{ scale: press.interpolate({ inputRange: [0, 1], outputRange: [1, 0.99] }) }] }}>
         <Pressable accessibilityRole="button" accessibilityLabel={opening ? 'Opening your next step' : focus.actionLabel} accessibilityHint={focus.reason} accessibilityState={{ busy: opening, disabled: opening }} disabled={opening} onPress={() => { void start(); }} onPressIn={() => animatePress(true)} onPressOut={() => animatePress(false)} onFocus={() => setFocused('action')} onBlur={() => setFocused(null)} style={({ pressed }) => [styles.action, !hasMaterials && styles.firstAction, { backgroundColor: hasMaterials ? actionBackground : colors.primarySoft, borderColor: focused === 'action' ? colors.text : 'transparent', opacity: opening || pressed ? 0.8 : 1 }]}>
-          {opening ? <ActivityIndicator color={hasMaterials ? colors.primaryText : blue} /> : <PlanIcon name={focus.medium === 'materials' ? 'plus' : focus.medium === 'notes' ? 'book-open-page-variant-outline' : focus.medium === 'pack' ? 'file-document-outline' : 'play'} color={hasMaterials ? colors.primaryText : blue} />}
+          {opening ? <LoadingArtwork compact colors={{ ...colors, primary: hasMaterials ? colors.primaryText : blue }} /> : <PlanIcon name={focus.medium === 'materials' ? 'plus' : focus.medium === 'notes' ? 'book-open-page-variant-outline' : focus.medium === 'pack' ? 'file-document-outline' : 'play'} color={hasMaterials ? colors.primaryText : blue} />}
           <Text style={[styles.actionText, { color: hasMaterials ? colors.primaryText : blue }]}>{opening ? 'Opening…' : focus.actionLabel}</Text>
           <PlanIcon name="arrow-right" color={hasMaterials ? colors.primaryText : blue} />
         </Pressable>

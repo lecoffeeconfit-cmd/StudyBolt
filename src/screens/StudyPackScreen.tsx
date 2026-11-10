@@ -2368,7 +2368,7 @@ function MaterialUnavailable({ deck, material }: { deck: StudyPack; material: St
       {generating ? <StudyBoltLoading
         variant={material === 'flashcards' ? 'flashcardGeneration' : material === 'quiz' ? 'quizGeneration' : material === 'audio' ? 'studyCastGeneration' : 'documentProcessing'}
         colors={colors}
-        message={material === 'audio' ? 'Preparing your StudyCast…' : `Preparing ${label.toLowerCase()}…`}
+        message={material === 'audio' ? 'Getting your StudyCast ready…' : material === 'flashcards' ? 'Building your flashcards…' : material === 'quiz' ? 'Preparing your quiz…' : `Organizing ${label.toLowerCase()}…`}
         detail={state?.stage || 'Your request is in progress. This tool will open when it is ready.'}
       /> : <>
       <View style={[styles.materialStateIcon, { backgroundColor: failed ? `${colors.danger}15` : colors.primarySoft }]}>

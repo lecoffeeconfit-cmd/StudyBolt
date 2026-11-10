@@ -1,10 +1,12 @@
+import { LoadingArtwork, StudyBoltLoading } from '../components/StudyBoltLoading';
+import { PolishedScreen as Screen, PageEntrance } from '../components/PagePresentation';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '../AuthContext';
-import { Card, Header, Icon, Pill, PrimaryButton, Screen } from '../components/ui';
+import { Card, Header, Icon, Pill, PrimaryButton } from '../components/ui';
 import { useStudyBolt } from '../StudyBoltContext';
 import type { AiVisualAnalysis, AiVisualAnalysisRequest, NoteBlock, StudyPack, VisualKnowledge } from '../models';
 import { analyzeVisualWithAi, createVisualCardSuggestion } from '../services/aiTutor';
@@ -179,7 +181,7 @@ export function VisualReviewScreen({ deckId, onBack }: { deckId: string; onBack:
   };
 
   return (
-    <View style={[styles.page, { backgroundColor: colors.background, paddingTop: insets.top + 5 }]}>
+    <PageEntrance style={[styles.page, { backgroundColor: colors.background, paddingTop: insets.top + 5 }]}>
       <View style={styles.horizontalPadding}>
         <Header title="Visuals" subtitle={deck.title} onBack={onBack} right={<Pill label={`${visuals.length} SAVED`} tone="purple" />} />
       </View>
@@ -221,7 +223,7 @@ export function VisualReviewScreen({ deckId, onBack }: { deckId: string; onBack:
                   {needsAnalysis ? (
                     <>
                       <Pressable accessibilityRole="button" disabled={busy || batchBusy || !canAnalyze} onPress={() => void analyze(visual)} style={({ pressed }) => [styles.secondaryButton, { borderColor: colors.border, opacity: !canAnalyze ? 0.45 : pressed ? 0.72 : 1 }]}>
-                        {busy ? <ActivityIndicator size="small" color={colors.purple} /> : <Icon name="creation" size={16} color={colors.purple} />}
+                        {busy ? <LoadingArtwork compact colors={colors} /> : <Icon name="creation" size={16} color={colors.purple} />}
                         <Text style={[styles.secondaryButtonText, { color: colors.purple }]}>{busy ? 'Analyzing…' : visual.status === 'skipped_by_user' ? 'Analyze later' : 'Analyze'}</Text>
                       </Pressable>
                       {visual.status !== 'skipped_by_user' ? <Pressable accessibilityRole="button" disabled={busy || batchBusy} onPress={() => skipAnalysis(visual.id)} style={({ pressed }) => [styles.skipButton, { opacity: pressed ? 0.65 : 1 }]}><Text style={[styles.skipButtonText, { color: colors.textMuted }]}>Skip</Text></Pressable> : null}
@@ -265,7 +267,7 @@ export function VisualReviewScreen({ deckId, onBack }: { deckId: string; onBack:
             </View>
             <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
               {cardVisual ? <VisualImage visual={cardVisual} height={170} /> : null}
-              {cardBusy ? <View style={styles.suggestionLoading}><ActivityIndicator color={colors.primary} /><Text style={[styles.suggestionText, { color: colors.textSecondary }]}>Creating a source-grounded suggestion…</Text></View> : null}
+              {cardBusy ? <StudyBoltLoading compact colors={colors} message="Preparing a study suggestion…" /> : null}
               {cardError ? <View style={[styles.cardError, { backgroundColor: `${colors.danger}12` }]}><Icon name="alert-circle-outline" color={colors.danger} size={18} /><Text style={[styles.cardErrorText, { color: colors.danger }]}>{cardError}</Text></View> : null}
               {!cardBusy && question ? (
                 <>
@@ -281,7 +283,7 @@ export function VisualReviewScreen({ deckId, onBack }: { deckId: string; onBack:
           </View>
         </View>
       </Modal>
-    </View>
+    </PageEntrance>
   );
 }
 
@@ -347,16 +349,16 @@ function enrichNotes(notes: NoteBlock[], visual: VisualKnowledge, analysis: AiVi
 const styles = StyleSheet.create({
   page: { flex: 1 },
   horizontalPadding: { paddingHorizontal: 20 },
-  content: { padding: 20, paddingTop: 10, paddingBottom: 42, gap: 14 },
-  intro: { borderRadius: 18, padding: 16, flexDirection: 'row', gap: 12 },
+  content: { padding: 20, paddingTop: 10, paddingBottom: 42, gap: 14, width: '100%', maxWidth: 760, alignSelf: 'center' },
+  intro: { borderRadius: 22, padding: 20, flexDirection: 'row', gap: 14 },
   introCopy: { flex: 1, gap: 5 },
-  title: { fontSize: 20, fontWeight: '900' },
+  title: { fontSize: 23, fontWeight: '700', lineHeight: 31 },
   description: { fontSize: 14, lineHeight: 21 },
-  reviewHint: { borderRadius: 14, padding: 12, flexDirection: 'row', gap: 9, alignItems: 'center' },
+  reviewHint: { borderRadius: 16, padding: 15, flexDirection: 'row', gap: 9, alignItems: 'center' },
   reviewHintText: { flex: 1, fontSize: 14, lineHeight: 21 },
-  batchAction: { minHeight: 36, justifyContent: 'center', paddingHorizontal: 5 },
+  batchAction: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 10 },
   batchActionText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
-  visualCard: { padding: 12, gap: 13 },
+  visualCard: { padding: 18, gap: 13, borderRadius: 22 },
   imageFrame: { width: '100%', borderRadius: 14, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
   image: { width: '100%', height: '100%' },
   noImage: { gap: 7, paddingHorizontal: 20 },
@@ -375,8 +377,8 @@ const styles = StyleSheet.create({
   skipButton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 4 },
   skipButtonText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   emptyCard: { padding: 28, alignItems: 'center', gap: 9 },
-  emptyTitle: { fontSize: 18, fontWeight: '900' },
-  emptyText: { fontSize: 14, textAlign: 'center', lineHeight: 21 },
+  emptyTitle: { fontSize: 22, fontWeight: '700', lineHeight: 29, maxWidth: '100%' },
+  emptyText: { fontSize: 14, textAlign: 'center', lineHeight: 21, maxWidth: '100%' },
   previewRoot: { flex: 1, justifyContent: 'center', padding: 20, backgroundColor: 'rgba(13,18,38,0.65)' },
   previewSheet: { width: '100%', maxWidth: 620, alignSelf: 'center', borderRadius: 22, borderWidth: StyleSheet.hairlineWidth, padding: 14, gap: 14 },
   previewHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 12 },

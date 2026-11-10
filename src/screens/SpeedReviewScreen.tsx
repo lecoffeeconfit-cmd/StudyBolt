@@ -1,9 +1,10 @@
+import { PolishedScreen as Screen } from '../components/PagePresentation';
 import * as Speech from 'expo-speech';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { SpeedPickerSheet } from '../components/StudyCastSheets';
-import { Card, Header, Icon, Pill, PrimaryButton, ProgressBar, Screen } from '../components/ui';
+import { Card, Header, Icon, Pill, PrimaryButton, ProgressBar } from '../components/ui';
 import type { IconName } from '../components/ui';
 import { useStudyBolt } from '../StudyBoltContext';
 import type { StudyPack } from '../models';
@@ -236,22 +237,22 @@ export function SpeedReviewScreen({
 }
 
 const styles = StyleSheet.create({
-  heroRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
+  heroRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 18, marginTop: 12 },
   heroIcon: { width: 48, height: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   heroCopy: { flex: 1 },
-  heroTitle: { fontSize: 17, fontWeight: '900' },
+  heroTitle: { fontSize: 21, fontWeight: '700', lineHeight: 28 },
   heroText: { fontSize: 14, lineHeight: 21, marginTop: 3 },
-  playerCard: { marginTop: 18, padding: 18, borderWidth: 0, alignItems: 'center' },
+  playerCard: { marginTop: 18, padding: 22, borderWidth: 0, alignItems: 'center', borderRadius: 24 },
   playerTop: { width: '100%', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   playerPosition: { color: '#B9B1D6', fontSize: 14, lineHeight: 21, fontWeight: '700' },
   playerIcon: { width: 76, height: 76, borderRadius: 28, backgroundColor: '#302753', alignItems: 'center', justifyContent: 'center', marginTop: 20 },
-  playerTitle: { color: '#FFFFFF', fontSize: 20, fontWeight: '900', textAlign: 'center', marginTop: 16 },
-  playerSubtitle: { color: '#B9B1D6', fontSize: 16, lineHeight: 24, marginTop: 4 },
-  summaryPreview: { width: '100%', borderRadius: 14, backgroundColor: '#211D40', padding: 12, marginTop: 17 },
+  playerTitle: { color: '#FFFFFF', fontSize: 24, fontWeight: '700', textAlign: 'center', marginTop: 16, lineHeight: 32 },
+  playerSubtitle: { color: '#B9B1D6', fontSize: 14, lineHeight: 21, marginTop: 4 },
+  summaryPreview: { width: '100%', borderRadius: 18, backgroundColor: '#211D40', padding: 16, marginTop: 17 },
   summaryLabel: { color: '#B9A9EC', fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 0.8 },
-  summaryText: { color: '#E6E1F6', fontSize: 14, lineHeight: 21, marginTop: 5 },
+  summaryText: { color: '#E6E1F6', fontSize: 15, lineHeight: 24, marginTop: 5 },
   controls: { flexDirection: 'row', alignItems: 'center', gap: 28, marginTop: 18 },
-  skipButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
+  skipButton: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
   playButton: { width: 68, height: 68, borderRadius: 34, alignItems: 'center', justifyContent: 'center' },
   settingsCard: { marginTop: 13, paddingVertical: 4 },
   speedSetting: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 11 },
@@ -265,11 +266,11 @@ const styles = StyleSheet.create({
   footerHint: { fontSize: 14, lineHeight: 21, textAlign: 'center', marginTop: 15 },
   emptyCard: { alignItems: 'center', paddingVertical: 38, marginTop: 12 },
   emptyIcon: { width: 64, height: 64, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
-  emptyTitle: { fontSize: 18, fontWeight: '900', textAlign: 'center', marginTop: 14 },
-  emptyText: { maxWidth: 290, fontSize: 14, lineHeight: 21, textAlign: 'center', marginTop: 6 },
+  emptyTitle: { fontSize: 22, fontWeight: '700', textAlign: 'center', marginTop: 14, lineHeight: 29, maxWidth: '100%' },
+  emptyText: { maxWidth: '100%', fontSize: 14, lineHeight: 21, textAlign: 'center', marginTop: 6 },
   emptyButton: { alignSelf: 'stretch', marginTop: 18 },
-  completeCard: { alignItems: 'center', borderRadius: 20, padding: 24, marginTop: 12 },
+  completeCard: { alignItems: 'center', borderRadius: 24, padding: 26, marginTop: 12 },
   completeIcon: { width: 70, height: 70, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
-  completeTitle: { fontSize: 22, fontWeight: '900', marginTop: 16 },
-  completeText: { maxWidth: 290, fontSize: 14, lineHeight: 21, textAlign: 'center', marginTop: 6 },
+  completeTitle: { fontSize: 25, fontWeight: '700', marginTop: 16, lineHeight: 33, maxWidth: '100%' },
+  completeText: { maxWidth: '100%', fontSize: 14, lineHeight: 21, textAlign: 'center', marginTop: 6 },
 });

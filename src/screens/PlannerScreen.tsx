@@ -1,9 +1,10 @@
+import { PolishedScreen as Screen, PolishedSectionHeader as SectionHeader } from '../components/PagePresentation';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import { typography } from '../theme';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Platform, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 
-import { Card, Header, Icon, Pill, PrimaryButton, ProgressBar, Screen, SectionHeader } from '../components/ui';
+import { Card, Header, Icon, Pill, PrimaryButton, ProgressBar } from '../components/ui';
 import { SubjectIcon } from '../components/SubjectIcon';
 import type { IconName } from '../components/ui';
 import { useStudyBolt } from '../StudyBoltContext';
@@ -252,7 +253,7 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
   };
 
   return (
-    <Screen>
+    <Screen animate={false}>
       <Animated.View style={{ opacity: entrance, transform: [{ translateY: entrance.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) }] }}>
         <Header title="Planner" />
         <Text style={[styles.title, { color: colors.text }]}>Study plan</Text>
@@ -575,13 +576,13 @@ function formatMinutes(minutes: number): string {
 
 const styles = StyleSheet.create({
   title: { ...typography.pageTitle, marginTop: 13 },
-  subtitle: { fontSize: 16, lineHeight: 24, marginTop: 4 },
+  subtitle: { fontSize: 14, lineHeight: 21, marginTop: 4 },
   planControls: { marginTop: 2 },
   editPlanButton: { minHeight: 48, borderRadius: 14, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 10 },
   editPlanText: { flex: 1, fontSize: 14, lineHeight: 21, fontWeight: '700' },
   controlPressed: { opacity: 0.76, transform: [{ scale: 0.99 }] },
-  segmented: { flexDirection: 'row', borderRadius: 16, padding: 4, gap: 4 },
-  segment: { flex: 1, minHeight: 44, borderRadius: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  segmented: { flexDirection: 'row', borderRadius: 16, padding: 5, gap: 4 },
+  segment: { flex: 1, minHeight: 48, borderRadius: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
   segmentText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   choiceList: { gap: 8, marginTop: 10 },
   scopeChoice: { minHeight: 62, borderRadius: 16, borderWidth: 1, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 11 },
@@ -611,14 +612,14 @@ const styles = StyleSheet.create({
   examNoticeText: { flex: 1, fontSize: 14, lineHeight: 21 },
   quickDeadlineLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 0.9, marginTop: 15, marginBottom: 8 },
   durationGrid: { flexDirection: 'row', gap: 7 },
-  duration: { flex: 1, minHeight: 58, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  duration: { flex: 1, minHeight: 76, borderRadius: 18, borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, padding: 12 },
   durationLabel: { fontSize: 13, lineHeight: 19, fontWeight: '700' },
   durationDetail: { fontSize: 14, lineHeight: 21, marginTop: 3 },
-  recommendation: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12 },
-  recommendationTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  recommendation: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, padding: 18, borderRadius: 20 },
+  recommendationTitle: { fontSize: 16, lineHeight: 23, fontWeight: '700' },
   recommendationText: { fontSize: 14, lineHeight: 21, marginTop: 2 },
   modalityList: { gap: 8, marginTop: 9 },
-  modality: { minHeight: 60, borderRadius: 15, borderWidth: 1, paddingHorizontal: 11, flexDirection: 'row', alignItems: 'center', gap: 9 },
+  modality: { minHeight: 72, borderRadius: 18, borderWidth: 1, paddingHorizontal: 11, flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 15 },
   modalityOrder: { width: 25, height: 25, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   modalityOrderText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   modalityTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
@@ -659,12 +660,12 @@ const styles = StyleSheet.create({
   timerToggleIcon: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   timerToggleTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   timerToggleText: { fontSize: 14, lineHeight: 21, marginTop: 3 },
-  timerCard: { padding: 18, marginTop: 8 },
+  timerCard: { padding: 20, marginTop: 8, borderRadius: 22 },
   timerModes: { flexDirection: 'row', gap: 8, alignSelf: 'center', backgroundColor: '#18202A', borderRadius: 14, padding: 4 },
   timerMode: { paddingHorizontal: 15, paddingVertical: 8, borderRadius: 11 },
   timerModeText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   timerCenter: { alignItems: 'center', paddingVertical: 24 },
-  timerValue: { fontSize: 50, lineHeight: 56, fontWeight: '300', letterSpacing: -1 },
+  timerValue: { fontSize: 50, lineHeight: 56, fontWeight: '700', letterSpacing: -1, fontVariant: ['tabular-nums'] },
   timerLabel: { fontSize: 12, lineHeight: 18, marginTop: 4 },
   timerButton: { marginTop: 18, backgroundColor: '#8D6BFF' },
   flatCard: { shadowOpacity: 0, elevation: 0 },

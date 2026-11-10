@@ -1,8 +1,9 @@
+import { PolishedScreen as Screen } from '../components/PagePresentation';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import React, { useEffect, useRef } from 'react';
 import { Animated, Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { Card, Header, Icon, Screen } from '../components/ui';
+import { Card, Header, Icon } from '../components/ui';
 import { useStudyBolt } from '../StudyBoltContext';
 import { LEGAL_URLS } from '../config/legal';
 import { radius } from '../theme';
@@ -50,7 +51,7 @@ export function LegalScreen({ onBack }: { onBack: () => void }) {
   };
 
   return (
-    <Screen>
+    <Screen animate={false}>
       <Header title="Legal" subtitle="Privacy & terms" onBack={onBack} />
       <Animated.View style={{ opacity: entrance, transform: [{ translateY: entrance.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) }] }}>
         <View style={styles.hero}>
@@ -107,20 +108,20 @@ export function LegalScreen({ onBack }: { onBack: () => void }) {
 }
 
 const styles = StyleSheet.create({
-  hero: { flexDirection: 'row', alignItems: 'center', gap: 13, paddingVertical: 17 },
+  hero: { flexDirection: 'row', alignItems: 'flex-start', gap: 13, paddingVertical: 22 },
   heroIcon: { width: 52, height: 52, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
-  heroTitle: { fontSize: 16, fontWeight: '900', letterSpacing: -0.2 },
-  heroCopy: { fontSize: 14, lineHeight: 21, marginTop: 4 },
-  sectionLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 1.1, marginTop: 20, marginBottom: 10 },
+  heroTitle: { fontSize: 24, fontWeight: '700', letterSpacing: -0.2, lineHeight: 32 },
+  heroCopy: { fontSize: 14, lineHeight: 21, marginTop: 7 },
+  sectionLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 0.8, marginTop: 20, marginBottom: 10 },
   documents: { gap: 11 },
-  documentCard: { minHeight: 123, borderRadius: radius.md, borderWidth: StyleSheet.hairlineWidth, padding: 14, flexDirection: 'row', alignItems: 'flex-start', gap: 11, shadowOffset: { width: 0, height: 7 }, shadowOpacity: 0.05, shadowRadius: 14, elevation: 2 },
+  documentCard: { minHeight: 132, borderRadius: 22, borderWidth: StyleSheet.hairlineWidth, padding: 18, flexDirection: 'row', alignItems: 'flex-start', gap: 11, shadowOffset: { width: 0, height: 7 }, shadowOpacity: 0.025, shadowRadius: 14, elevation: 2 },
   documentIcon: { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   documentCopy: { flex: 1, minWidth: 0 },
-  documentTitle: { fontSize: 14, fontWeight: '900' },
+  documentTitle: { fontSize: 18, fontWeight: '700', lineHeight: 25 },
   documentDescription: { fontSize: 14, lineHeight: 21, marginTop: 4 },
   documentStatus: { alignSelf: 'flex-start', borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 5, marginTop: 9 },
-  documentStatusText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
-  noteCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginTop: 22 },
+  documentStatusText: { fontSize: 12, lineHeight: 18, fontWeight: '700' },
+  noteCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginTop: 22, padding: 18, borderRadius: 20 },
   noteIcon: { width: 35, height: 35, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   noteTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   noteCopy: { fontSize: 14, lineHeight: 21, marginTop: 3 },

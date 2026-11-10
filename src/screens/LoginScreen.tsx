@@ -1,7 +1,7 @@
+import { LoadingArtwork } from '../components/StudyBoltLoading';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Animated,
   Easing,
   KeyboardAvoidingView,
@@ -263,7 +263,7 @@ export function LoginScreen({
                       onPress={() => void resendConfirmation()}
                       style={({ pressed }) => [styles.resendButton, { opacity: resendBusy ? 0.55 : pressed ? 0.7 : 1 }]}
                     >
-                      {resendBusy ? <ActivityIndicator size="small" color={colors.mint} /> : <Icon name="refresh" size={16} color={colors.mint} />}
+                      {resendBusy ? <LoadingArtwork compact colors={colors} /> : <Icon name="refresh" size={16} color={colors.mint} />}
                       <Text style={[styles.resendText, { color: colors.mint }]}>{resendBusy ? 'Sending…' : 'Resend email'}</Text>
                     </Pressable>
                     <Text style={[styles.folderHint, { color: colors.textSecondary }]}>Also check your spam or junk folder.</Text>

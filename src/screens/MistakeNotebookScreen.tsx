@@ -1,7 +1,8 @@
+import { PolishedScreen as Screen } from '../components/PagePresentation';
 import React, { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { Card, Header, Icon, Pill, PrimaryButton, Screen } from '../components/ui';
+import { Card, Header, Icon, Pill, PrimaryButton } from '../components/ui';
 import type { IconName } from '../components/ui';
 import { useStudyBolt } from '../StudyBoltContext';
 import type { StudyTool } from '../models';
@@ -135,13 +136,13 @@ function Summary({ value, label, color }: { value: number; label: string; color:
 }
 
 const styles = StyleSheet.create({
-  hero: { borderRadius: 20, padding: 17, flexDirection: 'row', alignItems: 'center', gap: 13 },
+  hero: { borderRadius: 22, padding: 20, flexDirection: 'row', alignItems: 'flex-start', gap: 13 },
   heroIcon: { width: 52, height: 52, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
-  heroTitle: { fontSize: 16, fontWeight: '900' },
-  heroText: { fontSize: 14, lineHeight: 21, marginTop: 4 },
-  summaryRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
-  summary: { flex: 1, borderWidth: StyleSheet.hairlineWidth, borderRadius: 15, paddingVertical: 12, alignItems: 'center' },
-  summaryValue: { fontSize: 20, fontWeight: '900' },
+  heroTitle: { fontSize: 22, fontWeight: '700', lineHeight: 29 },
+  heroText: { fontSize: 14, lineHeight: 21, marginTop: 7 },
+  summaryRow: { flexDirection: 'row', gap: 10, marginTop: 12, flexWrap: 'wrap' },
+  summary: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 18, paddingVertical: 12, alignItems: 'center', flexBasis: 110, flexGrow: 1, padding: 16 },
+  summaryValue: { fontSize: 25, fontWeight: '700', lineHeight: 33 },
   summaryLabel: { fontSize: 12, lineHeight: 18, marginTop: 2, textAlign: 'center' },
   headingRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 25, marginBottom: 12 },
   heading: { fontSize: 19, fontWeight: '900' },
@@ -154,7 +155,7 @@ const styles = StyleSheet.create({
   course: { fontSize: 14, lineHeight: 21, fontWeight: '700', marginTop: 13 },
   prompt: { fontSize: 16, lineHeight: 22, fontWeight: '800', marginTop: 6 },
   actions: { flexDirection: 'row', gap: 7, marginTop: 15 },
-  action: { flex: 1, minHeight: 42, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center', gap: 2 },
+  action: { flex: 1, minHeight: 44, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center', gap: 2 },
   actionText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   detail: { borderRadius: 13, padding: 12, marginTop: 10 },
   detailHeading: { flexDirection: 'row', gap: 6, alignItems: 'center' },
@@ -163,6 +164,6 @@ const styles = StyleSheet.create({
   quizButton: { minHeight: 47, marginTop: 11 },
   empty: { alignItems: 'center', paddingVertical: 38 },
   emptyIcon: { width: 62, height: 62, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  emptyTitle: { fontSize: 17, fontWeight: '900', marginTop: 14 },
-  emptyText: { fontSize: 14, lineHeight: 21, textAlign: 'center', maxWidth: 270, marginTop: 5 },
+  emptyTitle: { fontSize: 22, fontWeight: '700', marginTop: 14, lineHeight: 29, maxWidth: '100%' },
+  emptyText: { fontSize: 14, lineHeight: 21, textAlign: 'center', maxWidth: '100%', marginTop: 5 },
 });

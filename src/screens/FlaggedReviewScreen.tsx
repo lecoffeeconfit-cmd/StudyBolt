@@ -1,7 +1,8 @@
+import { PolishedScreen as Screen } from '../components/PagePresentation';
 import React, { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { Card, FlagButton, Header, Icon, Pill, PrimaryButton, ProgressBar, Screen } from '../components/ui';
+import { Card, FlagButton, Header, Icon, Pill, PrimaryButton, ProgressBar } from '../components/ui';
 import { SubjectIcon } from '../components/SubjectIcon';
 import type { IconName } from '../components/ui';
 import { useStudyBolt } from '../StudyBoltContext';
@@ -341,14 +342,14 @@ function Summary({ value, label, color }: { value: number; label: string; color:
 }
 
 const styles = StyleSheet.create({
-  hero: { borderRadius: 20, padding: 17, flexDirection: 'row', alignItems: 'center', gap: 13 },
+  hero: { borderRadius: 22, padding: 20, flexDirection: 'row', alignItems: 'flex-start', gap: 13 },
   heroIcon: { width: 52, height: 52, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   heroCopy: { flex: 1 },
-  heroTitle: { fontSize: 16, fontWeight: '900' },
-  heroText: { fontSize: 14, lineHeight: 21, marginTop: 4 },
-  summaryRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
-  summary: { flex: 1, borderWidth: StyleSheet.hairlineWidth, borderRadius: 15, paddingVertical: 12, alignItems: 'center' },
-  summaryValue: { fontSize: 20, fontWeight: '900' },
+  heroTitle: { fontSize: 22, fontWeight: '700', lineHeight: 29 },
+  heroText: { fontSize: 14, lineHeight: 21, marginTop: 7 },
+  summaryRow: { flexDirection: 'row', gap: 10, marginTop: 12, flexWrap: 'wrap' },
+  summary: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 18, paddingVertical: 12, alignItems: 'center', flexBasis: 110, flexGrow: 1, padding: 16 },
+  summaryValue: { fontSize: 25, fontWeight: '700', lineHeight: 33 },
   summaryLabel: { fontSize: 12, lineHeight: 18, marginTop: 2, textAlign: 'center' },
   modeSwitcher: { flexDirection: 'row', borderRadius: 16, padding: 4, gap: 4, marginTop: 22 },
   mode: { flex: 1, minHeight: 42, borderRadius: 13, borderWidth: StyleSheet.hairlineWidth, borderColor: 'transparent', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 },
@@ -402,6 +403,6 @@ const styles = StyleSheet.create({
   sourceText: { fontSize: 12, lineHeight: 18, fontWeight: '600' },
   empty: { alignItems: 'center', paddingVertical: 38, marginTop: 8 },
   emptyIcon: { width: 64, height: 64, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
-  emptyTitle: { fontSize: 18, fontWeight: '900', marginTop: 14 },
-  emptyText: { maxWidth: 280, textAlign: 'center', fontSize: 14, lineHeight: 21, marginTop: 5 },
+  emptyTitle: { fontSize: 22, fontWeight: '700', marginTop: 14, lineHeight: 29, maxWidth: '100%' },
+  emptyText: { maxWidth: '100%', textAlign: 'center', fontSize: 14, lineHeight: 21, marginTop: 5 },
 });

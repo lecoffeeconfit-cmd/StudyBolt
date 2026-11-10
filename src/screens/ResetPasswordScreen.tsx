@@ -1,10 +1,11 @@
+import { PolishedScreen as Screen } from '../components/PagePresentation';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Platform, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '../AuthContext';
 import { AuthField } from '../components/AuthField';
-import { Card, Header, Icon, PrimaryButton, Screen } from '../components/ui';
+import { Card, Header, Icon, PrimaryButton } from '../components/ui';
 import { useStudyBolt } from '../StudyBoltContext';
 
 export function ResetPasswordScreen({ onComplete }: { onComplete: () => void }) {
@@ -44,7 +45,7 @@ export function ResetPasswordScreen({ onComplete }: { onComplete: () => void }) 
   };
 
   return (
-    <Screen>
+    <Screen animate={false}>
       <Header title="New password" subtitle="Secure your account" />
       <Animated.View style={[styles.content, { opacity: entrance, transform: [{ translateY: entrance.interpolate({ inputRange: [0, 1], outputRange: [14, 0] }) }] }]}>
         <View style={[styles.iconWrap, { backgroundColor: colors.primarySoft }]}><Icon name="lock-check-outline" size={34} color={colors.primary} /></View>
@@ -67,12 +68,12 @@ export function ResetPasswordScreen({ onComplete }: { onComplete: () => void }) 
 }
 
 const styles = StyleSheet.create({
-  content: { alignItems: 'center', paddingTop: 32 },
+  content: { alignItems: 'center', paddingTop: 24, paddingBottom: 28 },
   iconWrap: { width: 72, height: 72, borderRadius: 23, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: 25, lineHeight: 31, fontWeight: '900', letterSpacing: -0.7, marginTop: 18 },
-  subtitle: { fontSize: 16, lineHeight: 24, textAlign: 'center', maxWidth: 380, marginTop: 7 },
-  error: { width: '100%', minHeight: 46, borderRadius: 13, paddingHorizontal: 12, marginTop: 18, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  title: { fontSize: 28, lineHeight: 36, fontWeight: '800', letterSpacing: -0.7, marginTop: 18, textAlign: 'center', width: '100%' },
+  subtitle: { fontSize: 14, lineHeight: 22, textAlign: 'center', maxWidth: '100%', marginTop: 9, width: '100%' },
+  error: { width: '100%', minHeight: 46, borderRadius: 16, paddingHorizontal: 12, marginTop: 18, flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 13 },
   errorText: { flex: 1, fontSize: 14, lineHeight: 21, fontWeight: '700' },
-  form: { width: '100%', gap: 14, marginTop: 22 },
-  button: { marginTop: 3 },
+  form: { width: '100%', gap: 18, marginTop: 24, padding: 20, borderRadius: 22 },
+  button: { marginTop: 3, minHeight: 52 },
 });

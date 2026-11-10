@@ -1,10 +1,10 @@
 import React, { useEffect } from 'react';
-import { AccessibilityInfo, Animated, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
-import Svg, { Path, Rect } from 'react-native-svg';
+import { AccessibilityInfo, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { useLoadingMotion } from '../hooks/useLoadingMotion';
 import type { AppColors } from '../theme';
 import { AnimatedStudyBoltLogo } from './StudyBoltBrand';
+import { LoadingArtwork } from './StudyBoltLoadingArtwork';
+export { LoadingArtwork } from './StudyBoltLoadingArtwork';
 
 export type LoadingVariant = 'initialLaunch' | 'documentProcessing' | 'flashcardGeneration' | 'quizGeneration' | 'studyCastGeneration' | 'aiTutorThinking' | 'screenLoading' | 'inlineLoading';
 
@@ -39,35 +39,6 @@ export function StudyBoltLoading({ variant = 'screenLoading', colors, message, d
   );
 }
 
-/** Decorative motion, never a measurement of generated audio or backend work. */
-export function LoadingArtwork({ variant = 'inlineLoading', colors, compact = false }: { variant?: LoadingVariant; colors: AppColors; compact?: boolean }) {
-  const { phase } = useLoadingMotion();
-  const simple = compact || variant === 'inlineLoading' || variant === 'screenLoading' || variant === 'aiTutorThinking';
-  if (simple) return (
-    <View accessible={false} aria-hidden accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.dots}>
-      {[0, 1, 2].map((index) => <Animated.View key={index} style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: colors.primary, opacity: phase.interpolate({ inputRange: [0, 0.5, 1], outputRange: index === 1 ? [0.85, 0.4, 0.85] : [0.4, 0.85, 0.4] }), transform: [{ translateY: phase.interpolate({ inputRange: [0, 1], outputRange: index === 1 ? [-1, 1] : [1, -1] }) }] }} />)}
-    </View>
-  );
-  if (variant === 'studyCastGeneration') return (
-    <View accessible={false} aria-hidden accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[styles.art, { backgroundColor: colors.primarySoft }]}>
-      <View style={styles.wave}>
-        {[14, 25, 34, 22, 14].map((height, index) => <Animated.View key={index} style={{ width: 4, height, borderRadius: 3, backgroundColor: colors.primary, transform: [{ scaleY: phase.interpolate({ inputRange: [0, 1], outputRange: index % 2 ? [0.65, 1] : [1, 0.65] }) }] }} />)}
-      </View>
-    </View>
-  );
-  return (
-    <View accessible={false} aria-hidden accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[styles.art, { backgroundColor: colors.primarySoft }]}>
-      <Animated.View style={[styles.paper, { borderColor: colors.border, backgroundColor: colors.card, transform: [{ rotate: '-9deg' }, { translateY: phase.interpolate({ inputRange: [0, 1], outputRange: [1, -1] }) }] }]} />
-      <Animated.View style={{ transform: [{ translateY: phase.interpolate({ inputRange: [0, 1], outputRange: [0, -2] }) }] }}>
-        <Svg width={44} height={48} viewBox="0 0 44 48" fill="none">
-          <Rect x="5" y="3" width="34" height="42" rx="7" fill={colors.card} stroke={colors.primary} strokeWidth="1.5" />
-          {variant === 'quizGeneration' ? <><Path d="m12 17 2 2 4-5m-6 17 2 2 4-5M23 17h8M23 31h8" stroke={colors.primary} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></> : <Path d="M13 15h18M13 23h15M13 31h11" stroke={colors.primary} strokeWidth="2" strokeLinecap="round" />}
-        </Svg>
-      </Animated.View>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   container: { alignItems: 'center', paddingVertical: 12, alignSelf: 'stretch' },
   status: { alignItems: 'center', alignSelf: 'stretch', gap: 14 },
@@ -77,10 +48,6 @@ const styles = StyleSheet.create({
   inline: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   inlineCopy: { flex: 1 },
   compactMessage: { fontSize: 14, lineHeight: 21, textAlign: 'left' },
-  art: { width: 76, height: 76, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
-  paper: { position: 'absolute', width: 34, height: 42, borderWidth: 1, borderRadius: 7, left: 15, top: 16 },
-  wave: { flexDirection: 'row', alignItems: 'center', gap: 4, height: 40 },
-  dots: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3, minWidth: 22, height: 22 },
   track: { height: 4, alignSelf: 'stretch', borderRadius: 3, overflow: 'hidden' },
   cancel: { minHeight: 44, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16, marginTop: 8 },
 });

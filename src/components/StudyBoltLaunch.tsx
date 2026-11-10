@@ -40,7 +40,7 @@ export function StudyBoltLaunch({ ready, onFinished }: { ready: boolean; onFinis
       <Animated.View style={[styles.copy, { opacity: title }]}>
         <Text style={[styles.title, { color: colors.text }]}>StudyBolt</Text>
         <View accessible={false} aria-hidden style={styles.accent}><View style={[styles.accentBlue, { backgroundColor: colors.primary }]} /><View style={styles.accentGold} /></View>
-        <Text style={[styles.message, { color: colors.textSecondary }]} accessibilityLiveRegion="polite" accessibilityRole="progressbar" accessibilityState={{ busy: !ready }}>Opening your study space…</Text>
+        <Text style={[styles.message, { color: colors.textSecondary }]} accessibilityLiveRegion="polite" accessibilityRole="progressbar" accessibilityState={{ busy: !ready }}>Getting your study space ready…</Text>
         <LoadingArtwork colors={colors} variant="inlineLoading" />
       </Animated.View>
     </Animated.View>

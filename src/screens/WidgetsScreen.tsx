@@ -1,7 +1,8 @@
+import { PolishedScreen as Screen, PolishedSectionHeader as SectionHeader } from '../components/PagePresentation';
 import React, { useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { Card, Header, Icon, Pill, PrimaryButton, Screen, SectionHeader } from '../components/ui';
+import { Card, Header, Icon, Pill, PrimaryButton } from '../components/ui';
 import type { IconName } from '../components/ui';
 import { useStudyBolt } from '../StudyBoltContext';
 
@@ -91,31 +92,31 @@ function Step({ number, text, colors, last = false }: { number: string; text: st
 }
 
 const styles = StyleSheet.create({
-  hero: { padding: 15 },
-  heroRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  hero: { padding: 20, borderRadius: 22 },
+  heroRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 14 },
   heroIcon: { width: 46, height: 46, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   heroCopy: { flex: 1 },
-  heroTitle: { fontSize: 14, fontWeight: '900' },
+  heroTitle: { fontSize: 21, fontWeight: '700', lineHeight: 28 },
   heroText: { fontSize: 14, lineHeight: 21, marginTop: 4 },
-  widgetCard: { padding: 14, marginBottom: 10 },
+  widgetCard: { padding: 20, marginBottom: 12, borderRadius: 22 },
   widgetHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   widgetIcon: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
-  widgetName: { fontSize: 16, lineHeight: 24, fontWeight: '700' },
+  widgetName: { fontSize: 18, lineHeight: 25, fontWeight: '700' },
   widgetSize: { fontSize: 14, lineHeight: 21, fontWeight: '700', marginTop: 2 },
   widgetDetail: { fontSize: 14, lineHeight: 21, marginTop: 11 },
-  preview: { borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginTop: 11 },
+  preview: { borderRadius: 16, paddingHorizontal: 12, paddingVertical: 10, marginTop: 11, padding: 16 },
   previewLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 1 },
   previewText: { fontSize: 14, lineHeight: 21, fontWeight: '700', marginTop: 3 },
-  instructionsCard: { padding: 14 },
+  instructionsCard: { padding: 20, borderRadius: 22 },
   instructionHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   instructionIcon: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
-  instructionTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
+  instructionTitle: { fontSize: 18, lineHeight: 25, fontWeight: '700' },
   instructionText: { fontSize: 14, lineHeight: 21, marginTop: 3 },
   instructionsButton: { minHeight: 44, marginTop: 13 },
   steps: { borderTopWidth: StyleSheet.hairlineWidth, marginTop: 14, paddingTop: 4 },
-  step: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  step: { minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12 },
   stepNumber: { width: 25, height: 25, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
   stepNumberText: { fontSize: 12, lineHeight: 18, fontWeight: '700' },
   stepText: { flex: 1, fontSize: 14, lineHeight: 21 },
-  footer: { textAlign: 'center', fontSize: 14, lineHeight: 21, marginTop: 18, marginBottom: 28 },
+  footer: { textAlign: 'center', fontSize: 12, lineHeight: 19, marginTop: 18, marginBottom: 28 },
 });

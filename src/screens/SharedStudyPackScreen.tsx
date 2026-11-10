@@ -114,11 +114,11 @@ export function SharedStudyPackScreen({
 const styles = StyleSheet.create({
   state: { flex: 1, alignItems: 'center', paddingHorizontal: 30 },
   loadingIcon: { width: 66, height: 66, borderRadius: 22, alignItems: 'center', justifyContent: 'center', marginBottom: 19 },
-  errorIcon: { width: 76, height: 76, borderRadius: 26, alignItems: 'center', justifyContent: 'center', marginBottom: 19 },
-  stateTitle: { fontSize: 22, lineHeight: 28, fontWeight: '900', letterSpacing: -0.5, textAlign: 'center' },
-  stateText: { maxWidth: 330, fontSize: 14, lineHeight: 21, textAlign: 'center', marginTop: 7 },
-  stateButton: { minWidth: 210, marginTop: 24 },
-  skeletons: { width: '100%', gap: 12, marginTop: 35 },
+  errorIcon: { width: 72, height: 72, borderRadius: 24, alignItems: 'center', justifyContent: 'center', marginBottom: 19 },
+  stateTitle: { fontSize: 26, lineHeight: 34, fontWeight: '700', letterSpacing: -0.5, textAlign: 'center', maxWidth: '100%', width: '100%' },
+  stateText: { maxWidth: '100%', fontSize: 15, lineHeight: 24, textAlign: 'center', marginTop: 10, width: '100%' },
+  stateButton: { minWidth: 210, marginTop: 24, minHeight: 52, alignSelf: 'stretch', maxWidth: 360 },
+  skeletons: { width: '100%', gap: 14, marginTop: 35, maxWidth: 440 },
   skeleton: { height: 24, borderRadius: 9 },
   skeletonLarge: { height: 150 },
 });

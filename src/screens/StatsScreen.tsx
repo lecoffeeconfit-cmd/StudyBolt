@@ -1,6 +1,7 @@
+import { LoadingArtwork } from '../components/StudyBoltLoading';
 import { typography } from '../theme';
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, AppState, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { AppState, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import { Card, Header, Icon, Pill, ProgressBar, Screen } from '../components/ui';
 import { SubjectIcon } from '../components/SubjectIcon';
@@ -100,7 +101,7 @@ export function StatsScreen({ onOpenDeck, onAddMaterial }: {
           </Pressable>
           <StatsTabs tab={tab} onChange={setTab} />
           <Text style={[styles.inlineHint, { color: colors.textMuted }]}>Tap a stat to explore its meaning and evidence.</Text>
-          {!hydrated ? <View accessibilityState={{ busy: true }} style={styles.loadingState}><ActivityIndicator color={colors.primary} /><Text style={[styles.subtitle, { color: colors.textSecondary }]}>Loading your progress…</Text></View> : <>
+          {!hydrated ? <View accessibilityState={{ busy: true }} style={styles.loadingState}><LoadingArtwork colors={colors} /><Text style={[styles.subtitle, { color: colors.textSecondary }]}>Loading your progress…</Text></View> : <>
           {tab === 'overview' ? <LearningMasteryHero groups={courseGroups} onExplore={setSelectedDetail} onPractice={openPractice} onAddMaterial={onAddMaterial} /> : null}
           {tab === 'overview' ? <Overview analytics={analytics} groups={courseGroups} onPractice={openPractice} onAddMaterial={onAddMaterial} /> : null}
           {tab === 'insights' ? <AdvancedInsights analytics={analytics} topicEvidence={includeSamples ? undefined : topicEvidence} /> : null}
