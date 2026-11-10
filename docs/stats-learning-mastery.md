@@ -1,5 +1,7 @@
 # Stats: Learning Mastery hero
 
+Historical implementation note from November 7, 2026. The November 8 page-wide audit and redesign, current file scope, verification, and remaining device checks are documented in [the current Stats product audit](stats-product-audit-2026-11-08.md). The original evidence rule below remains in use; the page layout and actions have since been refined.
+
 ## Scope and files
 
 The Overview readiness card is replaced by a self-contained Learning Mastery hero. The existing Stats header, scope switch, tabs, empty-state card, detail sheet, all other tabs, and everything from **At a glance** onward are preserved from the pre-task working copy. Prior uncommitted changes were retained. No navigation routes, persistence, scoring, review schedules, backend services, purchases, environments, dependencies, or production resources were changed.

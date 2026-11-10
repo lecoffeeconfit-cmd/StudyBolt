@@ -14,6 +14,76 @@ export interface StatDetail extends StatExplanation {
 type StatDetailOverrides = Partial<StatExplanation> & { insight?: string };
 
 const STAT_EXPLANATIONS: Record<string, StatExplanation> = {
+  'Evidence history': {
+    description: 'A qualitative description of how much learning history supports the detailed estimates.',
+    calculation: 'Strong requires at least five recorded quizzes and five flashcard review days. Building requires at least two recorded quizzes plus two active study days in the last 30 days. Other histories are early.',
+    whyItMatters: 'This describes the amount of evidence rather than your knowledge or a statistical confidence level.',
+  },
+  'Active weeks': {
+    description: 'The number of recent seven-day windows containing recorded study activity.',
+    calculation: 'The last 28 days are grouped into four seven-day windows. A window counts if it contains positive-duration study activity.',
+    whyItMatters: 'Use this as a description of your routine and choose a pace that works for you.',
+  },
+  'Classes saved': {
+    description: 'The number of classes currently saved in the selected statistics scope.',
+    calculation: 'Your personal view counts unique real course IDs, including classes that do not have a Study Pack yet. The all-data view also includes saved sample classes.',
+    whyItMatters: 'This describes the organization of your material.',
+  },
+  'Your presentations': {
+    description: 'PowerPoint source files associated with your current personal Study Packs.',
+    calculation: 'The course projection counts PowerPoint source filenames, deduplicating repeated names within a combined-upload pack. Bundled examples are excluded.',
+    whyItMatters: 'A material count describes what is saved; practice results describe what you can recall.',
+  },
+  'Study Packs saved': {
+    description: 'The number of Study Packs currently saved in the selected statistics scope.',
+    calculation: 'Each current pack is counted once. Deleted packs do not contribute.',
+    whyItMatters: 'Use your Library to organize or revisit the saved material.',
+  },
+  'Page coverage estimate': {
+    description: 'An approximate number of source pages represented by your weighted pack activity.',
+    calculation: 'Each pack’s page count is multiplied by its weighted activity completion; the results are added and rounded. Individual page views are not counted.',
+    whyItMatters: 'This gives context for activity coverage. Use recorded practice evidence to judge understanding.',
+  },
+  'Study progress': {
+    description: 'A composite of activity coverage, self-ratings, and assessment scores across your saved Study Packs.',
+    calculation: 'Without a cumulative test, each pack uses reviewed notes (25%), flashcard confidence (35%), and its latest quiz score (40%). With a test, notes contribute 20%, cards 30%, the latest quiz 20%, and the latest test 30%. Pack composites are averaged equally.',
+    whyItMatters: 'Use this to track your study work. Course readiness separately requires repeated recall evidence across identified topics.',
+  },
+  'Active study days': {
+    description: 'How many of the last seven calendar days contain recorded study time.',
+    calculation: 'A day counts when a valid notes, flashcard, quiz, listening, or focus event has a positive duration.',
+    whyItMatters: 'This describes your routine. Choose a rhythm that works for you; every recorded session contributes.',
+  },
+  'Consecutive study days': {
+    description: 'The current run of consecutive days with recorded study time.',
+    calculation: 'StudyBolt counts backward from today, or yesterday if you have not studied today, until it reaches a day without positive-duration study activity.',
+    whyItMatters: 'Treat this as routine feedback. Taking a break does not erase what you learned.',
+  },
+  'Concepts showing strength': {
+    description: 'The number of tracked concepts whose current estimated signal is at least 80%.',
+    calculation: 'The existing concept estimate blends card confidence, matching quiz accuracy, and stored assessment evidence when available. Concepts at or above 80% are counted.',
+    whyItMatters: 'Self-ratings contribute to this estimate. Revisit an idea after a delay to add stronger recall evidence.',
+  },
+  'Concepts to practice': {
+    description: 'Tracked concepts below the current 80% estimate threshold, including concepts without recall evidence yet.',
+    calculation: 'The existing concept estimate blends card confidence and matching assessment evidence. Concepts below 80% are counted.',
+    whyItMatters: 'An unseen concept is an opportunity to build a baseline, rather than evidence of a poor result.',
+  },
+  'Estimated recall': {
+    description: 'A model-based estimate of current recall for concepts with dated evidence.',
+    calculation: 'The existing FSRS or SM-2 schedule is used when enabled. Standard mode applies StudyBolt’s time-based decay model to the current concept estimate. Concepts without dated evidence are excluded.',
+    whyItMatters: 'Use the estimate to choose a review, then let your actual answer guide the next step.',
+  },
+  'Most active day': {
+    description: 'The weekday with the most tracked study time in the last 30 days.',
+    calculation: 'Positive-duration activity is grouped by weekday; the weekday with the highest total is shown.',
+    whyItMatters: 'This describes when you spend time studying. Practice results help you judge learning quality.',
+  },
+  'Most active time': {
+    description: 'The part of the day with the most tracked study time in the last 30 days.',
+    calculation: 'Activity is grouped into morning, afternoon, and evening. The largest group appears after five active days.',
+    whyItMatters: 'Use this to understand your routine alongside the accuracy and recall views.',
+  },
   'Estimated exam readiness': {
     description: 'A blended estimate of how prepared your studied material appears to be right now.',
     calculation: 'Material coverage (20%), concept mastery (25%), recent quizzes (20%), first-try recall (15%), spaced retention (15%), and weak/unseen gaps (5%) are combined. It unlocks after at least two quizzes, two active days, and two reviewed concepts.',
@@ -86,12 +156,12 @@ const STAT_EXPLANATIONS: Record<string, StatExplanation> = {
   },
   'Delayed retention': {
     description: 'How often recall still succeeds after a meaningful delay.',
-    calculation: 'Successful repeat flashcard recalls at least seven days after the prior review, divided by all such attempts. At least three are required.',
+    calculation: 'Successful repeat flashcard reviews at least 6.5 days after the prior review, divided by all such attempts. At least three are required.',
     whyItMatters: 'Delayed success is stronger evidence of durable learning than success repeated in the same session.',
   },
   'Long-term retention': {
     description: 'How often recall still succeeds after a meaningful delay.',
-    calculation: 'Successful repeat flashcard recalls at least seven days after the prior review, divided by all such attempts. At least three are required.',
+    calculation: 'Successful repeat flashcard reviews at least 6.5 days after the prior review, divided by all such attempts. At least three are required.',
     whyItMatters: 'Delayed success is stronger evidence of durable learning than success repeated in the same session.',
   },
   'Learning velocity': {

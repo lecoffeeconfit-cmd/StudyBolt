@@ -185,7 +185,7 @@ export function StudyBoltNavigator() {
         />
       );
     }
-    if (tab === 'stats') return <StatsScreen />;
+    if (tab === 'stats') return <StatsScreen onOpenDeck={openDeck} onAddMaterial={() => setTab('home')} />;
     if (tab === 'profile') {
       return (
         <ProfileScreen

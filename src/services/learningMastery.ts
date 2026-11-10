@@ -3,6 +3,14 @@ import type { StudyBoltState, StudyPack } from '../models';
 const DAY = 86_400_000;
 const WINDOW = 30 * DAY;
 
+export interface LearningPracticeAction {
+  deckId: string;
+  tool: 'quiz' | 'flashcards' | 'notes';
+  cardIds?: string[];
+  label: string;
+  reason: string;
+}
+
 export interface LearningMasteryGroup {
   id: string;
   name: string;
@@ -11,7 +19,10 @@ export interface LearningMasteryGroup {
   powerpoints: number;
   pdfs: number;
   noteSets: number;
+  flashcards: number;
+  completedQuizzes: number;
   pendingPacks: number;
+  failedPacks: number;
   materialPracticed: number | null;
   practicedPacks: number;
   quizAccuracy: number | null;
@@ -19,8 +30,10 @@ export interface LearningMasteryGroup {
   topicCount: number;
   assessedTopics: number;
   supportedTopics: number;
+  practicedTopicIds: string[];
   mastery: number | null;
-  focusTopics: Array<{ id: string; title: string; packTitle: string }>;
+  focusTopics: Array<{ id: string; title: string; packTitle: string; packId: string; sectionId: string }>;
+  nextPractice: LearningPracticeAction | null;
   explanation: string;
 }
 
@@ -38,6 +51,7 @@ interface PackEvidence {
   questions: Map<string, { item: string; section: string }>;
   cards: Map<string, { item: string; section: string }>;
   firstAnswers: Map<string, Observation>;
+  quizEvents: Set<string>;
   practiced: boolean;
   completeMapping: boolean;
   pending: boolean;
@@ -53,7 +67,7 @@ function preparePack(deck: StudyPack): PackEvidence {
     return status !== 'ready';
   }));
   const result: PackEvidence = {
-    deck, topics, questions: new Map(), cards: new Map(), firstAnswers: new Map(), practiced: false,
+    deck, topics, questions: new Map(), cards: new Map(), firstAnswers: new Map(), quizEvents: new Set(), practiced: false,
     completeMapping: topics.size > 0 && topics.size === deck.outline.length && !pending, pending,
   };
   for (const question of deck.quiz) {
@@ -124,6 +138,7 @@ export function buildLearningMastery(state: StudyBoltState, now = new Date()): L
         const item = question?.item ?? `quiz:${answer.originQuestionId || answer.questionId}`;
         const successful = answer.correct === true && !answer.skipped && (answer.partialCredit === undefined || answer.partialCredit >= 1);
         pack.practiced = true;
+        pack.quizEvents.add(event.id);
         // First answer per stable source question, never a repeated-attempt average.
         const first = pack.firstAnswers.get(item);
         if (!first || at < first.at) pack.firstAnswers.set(item, { at, successful });
@@ -156,8 +171,8 @@ export function buildLearningMastery(state: StudyBoltState, now = new Date()): L
     const packs = group.decks.map((deck) => evidence.get(deck.id)!);
     let assessedTopics = 0;
     let supportedTopics = 0;
-    const focus: Array<{ id: string; title: string; packTitle: string; misses: number; lastAt: number }> = [];
-    for (const pack of packs) for (const topic of pack.topics.values()) {
+    const focus: Array<{ id: string; title: string; packTitle: string; packId: string; sectionId: string; misses: number; lastAt: number }> = [];
+    for (const pack of packs) for (const [sectionId, topic] of pack.topics) {
       const responses = recentResponses(topic, timestamp);
       const assessed = topic.items.size >= 2 && [...topic.items].every((item) => {
         const history = responses.get(item) ?? [];
@@ -173,7 +188,7 @@ export function buildLearningMastery(state: StudyBoltState, now = new Date()): L
       if (assessed) assessedTopics += 1;
       if (supported) supportedTopics += 1;
       const misses = latest.filter((entry) => !entry.successful).length;
-      if (misses) focus.push({ id: topic.id, title: topic.title, packTitle: pack.deck.title, misses, lastAt: Math.max(...latest.map((entry) => entry.at)) });
+      if (misses) focus.push({ id: topic.id, title: topic.title, packTitle: pack.deck.title, packId: pack.deck.id, sectionId, misses, lastAt: Math.max(...latest.map((entry) => entry.at)) });
     }
     const topicCount = packs.reduce((total, pack) => total + pack.topics.size, 0);
     const complete = packs.length > 0 && packs.every((pack) => pack.completeMapping) && topicCount > 0 && assessedTopics === topicCount;
@@ -191,20 +206,40 @@ export function buildLearningMastery(state: StudyBoltState, now = new Date()): L
       }
     }
     const pendingPacks = packs.filter((pack) => pack.pending).length;
+    const failedPacks = packs.filter(pack => pack.deck.generation && ['quiz', 'flashcards'].some(material => pack.deck.generation!.materials[material as 'quiz' | 'flashcards'].status === 'failed')).length;
+    const rankedFocus = focus.sort((a, b) => b.misses - a.misses || b.lastAt - a.lastAt || a.id.localeCompare(b.id));
+    const practiceFor = (pack: PackEvidence, topic?: typeof rankedFocus[number]): LearningPracticeAction | null => {
+      const { deck } = pack;
+      const ready = (material: 'quiz' | 'flashcards' | 'simpleNotes' | 'detailedNotes') => !deck.generation || deck.generation.materials[material].status === 'ready';
+      const cards = topic ? deck.flashcards.filter((card) => card.source.sectionId === topic.sectionId) : deck.flashcards;
+      if (topic && cards.length && ready('flashcards')) return { deckId: deck.id, tool: 'flashcards', cardIds: cards.map((card) => card.id), label: 'Review this topic', reason: `Revisit ${topic.title} from ${deck.title}.` };
+      if (deck.quiz.length && ready('quiz')) return { deckId: deck.id, tool: 'quiz', label: topic ? 'Practice this pack' : 'Practice a quiz', reason: topic ? `Your latest practice highlighted ${topic.title}.` : `Build your practice history in ${deck.title}.` };
+      if (cards.length && ready('flashcards')) return { deckId: deck.id, tool: 'flashcards', label: 'Review flashcards', reason: `Check what you can recall from ${deck.title}.` };
+      if (!topic && deck.notes.length && ready('simpleNotes')) return { deckId: deck.id, tool: 'notes', label: 'Read your notes', reason: `Get familiar with ${deck.title} before practice.` };
+      return null;
+    };
+    const focusedAction = rankedFocus.map((topic) => practiceFor(evidence.get(topic.packId)!, topic)).find(Boolean);
+    const nextPractice = focusedAction ?? [...packs].sort((a, b) => Number(a.practiced) - Number(b.practiced))
+      .map((pack) => practiceFor(pack)).find(Boolean) ?? null;
     const explanation = !packs.length ? 'Add class material from Home, then start a quiz or flashcard review.'
-      : pendingPacks ? 'Some practice tools are still processing. Your recorded practice stays visible.'
+      : failedPacks ? 'Some practice tools need attention. Open the Study Pack from Library to check or retry them.'
+        : pendingPacks ? 'Some practice tools are still processing. Your recorded practice stays visible.'
         : !packs.every((pack) => pack.completeMapping) ? 'Topic mapping is incomplete. Practice results stay visible; mastery is unassessed.'
           : !complete ? 'Not enough practice yet. Build recall across topics on different days.'
             : 'Share of identified topics showing consistent, spaced recall in the last 30 days. A practice estimate, not an exam prediction.';
     return {
       id: group.id, name: group.name, kind: group.kind,
       packs: packs.map((pack) => ({ id: pack.deck.id, title: pack.deck.title, practiced: pack.practiced, topics: pack.topics.size })),
-      powerpoints, pdfs, noteSets, pendingPacks, practicedPacks,
+      powerpoints, pdfs, noteSets, pendingPacks, failedPacks, practicedPacks,
+      flashcards: packs.reduce((sum, pack) => sum + pack.deck.flashcards.length, 0),
+      completedQuizzes: new Set(packs.flatMap((pack) => [...pack.quizEvents])).size,
       materialPracticed: packs.length ? Math.round(practicedPacks / packs.length * 100) : null,
       quizAccuracy: quizAnswers.length ? Math.round(quizAnswers.filter(Boolean).length / quizAnswers.length * 100) : null,
       quizQuestions: quizAnswers.length, topicCount, assessedTopics, supportedTopics,
       mastery: complete ? Math.round(supportedTopics / topicCount * 100) : null,
-      focusTopics: focus.sort((a, b) => b.misses - a.misses || b.lastAt - a.lastAt || a.id.localeCompare(b.id)).slice(0, 3).map(({ id, title, packTitle }) => ({ id, title, packTitle })),
+      practicedTopicIds: packs.flatMap(pack => [...pack.topics.values()].filter(topic => topic.observations.size > 0).map(topic => topic.id)),
+      focusTopics: rankedFocus.slice(0, 3).map(({ id, title, packTitle, packId, sectionId }) => ({ id, title, packTitle, packId, sectionId })),
+      nextPractice,
       explanation,
     };
   });

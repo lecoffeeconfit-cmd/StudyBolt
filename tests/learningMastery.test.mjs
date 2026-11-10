@@ -21,6 +21,57 @@ const spaced = (overrides = {}) => [
 ];
 const hero = (source) => buildLearningMastery(source, now)[0];
 
+test('course counts deduplicate a multi-pack quiz without borrowing another course’s activity', () => {
+  const source = state([pack(), pack('two'), pack('other', 'other-class')], [
+    quiz('shared-run', '2026-11-06T12:00:00Z', [answer('q1', { sourceDeckId: 'one' }), answer('q1', { sourceDeckId: 'two' })], { sourceDeckIds: ['one', 'two'] }),
+    quiz('shared-run', '2026-11-06T12:00:00Z'),
+    quiz('other-run', '2026-11-06T12:00:00Z', undefined, { deckId: 'other' }),
+    quiz('future', '2030-01-01T00:00:00Z'),
+  ], [course(), course('other-class', 'Biology')]);
+  const groups = buildLearningMastery(source, now);
+  assert.equal(groups[0].completedQuizzes, 1);
+  assert.equal(groups[1].completedQuizzes, 1);
+  assert.equal(groups[0].packs.length, 2);
+  assert.equal(groups[0].nextPractice.deckId, 'one');
+  assert.equal(groups[1].nextPractice.deckId, 'other');
+});
+
+test('a real missed topic opens only its source flashcards through the existing review tool', () => {
+  const sourcePack = pack('one', 'biology', {
+    flashcards: [
+      { id: 'target-card', source: { sectionId: 'topic' } },
+      { id: 'other-card', source: { sectionId: 'other-topic' } },
+    ],
+    outline: [{ id: 'topic', title: 'Cell structure' }, { id: 'other-topic', title: 'Transport' }],
+  });
+  const group = hero(state([sourcePack], [quiz('miss', '2026-11-06T12:00:00Z', [answer('q1', { correct: false })])]));
+  assert.deepEqual(group.nextPractice, {
+    deckId: 'one', tool: 'flashcards', cardIds: ['target-card'], label: 'Review this topic',
+    reason: 'Revisit Cell structure from Pack one.',
+  });
+  assert.equal(group.focusTopics[0].packId, 'one');
+  assert.equal(group.flashcards, 2);
+});
+
+test('practice actions honor material readiness and never treat reading duration as recall', () => {
+  const materials = Object.fromEntries(['quiz', 'flashcards', 'simpleNotes', 'detailedNotes'].map(key => [key, { status: 'pending' }]));
+  const processing = pack('one', 'biology', { generation: { materials }, notes: [{ id: 'note' }] });
+  const reading = { id: 'reading', type: 'note-reading', deckId: 'one', occurredAt: '2026-11-06T12:00:00Z', durationMinutes: 90 };
+  const pending = hero(state([processing], [reading]));
+  assert.equal(pending.nextPractice, null);
+  assert.equal(pending.mastery, null);
+  assert.equal(pending.completedQuizzes, 0);
+  assert.equal(pending.materialPracticed, 0);
+  assert.deepEqual(pending.practicedTopicIds, []);
+  materials.quiz.status = 'failed';
+  assert.equal(hero(state([processing])).failedPacks, 1);
+  assert.match(hero(state([processing])).explanation, /check or retry/);
+  materials.simpleNotes.status = 'ready';
+  assert.equal(hero(state([processing], [reading])).nextPractice.tool, 'notes');
+  materials.quiz.status = 'ready';
+  assert.equal(hero(state([processing], [reading])).nextPractice.tool, 'quiz');
+});
+
 test('empty classes, no classes and upload-only states remain honestly unassessed', () => {
   const empty = hero(state([], [], []));
   assert.equal(empty.name, 'Your study materials');

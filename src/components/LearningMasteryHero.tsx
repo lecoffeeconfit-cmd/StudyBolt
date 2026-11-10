@@ -1,288 +1,233 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, ActivityIndicator, Animated, AppState, FlatList, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { AccessibilityInfo, ActivityIndicator, Animated, FlatList, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle } from 'react-native-svg';
 
 import { Card, Icon } from './ui';
 import { useStudyBolt } from '../StudyBoltContext';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import type { StatDetail } from '../data/statExplanations';
-import { buildLearningMastery } from '../services/learningMastery';
-import type { LearningMasteryGroup } from '../services/learningMastery';
+import type { LearningMasteryGroup, LearningPracticeAction } from '../services/learningMastery';
 import { radius, typography } from '../theme';
 
-const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
-
-function materialSummary(group: LearningMasteryGroup): string[] {
-  return [
-    group.powerpoints ? plural(group.powerpoints, 'PowerPoint') : '',
-    group.pdfs ? plural(group.pdfs, 'PDF') : '',
-    group.noteSets ? plural(group.noteSets, 'note set') : '',
-  ].filter(Boolean);
-}
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+const plural = (count: number, word: string) => count + ' ' + word + (count === 1 ? '' : 's');
+const materialSummary = (group: LearningMasteryGroup) => [
+  group.powerpoints ? plural(group.powerpoints, 'presentation') : '',
+  group.pdfs ? plural(group.pdfs, 'PDF') : '',
+  group.noteSets ? plural(group.noteSets, 'note set') : '',
+].filter(Boolean).join(' · ');
 
 function classBreakdown(group: LearningMasteryGroup): StatDetail {
   return {
-    label: `${group.name} · learning breakdown`,
-    value: group.mastery === null ? 'Not assessed yet' : `${group.mastery}%`,
-    supporting: `${materialSummary(group).join(' · ')} across ${plural(group.packs.length, 'Study Pack')}. ${group.explanation}`,
-    description: group.packs.map((pack) => `${pack.title}: ${pack.practiced ? 'practice recorded' : 'no recorded practice'}, ${plural(pack.topics, 'identified topic')}.`).join('\n\n'),
-    calculation: 'This hero uses your saved material only; bundled samples and seeded history are excluded. Material practiced is the share of Study Packs with a recorded quiz answer or flashcard review, not the share learned. Quiz accuracy counts fully correct first answers once per source question. A mastery estimate is shown only when all identified topics have at least two distinct practice items and every current item has recall evidence on separate days at least 24 hours apart within the last 30 days. A topic shows consistent recall when each item’s two latest daily responses succeed, including a successful spaced response, with no latest topic-item failure. The estimate is the unweighted share of those topics. Repeated same-day attempts do not increase it. This conservative reporting rule is not a validated assessment of the full course syllabus.',
-    insight: `${plural(group.assessedTopics, 'topic')} assessed out of ${group.topicCount}. ${plural(group.supportedTopics, 'topic')} showing consistent recall.\n\n${group.focusTopics.length ? `Focus next:\n${group.focusTopics.map((topic) => `${topic.title} — ${topic.packTitle}`).join('\n')}` : 'Practice a quiz or review flashcards on different days to find what needs attention.'}`,
-    whyItMatters: 'Use this breakdown to choose a Study Pack to practice from your Library. Uploading, reading, or listening alone does not establish mastery. Missing or older evidence remains unassessed; this is not an exam prediction.',
+    label: group.name + ' · course evidence',
+    value: group.mastery === null ? '—' : group.mastery + '%',
+    supporting: (materialSummary(group) || 'No material added') + '. ' + group.explanation,
+    description: group.packs.map(pack => pack.title + ': ' + (pack.practiced ? 'practice recorded' : 'no recorded practice') + ', ' + plural(pack.topics, 'identified topic') + '.').join('\n\n'),
+    calculation: 'Readiness here means the share of identified topics showing consistent, spaced recall in your saved material. It is shown only when every pack has complete topic mapping, every topic has at least two distinct practice items, and every current item has responses on separate days at least 24 hours apart within the last 30 days. Each item’s two latest daily responses must succeed, including a successful spaced response, for a topic to count as consistent. Same-day retries cannot replace the first response. Quiz accuracy separately counts fully correct first answers once per source question. Practice coverage counts packs with a quiz answer or flashcard review. Uploads, reading time, and listening do not establish recall. Bundled examples and seeded history are excluded.',
+    insight: group.assessedTopics + ' of ' + plural(group.topicCount, 'topic') + ' assessed. ' + plural(group.supportedTopics, 'topic') + ' showing consistent recall.' + (group.focusTopics.length ? '\n\nFocus next:\n' + group.focusTopics.map(topic => topic.title + ' — ' + topic.packTitle).join('\n') : ''),
+    whyItMatters: 'Use the results to choose your next practice. Flashcard ratings are self-reported recall outcomes. This conservative reporting rule is not a validated prediction of an exam grade or knowledge of the full course syllabus. Older or incomplete evidence stays unassessed.',
   };
 }
 
-/** Self-contained Stats hero. Selection and scrolling never affect the sections below. */
-export function LearningMasteryHero({ onExplore }: { onExplore: (detail: StatDetail) => void }) {
-  const { state, colors, hydrated } = useStudyBolt();
+export function LearningMasteryHero({ groups, onExplore, onPractice, onAddMaterial }: {
+  groups: LearningMasteryGroup[];
+  onExplore: (detail: StatDetail) => void;
+  onPractice: (action: LearningPracticeAction) => void;
+  onAddMaterial: () => void;
+}) {
+  const { colors, hydrated } = useStudyBolt();
   const reducedMotion = useReducedMotion();
-  const { fontScale } = useWindowDimensions();
-  const [asOf, setAsOf] = useState(() => new Date());
-  const groups = useMemo(() => buildLearningMastery(state, asOf), [asOf, state]);
-  const groupsRef = useRef(groups);
-  groupsRef.current = groups;
   const [width, setWidth] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selectedRef = useRef<string | null>(null);
+  const groupsRef = useRef(groups);
+  groupsRef.current = groups;
   const list = useRef<FlatList<LearningMasteryGroup>>(null);
-  const ids = groups.map((group) => group.id).join('|');
-  const selectedIndex = Math.max(0, groups.findIndex((group) => group.id === selectedId));
+  const ids = groups.map(group => group.id).join('|');
+  const selectedIndex = Math.max(0, groups.findIndex(group => group.id === selectedId));
   const selected = groups[selectedIndex]!;
-  const onlyClasses = groups.every((group) => group.kind === 'class');
 
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', (status) => { if (status === 'active') setAsOf(new Date()); });
-    return () => subscription.remove();
-  }, []);
-
-  const select = (index: number, announce = true) => {
+  const select = (index: number, announce = false) => {
     const group = groups[index];
-    if (!group || group.id === selectedRef.current) return;
-    const hadSelection = selectedRef.current !== null;
+    if (!group) return;
+    const changed = group.id !== selectedRef.current;
     selectedRef.current = group.id;
-    setSelectedId(group.id);
-    if (announce && hadSelection) AccessibilityInfo.announceForAccessibility(`${group.name}, ${index + 1} of ${groups.length}`);
+    if (changed) setSelectedId(group.id);
+    if (announce) AccessibilityInfo.announceForAccessibility(group.name + ', ' + (index + 1) + ' of ' + groups.length);
   };
 
   useEffect(() => {
     const current = groupsRef.current;
-    const index = Math.max(0, current.findIndex((group) => group.id === selectedRef.current));
+    const index = Math.max(0, current.findIndex(group => group.id === selectedRef.current));
     selectedRef.current = current[index]!.id;
     setSelectedId(current[index]!.id);
     if (width) list.current?.scrollToOffset({ offset: index * width, animated: false });
-    // Reposition only after size or identity changes, never during a swipe.
   }, [ids, width]);
 
   const navigate = (index: number) => {
     if (index < 0 || index >= groups.length) return;
-    if (width) list.current?.scrollToOffset({ offset: index * width, animated: !reducedMotion });
-    if (!width || reducedMotion) select(index);
+    select(index, true);
+    list.current?.scrollToOffset({ offset: index * width, animated: !reducedMotion });
   };
 
-  if (!hydrated) return (
-    <Card style={styles.card}>
-      <View accessibilityState={{ busy: true }} style={styles.loading}>
-        <ActivityIndicator color={colors.primary} />
-        <Text style={[styles.copy, { color: colors.textSecondary }]}>Loading your learning progress…</Text>
-      </View>
-    </Card>
-  );
+  if (!hydrated) return <Card style={styles.card}><View accessibilityState={{ busy: true }} style={styles.loading}><ActivityIndicator color={colors.primary} /><Text style={[styles.copy, { color: colors.textSecondary }]}>Loading your course progress…</Text></View></Card>;
 
   return (
     <Card style={styles.card}>
-      <View style={[styles.headingRow, fontScale > 1.3 && styles.stackedHeading]}>
-        <Text style={[styles.eyebrow, { color: colors.primary }]}>YOUR LEARNING PROGRESS</Text>
-        <Text style={[styles.position, { color: colors.textMuted }]}>{groups.length === 1 && selected.kind === 'overview' ? 'Personal overview' : `${selectedIndex + 1} of ${groups.length} ${onlyClasses ? groups.length === 1 ? 'class' : 'classes' : 'views'}`}</Text>
-      </View>
-      <Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>Learning Mastery</Text>
-
-      <View style={styles.classSelector}>
-        <ClassArrow direction="left" disabled={selectedIndex === 0} onPress={() => navigate(selectedIndex - 1)} />
-        <Text accessibilityRole="header" accessibilityLiveRegion="polite" style={[styles.className, { color: colors.text }]}>{selected.name}</Text>
-        <ClassArrow direction="right" disabled={selectedIndex === groups.length - 1} onPress={() => navigate(selectedIndex + 1)} />
-      </View>
-
-      <View onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
-        {width > 0 ? (
-          <FlatList
-            ref={list}
-            data={groups}
-            keyExtractor={(group) => group.id}
-            horizontal
-            pagingEnabled
-            directionalLockEnabled
-            decelerationRate="fast"
-            showsHorizontalScrollIndicator={false}
-            scrollEnabled={groups.length > 1}
-            initialNumToRender={1}
-            maxToRenderPerBatch={2}
-            windowSize={3}
-            getItemLayout={(_, index) => ({ length: width, offset: width * index, index })}
-            extraData={selectedId}
-            onScroll={(event) => select(Math.max(0, Math.min(groups.length - 1, Math.round(event.nativeEvent.contentOffset.x / width))))}
-            scrollEventThrottle={32}
-            renderItem={({ item }) => <MasteryPage group={item} width={width} active={item.id === selected.id} reducedMotion={reducedMotion} />}
-          />
-        ) : <MasteryPage group={selected} width={undefined} active reducedMotion={reducedMotion} />}
-      </View>
-
-      {groups.length > 1 ? (
-        <View style={styles.pager}>
-          {groups.length <= 7 ? groups.map((group, index) => (
-            <View key={group.id} accessible={false} style={[styles.dot, { backgroundColor: index === selectedIndex ? colors.primary : colors.border, width: index === selectedIndex ? 20 : 6 }]} />
-          )) : <Text style={[styles.smallCopy, { color: colors.textMuted }]}>Swipe or use the arrows to switch classes</Text>}
+      <LinearGradient pointerEvents="none" colors={[colors.primarySoft, colors.card]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.wash} />
+      <View style={styles.topRow}>
+        <View style={styles.heading}>
+          <Text style={[styles.eyebrow, { color: colors.primary }]}>COURSE READINESS</Text>
+          <Text style={[styles.smallCopy, { color: colors.textSecondary }]}>{groups.length > 1 ? (selectedIndex + 1) + ' of ' + groups.length + ' · swipe to explore' : 'Your saved study material'}</Text>
         </View>
-      ) : null}
-
-      {selected.packs.length > 0 ? (
-        <Pressable accessibilityRole="button" accessibilityHint="Opens the existing Stats detail sheet with this class’s material and practice evidence" onPress={() => onExplore(classBreakdown(selected))} style={({ pressed }) => [styles.explore, { backgroundColor: colors.primary, opacity: pressed ? 0.8 : 1 }]}>
-          <Text style={[styles.exploreText, { color: colors.primaryText }]}>{selected.kind === 'class' ? 'Explore class breakdown' : 'Explore material breakdown'}</Text>
-          <Icon name="arrow-right" size={18} color={colors.primaryText} />
-        </Pressable>
-      ) : null}
-      <Text style={[styles.scope, { color: colors.textMuted }]}>Your saved material only · sample statistics stay separate</Text>
+        {groups.length > 1 ? <View style={styles.arrows}>
+          <ClassArrow direction="left" disabled={selectedIndex === 0} onPress={() => navigate(selectedIndex - 1)} />
+          <ClassArrow direction="right" disabled={selectedIndex === groups.length - 1} onPress={() => navigate(selectedIndex + 1)} />
+        </View> : null}
+      </View>
+      <View onLayout={event => setWidth(event.nativeEvent.layout.width)}>
+        {width > 0 ? <FlatList
+          ref={list}
+          data={groups}
+          keyExtractor={group => group.id}
+          horizontal pagingEnabled directionalLockEnabled
+          decelerationRate="fast" showsHorizontalScrollIndicator={false}
+          scrollEnabled={groups.length > 1}
+          initialNumToRender={1} maxToRenderPerBatch={2} windowSize={3}
+          getItemLayout={(_, index) => ({ length: width, offset: width * index, index })}
+          extraData={selectedId}
+          onScroll={event => select(Math.max(0, Math.min(groups.length - 1, Math.round(event.nativeEvent.contentOffset.x / width))))}
+          onMomentumScrollEnd={() => AccessibilityInfo.announceForAccessibility((groupsRef.current.find(group => group.id === selectedRef.current)?.name ?? '') + ', course selected')}
+          scrollEventThrottle={32}
+          renderItem={({ item }) => <CoursePage group={item} width={width} active={item.id === selected.id} onPractice={onPractice} onAddMaterial={onAddMaterial} />}
+        /> : <CoursePage group={selected} width={undefined} active onPractice={onPractice} onAddMaterial={onAddMaterial} />}
+      </View>
+      <Pressable accessibilityRole="button" onPress={() => onExplore(classBreakdown(selected))} style={({ pressed }) => [styles.evidenceLink, { opacity: pressed ? 0.65 : 1 }]}>
+        <Icon name="information-outline" size={16} color={colors.primary} />
+        <Text style={[styles.linkText, { color: colors.primary }]}>View evidence and material</Text>
+        <Icon name="chevron-right" size={18} color={colors.primary} />
+      </Pressable>
+      {groups.length > 1 && groups.length <= 7 ? <View accessible={false} style={styles.pager}>{groups.map((group, index) => <View key={group.id} style={[styles.dot, { width: index === selectedIndex ? 20 : 5, backgroundColor: index === selectedIndex ? colors.primary : colors.border }]} />)}</View> : null}
     </Card>
   );
 }
 
 function ClassArrow({ direction, disabled, onPress }: { direction: 'left' | 'right'; disabled: boolean; onPress: () => void }) {
   const { colors } = useStudyBolt();
-  return (
-    <Pressable accessibilityRole="button" accessibilityLabel={direction === 'left' ? 'Previous class' : 'Next class'} accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.arrow, { backgroundColor: colors.cardStrong, opacity: disabled ? 0.35 : pressed ? 0.65 : 1 }]}>
-      <Icon name={direction === 'left' ? 'chevron-left' : 'chevron-right'} color={colors.text} size={23} />
-    </Pressable>
-  );
+  return <Pressable accessibilityRole="button" accessibilityLabel={direction === 'left' ? 'Previous course' : 'Next course'} accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.arrow, { backgroundColor: colors.card, borderColor: colors.border, opacity: disabled ? 0.4 : pressed ? 0.65 : 1 }]}><Icon name={direction === 'left' ? 'chevron-left' : 'chevron-right'} color={colors.text} size={24} /></Pressable>;
 }
 
-function MasteryPage({ group, width, active, reducedMotion }: { group: LearningMasteryGroup; width: number | undefined; active: boolean; reducedMotion: boolean }) {
+function CoursePage({ group, width, active, onPractice, onAddMaterial }: {
+  group: LearningMasteryGroup; width: number | undefined; active: boolean;
+  onPractice: (action: LearningPracticeAction) => void; onAddMaterial: () => void;
+}) {
   const { colors } = useStudyBolt();
   const { fontScale } = useWindowDimensions();
-  const opacity = useRef(new Animated.Value(1)).current;
-  const wide = (width ?? 0) >= 310 && fontScale <= 1.2;
-  const summary = materialSummary(group);
-  useEffect(() => {
-    opacity.stopAnimation();
-    if (!active || reducedMotion) { opacity.setValue(1); return; }
-    opacity.setValue(0.82);
-    const animation = Animated.timing(opacity, { toValue: 1, duration: 180, useNativeDriver: Platform.OS !== 'web' });
-    animation.start();
-    return () => animation.stop();
-  }, [active, opacity, reducedMotion]);
-
+  const wide = (width ?? 0) >= 285 && fontScale <= 1.2;
   return (
-    <Animated.View aria-hidden={!active} accessibilityElementsHidden={!active} importantForAccessibility={active ? 'auto' : 'no-hide-descendants'} style={[styles.page, { width, opacity }]}>
+    <View aria-hidden={!active} accessibilityElementsHidden={!active} importantForAccessibility={active ? 'auto' : 'no-hide-descendants'} style={[styles.page, { width }]}>
+      <Text accessibilityRole="header" style={[styles.courseName, { color: colors.text }]}>{group.name}</Text>
+      <Text style={[styles.copy, { color: colors.textSecondary }]}>{materialSummary(group) || 'Add your first Study Pack to begin'}</Text>
       <View style={[styles.main, wide && styles.mainWide]}>
-        <MasteryRing value={group.mastery} />
-        <View style={[styles.material, wide && styles.materialWide]}>
-          <Text style={[styles.smallCopy, { color: colors.textMuted }]}>{group.kind === 'class' ? 'Your class material' : 'Your study material'}</Text>
-          <Text style={[styles.materialCount, { color: colors.text }]}>{summary[0] ?? 'No material yet'}</Text>
-          {summary.length > 1 ? <Text style={[styles.copy, { color: colors.textSecondary }]}>{summary.slice(1).join(' · ')}</Text> : null}
-          {group.packs.length ? <Text style={[styles.smallCopy, { color: colors.textSecondary }]}>{plural(group.packs.length, 'Study Pack')} · {group.topicCount ? `${group.assessedTopics} of ${group.topicCount} topics assessed` : 'Topics not mapped yet'}</Text> : null}
-          <View style={[styles.evidenceBadge, { backgroundColor: colors.primarySoft }]}>
-            <Icon name={group.mastery === null ? 'progress-clock' : 'check-decagram-outline'} color={colors.primary} size={15} />
-            <Text style={[styles.badgeText, { color: colors.primary }]}>{group.mastery === null ? 'Building evidence' : 'Repeated recall'}</Text>
-          </View>
+        <RecallRing value={group.mastery} />
+        <View style={styles.status}>
+          <Text style={[styles.statusTitle, { color: colors.text }]}>Knowledge readiness</Text>
+          <Text style={[styles.copy, { color: colors.textSecondary }]}>{group.mastery === null ? 'Building evidence through practice' : plural(group.supportedTopics, 'topic') + ' with consistent recall'}</Text>
+          <Text style={[styles.smallCopy, { color: colors.textMuted }]}>{group.topicCount ? group.assessedTopics + ' of ' + plural(group.topicCount, 'topic') + ' assessed' : 'Your topics will appear with your material'}</Text>
+          {group.pendingPacks ? <Text style={[styles.smallCopy, { color: group.failedPacks ? colors.warning : colors.textSecondary }]}>{group.failedPacks ? 'Some practice tools need attention. Check the Study Pack in Library.' : 'Some practice tools are still being prepared.'}</Text> : null}
         </View>
       </View>
-
-      <Text style={[styles.explanation, { color: colors.textSecondary }]}>{group.explanation}</Text>
-
-      <View style={[styles.metrics, { borderColor: colors.border }, fontScale > 1.4 && styles.stackedMetrics]}>
-        <HeroMetric label="Material practiced" value={group.materialPracticed} detail={group.packs.length ? `${group.practicedPacks} of ${plural(group.packs.length, 'Study Pack')} · recorded practice` : 'Add your first Study Pack'} />
-        <HeroMetric label="Quiz accuracy" value={group.quizAccuracy} detail={group.quizQuestions ? `${plural(group.quizQuestions, 'unique question')} · first answers` : 'No recorded quiz answers'} />
+      <View style={[styles.counts, { backgroundColor: colors.cardStrong }, fontScale > 1.4 && styles.stacked]}>
+        <CourseCount value={group.packs.length} label="Study Packs" />
+        <CourseCount value={group.flashcards} label="Flashcards" />
+        <CourseCount value={group.completedQuizzes} label="Quizzes recorded" />
       </View>
-
-      <View style={[styles.focus, { backgroundColor: colors.primarySoft }]}>
-        <View style={styles.focusHeading}>
-          <Icon name="compass-outline" color={colors.primary} size={18} />
-          <Text style={[styles.focusTitle, { color: colors.text }]}>Focus next</Text>
-        </View>
-        {group.focusTopics.length ? group.focusTopics.slice(0, 2).map((topic) => (
-          <View key={topic.id} style={styles.focusRow}>
-            <View style={[styles.focusDot, { backgroundColor: colors.primary }]} />
-            <View style={styles.focusCopy}>
-              <Text style={[styles.copy, { color: colors.text }]}>{topic.title}</Text>
-              <Text style={[styles.smallCopy, { color: colors.textSecondary }]}>{topic.packTitle}</Text>
-            </View>
-          </View>
-        )) : <Text style={[styles.copy, { color: colors.textSecondary }]}>{!group.packs.length ? 'Add a Study Pack from Home to begin.' : group.mastery === null ? 'Practice a quiz to discover which topics need review.' : 'Keep using spaced recall to check that your learning stays strong.'}</Text>}
+      <View style={[styles.metrics, fontScale > 1.4 && styles.stacked]}>
+        <HeroMetric label="Practice coverage" value={group.materialPracticed} detail={group.packs.length ? group.practicedPacks + ' of ' + plural(group.packs.length, 'pack') : 'Add material to begin'} />
+        <HeroMetric label="Quiz accuracy" value={group.quizAccuracy} detail={group.quizQuestions ? plural(group.quizQuestions, 'first answer') : 'No quiz answers yet'} />
       </View>
-    </Animated.View>
-  );
-}
-
-function MasteryRing({ value }: { value: number | null }) {
-  const { colors } = useStudyBolt();
-  const { fontScale } = useWindowDimensions();
-  const size = Math.min(208, 136 * Math.max(1, fontScale));
-  const radius = 57;
-  const circumference = 2 * Math.PI * radius;
-  return (
-    <View accessible accessibilityRole="image" accessibilityLabel={value === null ? 'Learning mastery is unassessed. Not enough spaced practice yet.' : `${value} percent mastery estimate, based on repeated recall across identified topics.`} style={styles.ringColumn}>
-      <View style={{ width: size, height: size }}>
-        <Svg width={size} height={size} viewBox="0 0 136 136" accessible={false}>
-          <Circle cx={68} cy={68} r={radius} stroke={colors.cardStrong} strokeWidth={10} fill="none" />
-          {value !== null && value > 0 ? <Circle cx={68} cy={68} r={radius} stroke={colors.primary} strokeWidth={10} strokeLinecap="round" fill="none" strokeDasharray={`${circumference} ${circumference}`} strokeDashoffset={circumference * (1 - value / 100)} rotation={-90} origin="68,68" /> : null}
-        </Svg>
-        <View pointerEvents="none" style={styles.ringCenter}>
-          <Text adjustsFontSizeToFit numberOfLines={1} style={[styles.ringValue, { color: value === null ? colors.textMuted : colors.text }]}>{value === null ? '—' : `${value}%`}</Text>
-        </View>
+      <View style={[styles.focus, { backgroundColor: colors.mintSoft }]}>
+        <View style={styles.focusHeading}><Icon name="compass-outline" size={18} color={colors.mint} /><Text style={[styles.focusTitle, { color: colors.text }]}>Your next step</Text></View>
+        <Text style={[styles.copy, { color: colors.textSecondary }]}>{group.nextPractice?.reason ?? (group.packs.length ? group.failedPacks ? 'A practice tool needs attention. Open its Study Pack from Library to check or retry it.' : group.pendingPacks ? 'Practice tools are still being prepared. Your saved activity stays here.' : 'Open your Study Pack from Library to check the available study tools.' : 'Add material from Home. Your activity will build as you study.')}</Text>
+        {group.focusTopics.length > 1 ? <Text style={[styles.smallCopy, { color: colors.textSecondary }]}>{group.focusTopics.length - 1} more topic{group.focusTopics.length === 2 ? '' : 's'} to revisit in the evidence breakdown</Text> : null}
       </View>
-      <Text style={[styles.ringCaption, { color: colors.textSecondary }]}>{value === null ? 'Not assessed yet' : 'Mastery estimate'}</Text>
+      {group.nextPractice || !group.packs.length ? <Pressable accessibilityRole="button" accessibilityLabel={(group.nextPractice?.label ?? 'Add study material') + ' · ' + group.name} onPress={() => group.nextPractice ? onPractice(group.nextPractice) : onAddMaterial()} style={({ pressed }) => [styles.primaryAction, { backgroundColor: colors.primary, opacity: pressed ? 0.85 : 1 }]}>
+        <Text style={[styles.actionText, { color: colors.primaryText }]}>{group.nextPractice?.label ?? 'Add study material'}</Text><Icon name="arrow-right" size={19} color={colors.primaryText} />
+      </Pressable> : null}
     </View>
   );
+}
+
+function RecallRing({ value }: { value: number | null }) {
+  const { colors } = useStudyBolt();
+  const reducedMotion = useReducedMotion();
+  const { fontScale } = useWindowDimensions();
+  const size = Math.min(190, 120 * Math.max(1, fontScale));
+  const radius = 49;
+  const circumference = 2 * Math.PI * radius;
+  const progress = useRef(new Animated.Value(value ?? 0)).current;
+  const previous = useRef(value);
+  useEffect(() => {
+    progress.stopAnimation();
+    if (value === null || previous.current === null || reducedMotion || Platform.OS === 'web') progress.setValue(value ?? 0);
+    else Animated.timing(progress, { toValue: value, duration: 400, useNativeDriver: false }).start();
+    previous.current = value;
+    return () => progress.stopAnimation();
+  }, [progress, reducedMotion, value]);
+  return <View accessible accessibilityRole="image" accessibilityLabel={value === null ? 'Knowledge readiness is not assessed yet. More spaced practice is needed.' : value + ' percent of identified topics show consistent spaced recall.'} style={{ width: size, height: size }}>
+    <Svg width={size} height={size} viewBox="0 0 120 120" {...(Platform.OS === 'web' ? { 'aria-hidden': true, focusable: false } : { accessible: false })}>
+      <Circle cx={60} cy={60} r={radius} stroke={colors.border} strokeWidth={8} fill="none" />
+      {value !== null ? Platform.OS === 'web' ? <Circle cx={60} cy={60} r={radius} stroke={colors.primary} strokeWidth={8} strokeLinecap="round" fill="none" strokeDasharray={circumference + ' ' + circumference} strokeDashoffset={circumference * (1 - value / 100)} transform="rotate(-90 60 60)" /> : <AnimatedCircle cx={60} cy={60} r={radius} stroke={colors.primary} strokeWidth={8} strokeLinecap="round" fill="none" strokeDasharray={circumference + ' ' + circumference} strokeDashoffset={progress.interpolate({ inputRange: [0, 100], outputRange: [circumference, 0] })} transform="rotate(-90 60 60)" /> : null}
+    </Svg>
+    <View style={styles.ringCenter}><Text adjustsFontSizeToFit numberOfLines={1} style={[styles.ringValue, { color: value === null ? colors.textMuted : colors.text }]}>{value === null ? '—' : value + '%'}</Text><Text style={[styles.smallCopy, { color: colors.textSecondary }]}>{value === null ? 'Not assessed' : 'Recall evidence'}</Text></View>
+  </View>;
+}
+
+function CourseCount({ value, label }: { value: number; label: string }) {
+  const { colors } = useStudyBolt();
+  return <View accessible accessibilityLabel={value + ' ' + label} style={styles.count}><Text style={[styles.countValue, { color: colors.text }]}>{value}</Text><Text style={[styles.countLabel, { color: colors.textSecondary }]}>{label}</Text></View>;
 }
 
 function HeroMetric({ label, value, detail }: { label: string; value: number | null; detail: string }) {
   const { colors } = useStudyBolt();
-  return (
-    <View accessible accessibilityLabel={`${label}: ${value === null ? 'unavailable' : `${value} percent`}. ${detail}`} style={styles.metric}>
-      <Text style={[styles.smallCopy, { color: colors.textSecondary }]}>{label}</Text>
-      <Text style={[styles.metricValue, { color: value === null ? colors.textMuted : colors.text }]}>{value === null ? '—' : `${value}%`}</Text>
-      <Text style={[styles.smallCopy, { color: colors.textMuted }]}>{detail}</Text>
-    </View>
-  );
+  return <View accessible accessibilityLabel={label + ': ' + (value === null ? 'not assessed' : value + ' percent') + '. ' + detail} style={styles.metric}><Text style={[styles.smallCopy, { color: colors.textSecondary }]}>{label}</Text><Text style={[styles.metricValue, { color: value === null ? colors.textMuted : colors.text }]}>{value === null ? '—' : value + '%'}</Text><Text style={[styles.smallCopy, { color: colors.textMuted }]}>{detail}</Text></View>;
 }
 
 const styles = StyleSheet.create({
-  card: { marginTop: 14, padding: 18, overflow: 'hidden' },
-  headingRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline', justifyContent: 'space-between', gap: 6 },
-  stackedHeading: { flexDirection: 'column', alignItems: 'flex-start' },
-  eyebrow: { fontSize: 11, lineHeight: 17, fontWeight: '700', letterSpacing: 0.9 },
-  position: { ...typography.caption, fontVariant: ['tabular-nums'] },
-  title: { fontSize: 25, lineHeight: 33, fontWeight: '800', letterSpacing: -0.65, marginTop: 4 },
-  classSelector: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 18, marginBottom: 16 },
-  className: { flex: 1, textAlign: 'center', fontSize: 19, lineHeight: 27, fontWeight: '700', letterSpacing: -0.3 },
-  arrow: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: radius.sm },
+  card: { marginTop: 18, padding: 18, overflow: 'hidden' },
+  wash: { position: 'absolute', top: 0, left: 0, right: 0, height: 240 },
+  topRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 },
+  heading: { flex: 1, gap: 2 },
+  eyebrow: { fontSize: 11, lineHeight: 17, fontWeight: '700', letterSpacing: 1 },
+  arrows: { flexDirection: 'row', gap: 6 },
+  arrow: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill, borderWidth: StyleSheet.hairlineWidth },
   page: { paddingBottom: 2 },
-  main: { alignItems: 'center', gap: 20 },
-  mainWide: { flexDirection: 'row', alignItems: 'center', gap: 18 },
-  ringColumn: { alignItems: 'center', flexShrink: 0 },
-  ringCenter: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 17 },
-  ringValue: { fontSize: 35, lineHeight: 45, fontWeight: '800', letterSpacing: -1.1, fontVariant: ['tabular-nums'] },
-  ringCaption: { fontSize: 12, lineHeight: 18, marginTop: 3, textAlign: 'center' },
-  material: { alignSelf: 'stretch', justifyContent: 'center', gap: 6 },
-  materialWide: { flex: 1 },
-  materialCount: { fontSize: 20, lineHeight: 27, fontWeight: '800', letterSpacing: -0.45 },
+  courseName: { fontSize: 23, lineHeight: 31, fontWeight: '800', letterSpacing: -0.55, marginBottom: 4 },
   copy: { ...typography.secondary },
   smallCopy: { ...typography.caption },
-  evidenceBadge: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: radius.sm, paddingHorizontal: 9, paddingVertical: 7, marginTop: 3 },
-  badgeText: { flexShrink: 1, fontSize: 12, lineHeight: 18, fontWeight: '600' },
-  explanation: { ...typography.secondary, marginTop: 18 },
-  metrics: { borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: 18, paddingTop: 18, marginTop: 18 },
-  stackedMetrics: { flexDirection: 'column' },
-  metric: { flex: 1, gap: 4 },
-  metricValue: { ...typography.metric, fontVariant: ['tabular-nums'], fontSize: 26, lineHeight: 34 },
-  focus: { borderRadius: radius.md, padding: 14, marginTop: 18, gap: 10 },
+  main: { alignItems: 'center', gap: 12, marginTop: 18, marginBottom: 18 },
+  mainWide: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  status: { flex: 1, alignSelf: 'stretch', justifyContent: 'center', gap: 5 },
+  statusTitle: { ...typography.cardTitle },
+  ringCenter: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 },
+  ringValue: { fontSize: 32, lineHeight: 41, fontWeight: '800', letterSpacing: -0.8, fontVariant: ['tabular-nums'] },
+  counts: { flexDirection: 'row', borderRadius: radius.md, paddingHorizontal: 8, paddingVertical: 12, gap: 6 },
+  count: { flex: 1, alignItems: 'center', gap: 2 },
+  countValue: { fontSize: 19, lineHeight: 26, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  countLabel: { fontSize: 11, lineHeight: 16, textAlign: 'center' },
+  metrics: { flexDirection: 'row', gap: 18, paddingVertical: 16 },
+  stacked: { flexDirection: 'column' },
+  metric: { flex: 1, gap: 2 },
+  metricValue: { fontSize: 25, lineHeight: 33, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  focus: { borderRadius: radius.md, padding: 13, gap: 6 },
   focusHeading: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   focusTitle: { ...typography.cardTitle },
-  focusRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 9 },
-  focusDot: { width: 5, height: 5, borderRadius: 3, marginTop: 8 },
-  focusCopy: { flex: 1, gap: 2 },
-  pager: { minHeight: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 10 },
-  dot: { height: 6, borderRadius: 3 },
-  explore: { minHeight: 50, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, borderRadius: radius.md, paddingHorizontal: 15, paddingVertical: 13, marginTop: 18 },
-  exploreText: { ...typography.control, flexShrink: 1, textAlign: 'center' },
-  scope: { fontSize: 11, lineHeight: 17, textAlign: 'center', marginTop: 12 },
-  loading: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 20 },
+  primaryAction: { minHeight: 50, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, borderRadius: radius.md, paddingHorizontal: 14, paddingVertical: 13, marginTop: 14 },
+  actionText: { ...typography.control, flexShrink: 1 },
+  evidenceLink: { minHeight: 44, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 7, paddingVertical: 11, marginTop: 4 },
+  linkText: { fontSize: 13, lineHeight: 20, fontWeight: '600', flexShrink: 1 },
+  pager: { flexDirection: 'row', justifyContent: 'center', gap: 5, paddingTop: 4 },
+  dot: { height: 5, borderRadius: 3 },
+  loading: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 24 },
 });
