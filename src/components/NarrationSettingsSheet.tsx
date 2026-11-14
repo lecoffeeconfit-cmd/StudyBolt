@@ -2,7 +2,7 @@ import { StudyBoltLoading } from './StudyBoltLoading';
 import type { Voice } from 'expo-speech';
 import * as Speech from 'expo-speech';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Easing, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Animated, Easing, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useReducedMotion } from '../hooks/useReducedMotion';
@@ -88,8 +88,7 @@ export function NarrationSettingsSheet({
     .map((code) => ({ code, label: narrationLanguageLabel(code) }))
     .sort((a, b) => a.label.localeCompare(b.label)), [voices]);
   const visibleLanguages = languages.filter(({ code, label }) => `${label} ${code}`.toLowerCase().includes(search.trim().toLowerCase()));
-  const visibleVoices = voices.filter((voice) => (!preferences.language || voice.language === preferences.language)
-    && `${voice.name} ${voice.language}`.toLowerCase().includes(search.trim().toLowerCase()));
+  const visibleVoices = voices.filter((voice) => `${voice.name} ${voice.language}`.toLowerCase().includes(search.trim().toLowerCase()));
   const selectedVoice = voices.find((voice) => voice.identifier === preferences.voiceIdentifier);
 
   const preview = (voice?: Voice) => {
@@ -134,100 +133,111 @@ export function NarrationSettingsSheet({
 
   return (
     <Modal visible={visible} transparent animationType={reducedMotion ? 'none' : 'slide'} onRequestClose={onClose}>
-      <View style={[styles.modalRoot, { backgroundColor: colors.mode === 'dark' ? 'rgba(0,0,0,0.72)' : 'rgba(17,28,78,0.38)' }]}>
-        <Pressable accessibilityRole="button" accessibilityLabel="Close narration settings" onPress={onClose} style={StyleSheet.absoluteFill} />
-        <View role="dialog" aria-modal accessibilityViewIsModal accessibilityLabel="Narration settings" style={[styles.sheet, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow, paddingBottom: Math.max(insets.bottom, 18) }]}>
-          <View style={[styles.handle, { backgroundColor: colors.border }]} />
-          <View style={styles.heading}>
-            <View style={[styles.headingIcon, { backgroundColor: colors.purpleSoft }]}><Icon name="headphones" size={22} color={colors.purple} /></View>
-            <View style={styles.headingCopy}>
-              <Text style={[styles.title, { color: colors.text }]}>Narration</Text>
-              <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Make StudyBolt sound like you</Text>
-            </View>
-            <Pressable accessibilityRole="button" accessibilityLabel="Close" hitSlop={10} onPress={onClose} style={styles.close}><Icon name="close" size={22} color={colors.textMuted} /></Pressable>
-          </View>
-
-          <View style={[styles.previewCard, { backgroundColor: colors.primarySoft }]}>
-            <Animated.View style={[styles.previewOrb, { backgroundColor: colors.primary, opacity, transform: [{ scale }] }]}><Icon name="waveform" size={21} color={colors.primaryText} /></Animated.View>
-            <View style={styles.previewCopy}>
-              <Text style={[styles.previewLabel, { color: colors.textMuted }]}>CURRENT VOICE</Text>
-              <Text numberOfLines={1} style={[styles.previewVoice, { color: colors.text }]}>{selectedVoice?.name ?? 'Phone default voice'}</Text>
-              <Text numberOfLines={1} style={[styles.previewLanguage, { color: colors.textSecondary }]}>{narrationLanguageLabel(preferences.language)}</Text>
-            </View>
-            <Pressable accessibilityRole="button" accessibilityLabel={previewing ? 'Stop voice preview' : 'Preview current narration voice'} onPress={() => previewing ? stopPreview() : preview(selectedVoice)} style={({ pressed }) => [styles.previewButton, { backgroundColor: colors.card, opacity: pressed ? 0.7 : 1 }]}>
-              <Icon name={previewing ? 'stop' : 'play'} size={17} color={colors.primary} />
-            </Pressable>
-          </View>
-
-          <View style={[styles.segmented, { backgroundColor: colors.cardStrong }]}>
-            {(['language', 'voice'] as const).map((item) => {
-              const active = tab === item;
-              return (
-                <Pressable aria-selected={active} key={item} accessibilityRole="tab" accessibilityState={{ selected: active }} onPress={() => { setTab(item); setSearch(''); }} style={[styles.segment, active && { backgroundColor: colors.card, shadowColor: colors.shadow }]}>
-                  <Icon name={item === 'language' ? 'translate' : 'account-voice'} size={16} color={active ? colors.primary : colors.textMuted} />
-                  <Text style={[styles.segmentText, { color: active ? colors.primary : colors.textMuted }]}>{item === 'language' ? 'Language' : 'Voice'}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
-
-          <TextInput
-            accessibilityLabel={tab === 'language' ? 'Search languages' : 'Search voices'}
-            value={search}
-            onChangeText={setSearch}
-            placeholder={tab === 'language' ? 'Find a language' : 'Find a voice'}
-            placeholderTextColor={colors.textMuted}
-            style={[styles.search, { backgroundColor: colors.cardStrong, borderColor: colors.border, color: colors.text }]}
-            returnKeyType="search"
-            clearButtonMode="while-editing"
-          />
-
-          <ScrollView style={styles.list} contentContainerStyle={styles.listContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-            {tab === 'language' ? <>
-              <Text style={[styles.listLabel, { color: colors.textMuted }]}>SPOKEN LANGUAGE</Text>
-              <OptionRow
-                title="Device language"
-                detail="Follow your phone’s default"
-                active={!preferences.language}
-                color={colors.primary}
-                textColor={colors.text}
-                mutedColor={colors.textMuted}
-                borderColor={colors.border}
-                onSelect={() => selectLanguage(null)}
-              />
-              {visibleLanguages.map(({ code, label }) => (
-                <OptionRow key={code} title={label} detail={code} active={preferences.language === code} color={colors.primary} textColor={colors.text} mutedColor={colors.textMuted} borderColor={colors.border} onSelect={() => selectLanguage(code)} />
-              ))}
-              {loading ? <View style={styles.loading}><StudyBoltLoading compact colors={colors} message="Loading narration options…" /></View> : null}
-              {!loading && !languages.length ? <EmptyState text="No built-in speech languages were found on this phone." /> : null}
-              {!loading && languages.length > 0 && !visibleLanguages.length ? <EmptyState text="No languages match that search." /> : null}
-            </> : <>
-              <View style={styles.voiceListHeading}>
-                <Text style={[styles.listLabel, { color: colors.textMuted }]}>{preferences.language ? narrationLanguageLabel(preferences.language).toUpperCase() : 'AVAILABLE PHONE VOICES'}</Text>
-                <Pressable accessibilityRole="button" onPress={() => setTab('language')} style={styles.changeLanguage}><Text style={[styles.changeLanguageText, { color: colors.primary }]}>Change</Text><Icon name="chevron-right" size={15} color={colors.primary} /></Pressable>
+      <KeyboardAvoidingView style={styles.modalRoot} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <View style={[styles.modalRoot, { backgroundColor: colors.mode === 'dark' ? 'rgba(0,0,0,0.72)' : 'rgba(17,28,78,0.38)' }]}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Close narration settings" onPress={onClose} style={StyleSheet.absoluteFill} />
+          <View role="dialog" aria-modal accessibilityViewIsModal accessibilityLabel="Narration settings" style={[styles.sheet, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow, paddingBottom: Math.max(insets.bottom, 18) }]}>
+            <View style={[styles.handle, { backgroundColor: colors.border }]} />
+            <View style={styles.heading}>
+              <View style={[styles.headingIcon, { backgroundColor: colors.purpleSoft }]}><Icon name="headphones" size={22} color={colors.purple} /></View>
+              <View style={styles.headingCopy}>
+                <Text style={[styles.title, { color: colors.text }]}>Narration</Text>
+                <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Make StudyBolt sound like you</Text>
               </View>
-              <OptionRow
-                title="Phone default voice"
-                detail={preferences.language ? `Use the default for ${narrationLanguageLabel(preferences.language)}` : 'Use your phone’s selected voice'}
-                active={!preferences.voiceIdentifier}
-                color={colors.mint}
-                textColor={colors.text}
-                mutedColor={colors.textMuted}
-                borderColor={colors.border}
-                onSelect={() => selectVoice()}
-                onPreview={() => preview()}
-              />
-              {visibleVoices.map((voice) => (
-                <OptionRow key={voice.identifier} title={voice.name} detail={`${narrationLanguageLabel(voice.language)}${voice.quality === Speech.VoiceQuality.Enhanced ? ' · Enhanced' : ''}`} active={preferences.voiceIdentifier === voice.identifier} color={colors.mint} textColor={colors.text} mutedColor={colors.textMuted} borderColor={colors.border} onSelect={() => selectVoice(voice)} onPreview={() => preview(voice)} />
-              ))}
-              {loading ? <View style={styles.loading}><StudyBoltLoading compact colors={colors} message="Loading narration options…" /></View> : null}
-              {!loading && !visibleVoices.length ? <EmptyState text={preferences.language ? 'No voices are installed for this language. Choose another language or add voices in your phone settings.' : 'No built-in voices were found on this phone.'} /> : null}
-            </>}
-          </ScrollView>
+              <Pressable accessibilityRole="button" accessibilityLabel="Close" hitSlop={10} onPress={onClose} style={styles.close}><Icon name="close" size={22} color={colors.textMuted} /></Pressable>
+            </View>
 
-          <Text style={[styles.footnote, { color: colors.textMuted }]}>Uses voices installed on your phone. Narration follows your selected language when the study text supports it; it doesn’t translate the material.</Text>
+            <ScrollView
+              style={styles.settingsScroll}
+              contentContainerStyle={styles.settingsContent}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={[styles.previewCard, { backgroundColor: colors.primarySoft }]}>
+                <Animated.View style={[styles.previewOrb, { backgroundColor: colors.primary, opacity, transform: [{ scale }] }]}><Icon name="waveform" size={21} color={colors.primaryText} /></Animated.View>
+                <View style={styles.previewCopy}>
+                  <Text style={[styles.previewLabel, { color: colors.textMuted }]}>CURRENT VOICE</Text>
+                  <Text numberOfLines={1} style={[styles.previewVoice, { color: colors.text }]}>{selectedVoice?.name ?? 'Phone default voice'}</Text>
+                  <Text numberOfLines={1} style={[styles.previewLanguage, { color: colors.textSecondary }]}>{narrationLanguageLabel(preferences.language)}</Text>
+                </View>
+                <Pressable accessibilityRole="button" accessibilityLabel={previewing ? 'Stop voice preview' : 'Preview current narration voice'} onPress={() => previewing ? stopPreview() : preview(selectedVoice)} style={({ pressed }) => [styles.previewButton, { backgroundColor: colors.card, opacity: pressed ? 0.7 : 1 }]}>
+                  <Icon name={previewing ? 'stop' : 'play'} size={17} color={colors.primary} />
+                </Pressable>
+              </View>
+
+              <View style={[styles.segmented, { backgroundColor: colors.cardStrong }]}>
+                {(['language', 'voice'] as const).map((item) => {
+                  const active = tab === item;
+                  return (
+                    <Pressable aria-selected={active} key={item} accessibilityRole="tab" accessibilityState={{ selected: active }} onPress={() => { setTab(item); setSearch(''); }} style={[styles.segment, active && { backgroundColor: colors.card, shadowColor: colors.shadow }]}>
+                      <Icon name={item === 'language' ? 'translate' : 'account-voice'} size={16} color={active ? colors.primary : colors.textMuted} />
+                      <Text style={[styles.segmentText, { color: active ? colors.primary : colors.textMuted }]}>{item === 'language' ? 'Language' : 'Voice'}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <TextInput
+                accessibilityLabel={tab === 'language' ? 'Search languages' : 'Search voices'}
+                value={search}
+                onChangeText={setSearch}
+                placeholder={tab === 'language' ? 'Find a language' : 'Find a voice'}
+                placeholderTextColor={colors.textMuted}
+                style={[styles.search, { backgroundColor: colors.cardStrong, borderColor: colors.border, color: colors.text }]}
+                returnKeyType="search"
+                onSubmitEditing={Keyboard.dismiss}
+                clearButtonMode="while-editing"
+              />
+
+              <View style={styles.listContent}>
+                {tab === 'language' ? <>
+                  <Text style={[styles.listLabel, { color: colors.textMuted }]}>SPOKEN LANGUAGE</Text>
+                  <OptionRow
+                    title="Device language"
+                    detail="Follow your phone’s default"
+                    active={!preferences.language}
+                    color={colors.primary}
+                    textColor={colors.text}
+                    mutedColor={colors.textMuted}
+                    borderColor={colors.border}
+                    onSelect={() => selectLanguage(null)}
+                  />
+                  {visibleLanguages.map(({ code, label }) => (
+                    <OptionRow key={code} title={label} detail={code} active={preferences.language === code} color={colors.primary} textColor={colors.text} mutedColor={colors.textMuted} borderColor={colors.border} onSelect={() => selectLanguage(code)} />
+                  ))}
+                  {loading ? <View style={styles.loading}><StudyBoltLoading compact colors={colors} message="Loading narration options…" /></View> : null}
+                  {!loading && !languages.length ? <EmptyState text="No built-in speech languages were found on this phone." /> : null}
+                  {!loading && languages.length > 0 && !visibleLanguages.length ? <EmptyState text="No languages match that search." /> : null}
+                </> : <>
+                  <View style={styles.voiceListHeading}>
+                    <Text style={[styles.listLabel, { color: colors.textMuted }]}>AVAILABLE PHONE VOICES · {voices.length}</Text>
+                    <Pressable accessibilityRole="button" onPress={() => setTab('language')} style={styles.changeLanguage}><Text style={[styles.changeLanguageText, { color: colors.primary }]}>Change</Text><Icon name="chevron-right" size={15} color={colors.primary} /></Pressable>
+                  </View>
+                  <OptionRow
+                    title="Phone default voice"
+                    detail={preferences.language ? `Use the default for ${narrationLanguageLabel(preferences.language)}` : 'Use your phone’s selected voice'}
+                    active={!preferences.voiceIdentifier}
+                    color={colors.mint}
+                    textColor={colors.text}
+                    mutedColor={colors.textMuted}
+                    borderColor={colors.border}
+                    onSelect={() => selectVoice()}
+                    onPreview={() => preview()}
+                  />
+                  {visibleVoices.map((voice) => (
+                    <OptionRow key={voice.identifier} title={voice.name} detail={`${narrationLanguageLabel(voice.language)}${voice.quality === Speech.VoiceQuality.Enhanced ? ' · Enhanced' : ''}`} active={preferences.voiceIdentifier === voice.identifier} color={colors.mint} textColor={colors.text} mutedColor={colors.textMuted} borderColor={colors.border} onSelect={() => selectVoice(voice)} onPreview={() => preview(voice)} />
+                  ))}
+                  {loading ? <View style={styles.loading}><StudyBoltLoading compact colors={colors} message="Loading narration options…" /></View> : null}
+                  {!loading && !visibleVoices.length ? <EmptyState text={search.trim() ? 'No voices match that search. Try a name or language.' : 'No built-in voices were found on this phone.'} /> : null}
+                </>}
+              </View>
+
+              <Text style={[styles.footnote, { color: colors.textMuted }]}>Uses voices installed on your phone. Narration follows your selected language when the study text supports it; it doesn’t translate the material.</Text>
+            </ScrollView>
+          </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -261,7 +271,9 @@ function EmptyState({ text }: { text: string }) {
 
 const styles = StyleSheet.create({
   modalRoot: { flex: 1, justifyContent: 'flex-end' },
-  sheet: { width: '100%', maxWidth: 600, maxHeight: '91%', alignSelf: 'center', borderTopLeftRadius: 28, borderTopRightRadius: 28, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 18, paddingTop: 10, shadowOffset: { width: 0, height: -8 }, shadowOpacity: 0.16, shadowRadius: 24, elevation: 14 },
+  sheet: { width: '100%', maxWidth: 600, maxHeight: '91%', minHeight: 0, flexShrink: 1, alignSelf: 'center', borderTopLeftRadius: 28, borderTopRightRadius: 28, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 18, paddingTop: 10, shadowOffset: { width: 0, height: -8 }, shadowOpacity: 0.16, shadowRadius: 24, elevation: 14 },
+  settingsScroll: { flexShrink: 1, minHeight: 0 },
+  settingsContent: { paddingBottom: 4 },
   handle: { width: 42, height: 4, borderRadius: 4, alignSelf: 'center', marginBottom: 15 },
   heading: { flexDirection: 'row', alignItems: 'center', gap: 11, marginBottom: 14 },
   headingIcon: { width: 44, height: 44, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
@@ -280,7 +292,6 @@ const styles = StyleSheet.create({
   segment: { flex: 1, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
   segmentText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   search: { minHeight: 43, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 13, fontSize: 14, lineHeight: 21, marginBottom: 10 },
-  list: { flexGrow: 0, flexShrink: 1, minHeight: 115 },
   listContent: { paddingBottom: 5 },
   loading: { marginVertical: 22 },
   listLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 0.85 },

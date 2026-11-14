@@ -16,7 +16,14 @@ import { DOCUMENT_PICKER_TYPE, getImportDocumentType, pageLabel } from '../servi
 import { getStudyEventMinutes } from '../services/studyActivity';
 import { radius , typography } from '../theme';
 
-const CLASS_COLORS = ['#39BFA3', '#F26D8B', '#418DFF', '#F3A633', '#7D5CFF', '#11A7A2'];
+const CLASS_COLOR_FAMILIES = [
+  { name: 'Mint', shades: [{ name: 'Classic', color: '#39BFA3' }, { name: 'Deep', color: '#248E77' }, { name: 'Dark', color: '#176B5A' }] },
+  { name: 'Rose', shades: [{ name: 'Classic', color: '#F26D8B' }, { name: 'Deep', color: '#D64F72' }, { name: 'Dark', color: '#AD3758' }] },
+  { name: 'Blue', shades: [{ name: 'Classic', color: '#418DFF' }, { name: 'Deep', color: '#2863C7' }, { name: 'Dark', color: '#1F4A91' }] },
+  { name: 'Amber', shades: [{ name: 'Classic', color: '#F3A633' }, { name: 'Deep', color: '#C98419' }, { name: 'Dark', color: '#9B5B0C' }] },
+  { name: 'Violet', shades: [{ name: 'Classic', color: '#7D5CFF' }, { name: 'Deep', color: '#6142C7' }, { name: 'Dark', color: '#473094' }] },
+  { name: 'Teal', shades: [{ name: 'Classic', color: '#11A7A2' }, { name: 'Deep', color: '#0D7F7B' }, { name: 'Dark', color: '#075D5A' }] },
+];
 
 type CourseGroup = { course: StudyClass; decks: StudyPack[] };
 
@@ -146,6 +153,21 @@ function formatLastStudied(at: number, now = new Date()): string {
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', ...(date.getFullYear() !== now.getFullYear() ? { year: 'numeric' } : {}) });
 }
 
+function blendHexColor(color: string, background: string, amount: number): string {
+  const colorMatch = /^#?([\da-f]{6})$/i.exec(color);
+  const backgroundMatch = /^#?([\da-f]{6})$/i.exec(background);
+  if (!colorMatch || !backgroundMatch) return background;
+
+  const colorHex = colorMatch[1]!;
+  const backgroundHex = backgroundMatch[1]!;
+  const blendChannel = (offset: number) => {
+    const foregroundValue = Number.parseInt(colorHex.slice(offset, offset + 2), 16);
+    const backgroundValue = Number.parseInt(backgroundHex.slice(offset, offset + 2), 16);
+    return Math.round(backgroundValue + (foregroundValue - backgroundValue) * amount).toString(16).padStart(2, '0');
+  };
+  return `#${blendChannel(0)}${blendChannel(2)}${blendChannel(4)}`;
+}
+
 function getLibraryStudyHistory(events: StudyEvent[], decks: StudyPack[], now = Date.now()) {
   const deckById = new Map(decks.map((deck) => [deck.id, deck]));
   const latestByCourse = new Map<string, number>();
@@ -179,13 +201,11 @@ export function LibraryScreen({
   onOpenDeck,
   onCreateReview,
   onOpenFlagged,
-  onOpenSpeedReview,
   onImport,
 }: {
   onOpenDeck: (deck: StudyPack) => void;
   onCreateReview: (deckIds: string[]) => void;
   onOpenFlagged: () => void;
-  onOpenSpeedReview: (courseId: string) => void;
   onImport: (assets: ImportAsset[], course: StudyClass) => void;
 }) {
   const { colors, state, addClass, setLibrarySort } = useStudyBolt();
@@ -198,7 +218,7 @@ export function LibraryScreen({
   const [collapsedCourseIds, setCollapsedCourseIds] = useState<string[]>([]);
   const [creatingClass, setCreatingClass] = useState(false);
   const [newClassName, setNewClassName] = useState('');
-  const [selectedColor, setSelectedColor] = useState(CLASS_COLORS[0] ?? '#39BFA3');
+  const [selectedColor, setSelectedColor] = useState(CLASS_COLOR_FAMILIES[0]!.shades[0]!.color);
   const [selectedEmoji, setSelectedEmoji] = useState<string | null>(null);
   const [classError, setClassError] = useState<string | null>(null);
   const [inspectedCourseId, setInspectedCourseId] = useState<string | null>(null);
@@ -413,62 +433,66 @@ export function LibraryScreen({
               const personalDecks = decks.filter((deck) => deck.fileType !== 'demo');
               const courseMastery = personalDecks.length ? calculateCourseMastery(personalDecks) : 0;
               const collapsed = normalizedSearch ? false : collapsedCourseIds.includes(course.id);
+              const classCardColor = blendHexColor(course.color, colors.cardStrong, colors.mode === 'dark' ? 0.12 : 0.09);
+              const classBorderColor = blendHexColor(course.color, colors.border, colors.mode === 'dark' ? 0.2 : 0.18);
+              const deckDividerColor = colors.mode === 'dark' ? colors.border : '#DCE5EE';
               const lastStudied = studyHistory.latestByCourse.get(course.id);
               const courseMeta = `${decks.length} study ${decks.length === 1 ? 'pack' : 'packs'}${!personalDecks.length && decks.length ? ' · Samples' : lastStudied ? ` · Last studied ${formatLastStudied(lastStudied)}` : ''}`;
               return (
-                <View key={course.id} style={[styles.classGroup, { backgroundColor: colors.cardStrong, borderColor: `${course.color}38` }]}>
+                <View key={course.id} style={[styles.classGroup, { backgroundColor: classCardColor, borderColor: classBorderColor }]}>
                   <View style={[styles.classAccent, { backgroundColor: course.color }]} />
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={`${collapsed ? 'Expand' : 'Collapse'} ${course.name}, ${courseMeta}`}
-                    accessibilityHint={normalizedSearch ? 'Matching study packs stay expanded while searching.' : undefined}
-                    accessibilityState={{ expanded: !collapsed }}
-                    aria-expanded={!collapsed}
-                    disabled={Boolean(normalizedSearch)}
-                    onPress={() => toggleCourse(course.id)}
-                    style={({ pressed }) => [styles.courseHeader, pressed && !normalizedSearch && styles.courseHeaderPressed]}
-                  >
+                  <View style={styles.courseHeader}>
                     <View style={styles.courseHeaderMain}>
-                      <SubjectIcon subject={course.name} emoji={course.emoji} size={48} animated={false} />
-                      <View style={styles.courseHeaderCopy}>
-                        <Text numberOfLines={2} style={[styles.courseName, { color: colors.text }]}>{course.name}</Text>
-                        <Text numberOfLines={2} style={[styles.courseMeta, { color: colors.textSecondary }]}>{courseMeta}</Text>
-                      </View>
-                      <CollapseChevron collapsed={collapsed} color={colors.textSecondary} reducedMotion={reducedMotion} />
-                    </View>
-                  </Pressable>
-
-                  <View style={styles.masteryArea}>
-                    <View style={styles.masteryLabelRow}>
-                      <Text style={[styles.masteryLabel, { color: colors.textSecondary }]}>{personalDecks.length ? `Study progress · ${courseMastery}%` : decks.length ? 'Sample materials · explore the study tools' : 'Ready for your first study pack'}</Text>
                       <Pressable
                         accessibilityRole="button"
-                        accessibilityLabel={`About ${course.name}${personalDecks.length ? ' and study progress' : ''}`}
-                        hitSlop={8}
-                        onPress={() => setInspectedCourseId(course.id)}
-                        style={({ pressed }) => [styles.classInfoButton, pressed && styles.deckRowPressed]}
-                      ><Icon name="information-outline" size={17} color={colors.textSecondary} /></Pressable>
-                    </View>
-                    {personalDecks.length ? <ClassMasteryProgress value={courseMastery} courseName={course.name} reducedMotion={reducedMotion} /> : null}
-                  </View>
-
-                  <CollapsibleClassBody expanded={!collapsed} reducedMotion={reducedMotion}>
-                    <View style={[styles.classBody, { borderTopColor: colors.border }]}>
-                      {decks.length > 0 && !selecting ? (
+                        accessibilityLabel={`${collapsed ? 'Expand' : 'Collapse'} ${course.name}, ${courseMeta}`}
+                        accessibilityHint={normalizedSearch ? 'Matching study packs stay expanded while searching.' : undefined}
+                        accessibilityState={{ expanded: !collapsed }}
+                        aria-expanded={!collapsed}
+                        disabled={Boolean(normalizedSearch)}
+                        onPress={() => toggleCourse(course.id)}
+                        style={({ pressed }) => [styles.courseHeaderTapArea, pressed && !normalizedSearch && styles.courseHeaderPressed]}
+                      >
+                        <SubjectIcon subject={course.name} emoji={course.emoji} size={48} animated={false} />
+                        <View style={styles.courseHeaderCopy}>
+                          <Text numberOfLines={2} style={[styles.courseName, { color: colors.text }]}>{course.name}</Text>
+                          <Text numberOfLines={2} style={[styles.courseMeta, { color: colors.textSecondary }]}>{courseMeta}</Text>
+                        </View>
+                      </Pressable>
+                      <View style={styles.courseHeaderControls}>
+                        {decks.length > 0 ? (
+                          <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel={`About ${course.name}${personalDecks.length ? ' and study progress' : ''}`}
+                            onPress={() => setInspectedCourseId(course.id)}
+                            style={({ pressed }) => [styles.classInfoButton, pressed && styles.deckRowPressed]}
+                          ><Icon name="information-outline" size={17} color={colors.textSecondary} /></Pressable>
+                        ) : null}
                         <Pressable
                           accessibilityRole="button"
-                          accessibilityLabel={`Start speed review for ${course.name}`}
-                          onPress={() => onOpenSpeedReview(course.id)}
-                          style={({ pressed }) => [styles.speedReviewRow, { backgroundColor: colors.purpleSoft }, pressed && styles.deckRowPressed]}
-                        >
-                          <View style={[styles.speedReviewIcon, { backgroundColor: colors.purple }]}><Icon name="speedometer" size={17} color={colors.primaryText} /></View>
-                          <View style={styles.speedReviewCopy}>
-                            <Text style={[styles.speedReviewTitle, { color: colors.text }]}>Speed Review</Text>
-                            <Text style={[styles.speedReviewSubtitle, { color: colors.textSecondary }]}>Quick audio recap of this class</Text>
-                          </View>
-                          <Icon name="arrow-right" size={18} color={colors.purple} />
-                        </Pressable>
-                      ) : null}
+                          accessibilityLabel={`${collapsed ? 'Expand' : 'Collapse'} ${course.name}`}
+                          accessibilityHint={normalizedSearch ? 'Matching study packs stay expanded while searching.' : undefined}
+                          accessibilityState={{ expanded: !collapsed }}
+                          aria-expanded={!collapsed}
+                          disabled={Boolean(normalizedSearch)}
+                          onPress={() => toggleCourse(course.id)}
+                          style={({ pressed }) => [styles.collapseButton, pressed && !normalizedSearch && styles.courseHeaderPressed]}
+                        ><CollapseChevron collapsed={collapsed} color={colors.textSecondary} reducedMotion={reducedMotion} /></Pressable>
+                      </View>
+                    </View>
+                  </View>
+
+                  {!decks.length || personalDecks.length ? (
+                    <View style={styles.masteryArea}>
+                      <View style={styles.masteryLabelRow}>
+                        <Text style={[styles.masteryLabel, { color: colors.textSecondary }]}>{personalDecks.length ? `Study progress · ${courseMastery}%` : 'Ready for your first study pack'}</Text>
+                      </View>
+                      {personalDecks.length ? <ClassMasteryProgress value={courseMastery} courseName={course.name} reducedMotion={reducedMotion} /> : null}
+                    </View>
+                  ) : null}
+
+                  <CollapsibleClassBody expanded={!collapsed} reducedMotion={reducedMotion}>
+                    <View style={[styles.classBody, decks.length > 0 && !personalDecks.length && styles.compactSampleClassBody, { borderTopColor: colors.border }]}>
                       {decks.length === 0 ? (
                         <View style={[styles.emptyClassCard, { backgroundColor: colors.card, borderColor: `${course.color}42` }]}>
                           <View style={[styles.emptyClassIcon, { backgroundColor: `${course.color}18` }]}>
@@ -521,7 +545,7 @@ export function LibraryScreen({
                                   </View>
                                   <Icon name={selecting ? 'checkbox-multiple-marked-outline' : 'chevron-right'} size={19} color={isSelected ? colors.primary : colors.textMuted} />
                                 </Pressable>
-                                {index < visibleDecks.length - 1 ? <View style={[styles.deckDivider, { backgroundColor: colors.border }]} /> : null}
+                                {index < visibleDecks.length - 1 ? <View style={[styles.deckDivider, { backgroundColor: deckDividerColor }]} /> : null}
                               </React.Fragment>
                             );
                           })}
@@ -698,12 +722,28 @@ export function LibraryScreen({
               </ScrollView>
 
               <Text style={[styles.inputLabel, styles.optionLabel, { color: colors.textSecondary }]}>Choose a color</Text>
-              <View style={styles.optionRow}>
-                {CLASS_COLORS.map((color) => {
-                  const active = selectedColor === color;
-                  return <Pressable key={color} accessibilityRole="button" accessibilityLabel="Choose class color" onPress={() => setSelectedColor(color)} style={[styles.colorOption, { backgroundColor: color, borderColor: colors.card }, active && { borderColor: colors.text, borderWidth: 3 }]} />;
-                })}
-              </View>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.colorOptions}>
+                {CLASS_COLOR_FAMILIES.map((family) => (
+                  <View key={family.name} style={styles.colorFamilyOptions}>
+                    {family.shades.map((shade) => {
+                      const active = selectedColor === shade.color;
+                      return (
+                        <Pressable
+                          key={shade.color}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Choose ${family.name} ${shade.name} shade`}
+                          accessibilityState={{ selected: active }}
+                          aria-pressed={active}
+                          onPress={() => setSelectedColor(shade.color)}
+                          style={[styles.colorOption, { backgroundColor: active ? colors.primarySoft : 'transparent', borderColor: active ? colors.text : 'transparent' }]}
+                        >
+                          <View style={[styles.colorSwatch, { backgroundColor: shade.color, borderColor: colors.border }]} />
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                ))}
+              </ScrollView>
 
               <View style={[styles.previewCard, { backgroundColor: `${selectedColor}16`, borderColor: `${selectedColor}44` }]}>
                 <SubjectIcon subject={newClassName} emoji={classEmoji} size={44} />
@@ -756,7 +796,10 @@ const styles = StyleSheet.create({
   classAccent: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 4 },
   courseHeader: { minHeight: 72, paddingHorizontal: 14, paddingTop: 16, paddingBottom: 6, paddingLeft: 17 },
   courseHeaderPressed: { opacity: 0.88 },
-  courseHeaderMain: { flexDirection: 'row', alignItems: 'center', gap: 11 },
+  courseHeaderMain: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  courseHeaderTapArea: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 11 },
+  courseHeaderControls: { flexDirection: 'row', alignItems: 'center' },
+  collapseButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 12 },
   courseHeaderCopy: { flex: 1, minWidth: 0 },
   courseName: { fontSize: 18, lineHeight: 25, fontWeight: '700' },
   courseMeta: { fontSize: 12, lineHeight: 18, marginTop: 4 },
@@ -768,11 +811,7 @@ const styles = StyleSheet.create({
   masteryFill: { height: 5, borderRadius: 3 },
   measuredBody: { width: '100%', flexShrink: 0 },
   classBody: { borderTopWidth: StyleSheet.hairlineWidth, paddingHorizontal: 12, paddingTop: 12, paddingBottom: 12 },
-  speedReviewRow: { minHeight: 54, borderRadius: 14, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 11, paddingVertical: 8, marginBottom: 10 },
-  speedReviewIcon: { width: 32, height: 32, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
-  speedReviewCopy: { flex: 1, minWidth: 0 },
-  speedReviewTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
-  speedReviewSubtitle: { fontSize: 16, lineHeight: 24, marginTop: 2 },
+  compactSampleClassBody: { borderTopWidth: 0, paddingTop: 8 },
   emptyClassCard: { minHeight: 68, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 11, padding: 12 },
   emptyClassIcon: { width: 39, height: 39, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   emptyClassCopy: { flex: 1 },
@@ -782,7 +821,7 @@ const styles = StyleSheet.create({
   deckList: { borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
   deckRow: { minHeight: 80, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 14 },
   deckRowPressed: { opacity: 0.84 },
-  deckDivider: { height: StyleSheet.hairlineWidth, marginLeft: 58 },
+  deckDivider: { height: 1.25, marginLeft: 58 },
   deckFileIcon: { width: 36, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   checkbox: { width: 36, height: 36, borderRadius: 11, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   deckCopy: { flex: 1, minWidth: 0 },
@@ -828,11 +867,13 @@ const styles = StyleSheet.create({
   input: { flex: 1, minWidth: 0, fontSize: 16, minHeight: 52, lineHeight: 24 },
   errorText: { fontSize: 14, lineHeight: 21, marginTop: 6, marginLeft: 2 },
   optionLabel: { marginTop: 16 },
-  optionRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   iconOptions: { gap: 8, paddingVertical: 3 },
   iconOption: { width: 70, minHeight: 72, borderRadius: 15, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', gap: 4, padding: 5 },
   iconOptionLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700' },
-  colorOption: { width: 31, height: 31, borderRadius: 16, borderWidth: 1 },
+  colorOptions: { alignItems: 'center', gap: 9, paddingHorizontal: 2, paddingVertical: 2 },
+  colorFamilyOptions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  colorOption: { width: 44, height: 44, borderRadius: 22, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  colorSwatch: { width: 28, height: 28, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth },
   previewCard: { minHeight: 65, borderRadius: 16, borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 12, marginTop: 19 },
   previewTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   previewMeta: { fontSize: 12, lineHeight: 18, marginTop: 3 },

@@ -1,7 +1,7 @@
 import { LoadingArtwork } from './StudyBoltLoading';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, Animated, Easing, FlatList, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { AccessibilityInfo, Animated, Easing, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
 import { useStudyBolt } from '../StudyBoltContext';
@@ -10,251 +10,304 @@ import type { StudyPack, StudyTool } from '../models';
 import type { SmartStudyMode } from '../services/adaptiveStudy';
 import type { HomeDashboard } from '../services/homeDashboard';
 import { buildLearningMastery } from '../services/learningMastery';
-import type { LearningMasteryGroup } from '../services/learningMastery';
 import { getTodaysPlanFocus, getTodaysPlanStatus } from '../services/todaysPlan';
 import type { AppColors } from '../theme';
 import { SubjectIcon } from './SubjectIcon';
-import { PlanBook, PlanBorderHighlight, PlanClassSurface, PlanReadinessRing } from './TodaysPlanArtwork';
-import { planToolReady, samePlanRecommendation, todaysPlanCourse } from './todaysPlanPresentation';
+import { PlanBook, PlanReadinessRing } from './TodaysPlanArtwork';
+import { todaysPlanCourse, type TodaysPlanAction, type TodaysPlanCourse } from './todaysPlanPresentation';
+import type { ImportClass } from '../hooks/useStudyMaterialPicker';
 
 export type HomePriority = 'due' | 'weak' | 'mistakes';
 type Props = {
   dashboard: HomeDashboard;
   colors: AppColors;
-  onStartSession: () => void | Promise<void>;
+  now: Date;
+  selectedId?: string;
+  onSelectClass: (id: string) => void;
   onOpenPriority: (kind: HomePriority) => void;
   onOpenPlan: () => void;
   onOpenDeck: (deck: StudyPack, tool?: StudyTool, cardIds?: string[]) => void;
   onStartStudy: (mode: SmartStudyMode, focus?: { deckId: string; sectionIds?: string[] }) => void;
   onOpenMistakes: (itemIds?: string[]) => void;
-  onOpenLibrary: () => void;
-  onAddMaterial: () => void | Promise<void>;
+  onAddMaterial: (course?: ImportClass) => void | Promise<void>;
 };
 type PlanIconName = keyof typeof MaterialCommunityIcons.glyphMap;
 function PlanIcon({ name, color, size = 20 }: { name: PlanIconName; color: string; size?: number }) {
   return <View aria-hidden accessible={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants"><MaterialCommunityIcons name={name} color={color} size={size} accessible={false} /></View>;
 }
 
-/** Today's Plan owns only local selection/presentation; all destinations remain Home's existing actions. */
-export function TodaysPlanCard({ dashboard, colors, onStartSession, onOpenPriority, onOpenPlan, onOpenDeck, onStartStudy, onOpenMistakes, onOpenLibrary, onAddMaterial }: Props) {
+const actionIcons = {
+  notes: 'note-text-outline', flashcards: 'cards-outline', quiz: 'clipboard-check-outline',
+} as const;
+
+export function TodaysPlanCard({ dashboard, now, colors, selectedId, onSelectClass, onOpenPriority, onOpenPlan, onOpenDeck, onStartStudy, onOpenMistakes, onAddMaterial }: Props) {
   const { state, hydrated } = useStudyBolt();
   const reducedMotion = useReducedMotion();
   const { width, fontScale } = useWindowDimensions();
-  const groups = useMemo(() => buildLearningMastery(state), [state, dashboard]);
-  const recommendedDeckId = dashboard.recommendation.deckId ?? dashboard.weak[0]?.deck.id ?? dashboard.decks.find(deck => dashboard.mistakeIds.some(id => id.startsWith(deck.id + ':')))?.id;
-  const defaultGroup = groups.find(group => group.packs.some(pack => pack.id === recommendedDeckId)) ?? groups[0]!;
-  const [selectedId, setSelectedId] = useState(defaultGroup.id);
-  const selectedRef = useRef(selectedId);
-  const selectedIndex = Math.max(0, groups.findIndex(group => group.id === selectedId));
-  const selected = groups[selectedIndex]!;
+  const pages = useMemo(() => buildLearningMastery(state, now).map(group => ({
+    group,
+    course: state.classes.find(item => `class:${item.id}` === group.id),
+    plan: todaysPlanCourse(state, group, now),
+  })), [state, now]);
+  const recommendedDeckId = dashboard.recommendation.deckId
+    ?? dashboard.decks.find(deck => dashboard.mistakeIds.some(id => id.startsWith(deck.id + ':')))?.id;
+  const preferredIndex = pages.findIndex(({ group }) => group.packs.some(pack => pack.id === recommendedDeckId));
+  const savedIndex = pages.findIndex(({ group }) => group.id === selectedId);
+  const selectedIndex = savedIndex < 0 ? Math.max(0, preferredIndex) : savedIndex;
+  const selected = pages[selectedIndex]!;
+  const hasClass = selected.group.kind === 'class' || selected.group.packs.length > 0;
   const [cardWidth, setCardWidth] = useState(0);
-  const [selectorWidth, setSelectorWidth] = useState(0);
+  const [pageWidth, setPageWidth] = useState(0);
+  const [heights, setHeights] = useState<Record<string, number>>({});
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [focused, setFocused] = useState<string | null>(null);
   const [optionsExpanded, setOptionsExpanded] = useState(false);
-  const list = useRef<FlatList<LearningMasteryGroup>>(null);
+  const list = useRef<ScrollView>(null);
   const inFlight = useRef(false);
   const mounted = useRef(true);
+  const visibleId = useRef(selected.group.id);
+  const alignedIndex = useRef(selectedIndex);
+  const aligning = useRef(false);
   const arrival = useRef(new Animated.Value(1)).current;
   const press = useRef(new Animated.Value(0)).current;
   const acknowledgment = useRef(new Animated.Value(1)).current;
-  const content = useRef(new Animated.Value(1)).current;
-  const selectedCourse = useMemo(() => todaysPlanCourse(state, selected), [state, selected, dashboard]);
-  const hasClass = selected.kind === 'class' || selected.packs.length > 0;
-  const hasMaterials = selected.packs.length > 0;
-  const focus = getTodaysPlanFocus(selectedCourse.dashboard);
   const status = getTodaysPlanStatus(dashboard);
   const compact = (cardWidth || width - 40) < 340 || fontScale >= 1.3;
   const blue = colors.mode === 'dark' ? colors.primary : '#075BC6';
   const green = colors.mode === 'dark' ? colors.mint : '#187D68';
-  const ids = groups.map(group => group.id).join('|');
+  const pageIds = pages.map(({ group }) => group.id).join('|');
 
   useEffect(() => {
-    const existing = groups.findIndex(group => group.id === selectedRef.current);
-    const index = existing >= 0 ? existing : Math.max(0, groups.findIndex(group => group.id === defaultGroup.id));
-    selectedRef.current = groups[index]!.id;
-    setSelectedId(groups[index]!.id);
-    if (selectorWidth) list.current?.scrollToOffset({ offset: index * selectorWidth, animated: false });
-  }, [ids, selectorWidth]);
+    if (!pageWidth || pages.length < 2) return;
+    aligning.current = true;
+    const frame = requestAnimationFrame(() => {
+      list.current?.scrollTo({ x: alignedIndex.current * pageWidth, animated: false });
+      aligning.current = false;
+    });
+    return () => { cancelAnimationFrame(frame); aligning.current = false; };
+  }, [pageIds, pageWidth, pages.length]);
+
+  useEffect(() => {
+    visibleId.current = selected.group.id;
+    alignedIndex.current = selectedIndex;
+  }, [selected.group.id, selectedIndex]);
+
+  useEffect(() => {
+    if (hydrated && hasClass && savedIndex < 0) onSelectClass(selected.group.id);
+  }, [hasClass, hydrated, onSelectClass, savedIndex, selected.group.id]);
 
   useEffect(() => {
     mounted.current = true;
     arrival.setValue(reducedMotion ? 1 : 0);
     const animation = Animated.timing(arrival, { toValue: 1, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: Platform.OS !== 'web', isInteraction: false });
     if (!reducedMotion) animation.start();
-    return () => { mounted.current = false; animation.stop(); press.stopAnimation(); };
-  }, [arrival, press, reducedMotion]);
+    return () => { mounted.current = false; animation.stop(); press.stopAnimation(); press.setValue(0); };
+  }, [arrival, reducedMotion, press, hasClass]);
 
   useEffect(() => {
     acknowledgment.setValue(1);
-    if (reducedMotion || !status.complete) return;
+    if (reducedMotion || (!status.complete && !status.hasActivity)) return;
     acknowledgment.setValue(0);
     const animation = Animated.timing(acknowledgment, { toValue: 1, duration: 280, useNativeDriver: Platform.OS !== 'web', isInteraction: false });
     animation.start();
     return () => animation.stop();
-  }, [acknowledgment, reducedMotion, status.complete]);
+  }, [acknowledgment, reducedMotion, status.complete, status.hasActivity, dashboard.today.latestAt]);
 
-  useEffect(() => {
-    content.setValue(reducedMotion ? 1 : 0);
-    const animation = Animated.timing(content, { toValue: 1, duration: 180, useNativeDriver: Platform.OS !== 'web', isInteraction: false });
-    if (!reducedMotion) animation.start();
-    return () => animation.stop();
-  }, [content, reducedMotion, selected.id]);
-
-  const select = (index: number, announce = false) => {
-    const group = groups[index];
-    if (!group || inFlight.current) return;
-    if (selectedRef.current !== group.id) { selectedRef.current = group.id; setSelectedId(group.id); setError(null); }
-    if (announce) AccessibilityInfo.announceForAccessibility(group.name + ', ' + (index + 1) + ' of ' + groups.length);
+  const select = (index: number) => {
+    const group = pages[index]?.group;
+    if (!group || inFlight.current || visibleId.current === group.id) return;
+    visibleId.current = group.id;
+    alignedIndex.current = index;
+    onSelectClass(group.id);
+    setError(null);
   };
   const navigateClass = (index: number) => {
-    if (index < 0 || index >= groups.length) return;
-    select(index, true);
-    list.current?.scrollToOffset({ offset: index * selectorWidth, animated: !reducedMotion });
+    const group = pages[index]?.group;
+    if (!group || !pageWidth || inFlight.current) return;
+    if (reducedMotion) select(index);
+    list.current?.scrollTo({ x: index * pageWidth, animated: !reducedMotion });
+    AccessibilityInfo.announceForAccessibility(`${group.name}, ${index + 1} of ${pages.length}`);
   };
   const animatePress = (down: boolean) => {
+    if (reducedMotion) return;
     press.stopAnimation();
-    Animated.timing(press, { toValue: down && !reducedMotion ? 1 : 0, duration: reducedMotion ? 0 : 110, useNativeDriver: Platform.OS !== 'web' }).start();
+    Animated.timing(press, { toValue: down ? 1 : 0, duration: 110, useNativeDriver: Platform.OS !== 'web' }).start();
   };
-  const start = async (action: () => void | Promise<void>) => {
+  const start = async (action: TodaysPlanAction, course?: ImportClass) => {
     if (inFlight.current) return;
     inFlight.current = true;
-    setOpening(true); setError(null);
-    try { await action(); }
-    catch { if (mounted.current) setError('Couldn’t open this step. Please try again.'); }
-    finally { inFlight.current = false; if (mounted.current) setOpening(false); }
-  };
-  const startSelected = () => {
-    const scoped = selectedCourse.dashboard;
-    // Reuse the original callback for the original recommendation, including the exact upload flow.
-    if (scoped.recommendation.kind === 'materials') return dashboard.recommendation.kind === 'materials' ? onStartSession() : onAddMaterial();
-    if (samePlanRecommendation(dashboard, scoped)) return onStartSession();
-    const next = scoped.recommendation;
-    const deck = state.decks.find(item => item.id === next.deckId && selected.packs.some(pack => pack.id === item.id));
-    if (next.kind === 'mistakes') return onOpenMistakes(scoped.mistakeIds);
-    if (!deck) return onOpenLibrary();
-    if (next.kind === 'pack') return onOpenDeck(deck);
-    if (next.kind === 'resume') return onOpenDeck(deck, 'audio');
-    if (next.kind === 'due') return onOpenDeck(deck, 'flashcards', next.cardIds);
-    if (next.kind === 'weak' && next.sectionId) {
-      if (!next.cardIds?.length) return onOpenDeck(deck, 'notes');
-      return onStartStudy('smart', { deckId: deck.id, sectionIds: [next.sectionId] });
+    setOpening(true);
+    setError(null);
+    try {
+      switch (action.kind) {
+        case 'materials': await onAddMaterial(course); break;
+        case 'mistakes': onOpenMistakes(action.itemIds); break;
+        case 'smart': onStartStudy('smart', { deckId: action.deck.id, sectionIds: action.sectionId ? [action.sectionId] : undefined }); break;
+        case 'deck': onOpenDeck(action.deck, action.tool, action.cardIds); break;
+      }
+    } catch {
+      if (mounted.current) setError('Couldn’t open this step. Please try again.');
+    } finally {
+      inFlight.current = false;
+      if (mounted.current) setOpening(false);
     }
-    return deck.flashcards.length ? onStartStudy('smart', { deckId: deck.id }) : onOpenDeck(deck, 'notes');
   };
   const priorities = [
     { kind: 'weak' as const, value: dashboard.weak.length, label: 'Weak topics', empty: 'None identified', detail: 'Based on repeated quiz answers', icon: 'lightning-bolt-outline' as const },
     { kind: 'due' as const, value: dashboard.dueCount, label: 'Due reviews', empty: 'Nothing due', detail: 'Recorded reviews scheduled for now', icon: 'cards-outline' as const },
     { kind: 'mistakes' as const, value: dashboard.mistakeIds.length, label: 'Missed questions', empty: 'Nothing repeated', detail: 'Repeated misses not yet corrected', icon: 'book-alert-outline' as const },
   ];
-  const taskTitle = hasClass && !hasMaterials ? 'Let’s get your class ready' : selectedCourse.dashboard.recommendation.kind === 'practice' ? 'Build your practice' : focus.title;
-  const reason = hasClass && !hasMaterials ? 'Add your first lecture or notes to start studying.' : selectedCourse.dashboard.recommendation.kind === 'practice' ? 'Try recalling the answer before you check it.' : focus.reason;
-  const actionColor = colors.primaryText;
-
-  const courseCard = (group: LearningMasteryGroup, pageWidth?: number) => {
-    const course = state.classes.find(item => 'class:' + item.id === group.id);
-    const packs = dashboard.decks.filter(deck => group.packs.some(pack => pack.id === deck.id));
-    const materialCount = packs.reduce((sum, pack) => sum + (pack.sourceFileNames?.length ? new Set(pack.sourceFileNames).size : 1), 0);
-    const active = group.id === selected.id;
-    const stacked = fontScale > 1.4 || (compact && group.name.length > 28);
-    const icon = <View aria-hidden accessible={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants"><SubjectIcon subject={group.name} emoji={course?.emoji ?? packs[0]?.emoji} size={compact ? 36 : 40} animated={false} /></View>;
-    const name = <Text accessibilityRole="header" style={[styles.courseName, { color: colors.text }]}>{group.name}</Text>;
-    const details = <>
-      <Text style={[styles.smallCopy, { color: colors.textSecondary }]}>{materialCount} {materialCount === 1 ? 'material' : 'materials'}{group.mastery === null ? ' · Not assessed yet' : ''}</Text>
-      {group.mastery !== null ? <Text style={[styles.smallCopy, { color: colors.textSecondary }]}>{group.supportedTopics} of {group.topicCount} {group.topicCount === 1 ? 'topic' : 'topics'} recalled consistently</Text> : null}
+  const renderStep = (plan: TodaysPlanCourse, active: boolean, course?: ImportClass) => {
+    const { primary, tasks, examLabel } = plan;
+    const action = primary.action;
+    const empty = action.kind === 'materials';
+    const pack = action.kind === 'deck' && !action.tool;
+    const audio = action.kind === 'deck' && action.tool === 'audio';
+    const label = empty ? 'Add course material' : pack ? 'View Study Pack' : audio ? 'Resume StudyCast' : 'Start Studying';
+    const reason = empty && course ? 'Add your first lecture or notes to start studying.' : primary.reason;
+    const title = empty && course ? 'Add your first study material' : primary.title;
+    const disabled = opening || !active;
+    return <>
+      <View style={styles.taskLabel}><PlanIcon name={empty ? 'lightning-bolt-outline' : 'compass-outline'} color={blue} size={16} /><Text style={[styles.eyebrow, { color: blue }]}>{empty ? 'YOUR FIRST STEP' : 'YOUR NEXT STEP'}</Text></View>
+      <Text accessibilityRole="header" style={[styles.taskTitle, { color: colors.text }]}>{title}</Text>
+      {'deck' in action ? <Text style={[styles.source, { color: colors.textSecondary }]}>{action.deck.title}</Text> : null}
+      <Text style={[styles.reason, { color: colors.textSecondary }]}>{reason}</Text>
+      {examLabel ? <View style={styles.taskDetails}><View style={[styles.examTag, { backgroundColor: colors.goldSoft }]}><PlanIcon name="calendar-outline" color={colors.goldText} size={14} /><Text style={[styles.smallCopy, { color: colors.goldText }]}>{examLabel}</Text></View></View> : null}
+      {tasks.length ? <View style={styles.tasks}>{tasks.map(task => {
+        const tool = task.action.kind === 'deck' ? task.action.tool : 'mistakes';
+        return <Pressable key={tool} accessibilityRole="button" accessibilityLabel={task.title + ('deck' in task.action ? ' · ' + task.action.deck.title : '')} disabled={disabled} accessibilityState={{ disabled }} onPress={() => { void start(task.action); }} onFocus={() => setFocused(tool)} onBlur={() => setFocused(null)} style={({ pressed }) => [styles.taskRow, { borderColor: focused === tool ? blue : 'transparent', backgroundColor: pressed ? colors.primarySoft : 'transparent', opacity: opening ? 0.65 : 1 }]}>
+          <PlanIcon name={tool === 'mistakes' ? 'book-alert-outline' : actionIcons[tool]} color={blue} size={17} />
+          <Text style={[styles.taskRowTitle, styles.flex, { color: colors.text }]}>{task.title}</Text>
+          <PlanIcon name="chevron-right" color={blue} size={16} />
+        </Pressable>;
+      })}</View> : null}
+      <Animated.View style={{ marginTop: 14, transform: reducedMotion ? [] : [{ scale: press.interpolate({ inputRange: [0, 1], outputRange: [1, 0.99] }) }] }}>
+        <Pressable accessibilityRole="button" accessibilityLabel={opening && active ? 'Opening your next step' : label} accessibilityHint={audio || pack || empty ? reason : primary.title} accessibilityState={{ busy: opening && active, disabled }} disabled={disabled} onPress={() => { void start(action, course); }} onPressIn={() => animatePress(true)} onPressOut={() => animatePress(false)} onFocus={() => setFocused('action')} onBlur={() => setFocused(null)} style={({ pressed }) => [styles.action, { backgroundColor: colors.primary, borderColor: focused === 'action' && active ? colors.text : 'transparent', opacity: (opening && active) || pressed ? 0.8 : 1 }]}>
+          {opening && active && !reducedMotion ? <LoadingArtwork compact colors={{ ...colors, primary: colors.primaryText }} /> : <PlanIcon name={empty ? 'plus' : pack ? 'file-document-outline' : 'play'} color={colors.primaryText} />}
+          <Text style={[styles.actionText, { color: colors.primaryText }]}>{opening && active ? 'Opening…' : label}</Text><PlanIcon name="arrow-right" color={colors.primaryText} size={18} />
+        </Pressable>
+      </Animated.View>
+      {active && error ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={[styles.error, { color: colors.danger }]}>{error}</Text> : null}
     </>;
-    const score = <View style={styles.courseScore}><PlanReadinessRing value={group.mastery} colors={colors} still={reducedMotion || !active} /><Text aria-hidden accessible={false} style={[styles.scoreCaption, { color: colors.textSecondary }]}>Knowledge</Text></View>;
-    return <View style={{ width: pageWidth, paddingHorizontal: 1 }}>
-      <PlanClassSurface active={active} still={reducedMotion}>
-        <View aria-hidden={!active} accessibilityElementsHidden={!active} importantForAccessibility={active ? 'auto' : 'no-hide-descendants'} style={[styles.courseCard, { backgroundColor: active ? colors.primarySoft : colors.cardStrong, borderColor: active ? colors.mode === 'dark' ? '#8F7C43' : '#E1C46F' : colors.border }, compact && styles.courseCompact, stacked && styles.courseStacked]}>
-          {stacked ? <>
-            <View style={styles.courseHeading}>{icon}<View style={styles.flex}>{name}</View></View>
-            <View style={[styles.courseMetrics, fontScale > 1.4 && styles.courseMetricsStacked]}><View style={styles.courseCopy}>{details}</View>{score}</View>
-          </> : <>{icon}<View style={styles.courseCopy}>{name}{details}</View>{score}</>}
+  };
+
+  const renderPage = ({ group, course, plan }: typeof selected, index: number, measure: boolean) => {
+    const active = index === selectedIndex;
+    const color = course?.color ?? plan.decks[0]?.color ?? colors.primary;
+    const { materialCount } = plan;
+    return <View
+      key={group.id}
+      aria-hidden={!active}
+      accessibilityElementsHidden={!active}
+      importantForAccessibility={active ? 'auto' : 'no-hide-descendants'}
+      onLayout={measure ? event => {
+        const height = Math.ceil(event.nativeEvent.layout.height);
+        setHeights(current => current[group.id] === height ? current : { ...current, [group.id]: height });
+      } : undefined}
+      style={measure ? { width: pageWidth } : undefined}
+    >
+      <View style={[styles.courseCard, { backgroundColor: colors.cardStrong, borderColor: colors.border }, compact && styles.courseCompact]}>
+        <View style={styles.courseHeading}>
+          <View aria-hidden accessible={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+            <SubjectIcon subject={group.name} emoji={course?.emoji ?? plan.decks[0]?.emoji} size={compact ? 34 : 40} animated={false} />
+          </View>
+          <View style={styles.flex}>
+            <View style={styles.courseIdentity}><View aria-hidden style={[styles.classDot, { backgroundColor: color }]} /><Text accessibilityRole="header" style={[styles.courseName, styles.flex, { color: colors.text }]}>{group.name}</Text></View>
+            <Text style={[styles.smallCopy, { color: colors.textSecondary }]}>{materialCount} {materialCount === 1 ? 'material' : 'materials'}</Text>
+          </View>
         </View>
-      </PlanClassSurface>
+        {materialCount > 0 ? <View style={[styles.courseMetrics, fontScale >= 1.45 && styles.courseMetricsStacked]}>
+          <View style={styles.courseCopy}>
+            <Text style={[styles.smallCopy, { color: colors.text, fontWeight: '600' }]}>Knowledge readiness</Text>
+            <Text style={[styles.smallCopy, { color: colors.textSecondary }]}>
+              {group.mastery !== null ? `${group.supportedTopics} of ${group.topicCount} topics recalled consistently` : 'Not assessed yet'}
+            </Text>
+            {group.practicedPacks > 0 ? <Text style={[styles.smallCopy, { color: colors.textSecondary }]}>
+              {group.quizAccuracy !== null ? `${group.quizAccuracy}% first-answer quiz accuracy` : `${group.practicedPacks} of ${group.packs.length} packs practiced`}
+            </Text> : null}
+          </View>
+          {group.mastery !== null ? <PlanReadinessRing value={group.mastery} colors={colors} accent={color} still={reducedMotion || !active} /> : null}
+        </View> : null}
+      </View>
+      {renderStep(plan, active, course)}
     </View>;
   };
 
+  const visibleDotsStart = Math.max(0, Math.min(selectedIndex - 2, pages.length - 5));
+
   return <Animated.View onLayout={event => setCardWidth(event.nativeEvent.layout.width)} style={[styles.card, { shadowColor: colors.shadow, opacity: arrival.interpolate({ inputRange: [0, 1], outputRange: [0.96, 1] }), transform: reducedMotion ? [] : [{ translateY: arrival.interpolate({ inputRange: [0, 1], outputRange: [4, 0] }) }] }]}>
-    <LinearGradient colors={colors.mode === 'dark' ? ['#456B9D', '#786A3F', '#314561'] : ['#92B9F1', '#EEDA9A', '#B4CFF5']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.frame}>
+    <LinearGradient colors={colors.mode === 'dark' ? ['#5B81B4', '#857346', '#3F5675'] : ['#87AFE9', '#EBD18A', '#BAD2F4']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.frame}>
       <View style={[styles.surface, { backgroundColor: colors.card }]}>
         <LinearGradient pointerEvents="none" colors={[colors.primarySoft, colors.card]} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.wash} />
         <View style={styles.heading}>
           <PlanBook colors={colors} still={reducedMotion} compact={compact} />
-          <View style={styles.headingCopy}><Text accessibilityRole="header" style={[styles.sectionTitle, compact && { fontSize: 16, lineHeight: 22 }, { color: colors.text }]}>Today’s Plan</Text>{!compact ? <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Small steps. Stronger recall.</Text> : null}</View>
+          <View style={styles.headingCopy}><Text accessibilityRole="header" style={[styles.sectionTitle, compact && { fontSize: 16, lineHeight: 22 }, { color: colors.text }]}>Today’s Plan</Text><Text style={[styles.subtitle, { color: colors.textSecondary }]}>Small steps. Stronger recall.</Text></View>
           <Pressable accessibilityRole="button" accessibilityLabel="Open study planner" onPress={onOpenPlan} onFocus={() => setFocused('planner')} onBlur={() => setFocused(null)} style={({ pressed }) => [styles.plannerLink, { backgroundColor: colors.card, borderColor: focused === 'planner' ? blue : colors.border, opacity: pressed ? 0.7 : 1 }]}><Text style={[styles.linkText, { color: blue }]}>Planner</Text><PlanIcon name="chevron-right" color={blue} size={16} /></Pressable>
         </View>
-        {!hydrated ? <View accessibilityState={{ busy: true }} style={styles.loading}><LoadingArtwork compact colors={colors} /><Text style={[styles.smallCopy, { color: colors.textSecondary }]}>Loading your plan…</Text></View> : <>
-          {hasClass ? <View style={styles.selector} onLayout={event => setSelectorWidth(event.nativeEvent.layout.width)}>
-            {groups.length > 1 && selectorWidth > 0 ? <FlatList
-              ref={list} data={groups} keyExtractor={group => group.id} horizontal pagingEnabled directionalLockEnabled
-              scrollEnabled={!opening} decelerationRate="fast" showsHorizontalScrollIndicator={false}
-              initialNumToRender={1} maxToRenderPerBatch={2} windowSize={3} extraData={selected.id}
-              getItemLayout={(_, index) => ({ length: selectorWidth, offset: selectorWidth * index, index })}
-              onScroll={event => select(Math.max(0, Math.min(groups.length - 1, Math.round(event.nativeEvent.contentOffset.x / selectorWidth))))}
-              onMomentumScrollEnd={() => AccessibilityInfo.announceForAccessibility('Selected ' + (groups.find(group => group.id === selectedRef.current)?.name ?? 'class'))}
-              scrollEventThrottle={32} renderItem={({ item }) => courseCard(item, selectorWidth)}
-            /> : courseCard(selected)}
-            {groups.length > 1 ? <View style={styles.selectorControls}>
-              <View style={[styles.selectorPosition, styles.flex]}><View aria-hidden accessible={false} style={[styles.selectedMarker, { backgroundColor: colors.goldBright }]} /><Text style={[styles.smallCopy, styles.flex, { color: colors.textSecondary }]}>{selectedIndex + 1} of {groups.length} · Swipe classes</Text></View>
-              {(['left', 'right'] as const).map(direction => {
-                const disabled = opening || (direction === 'left' ? selectedIndex === 0 : selectedIndex === groups.length - 1);
-                return <Pressable key={direction} accessibilityRole="button" accessibilityLabel={direction === 'left' ? 'Previous plan class' : 'Next plan class'} disabled={disabled} accessibilityState={{ disabled }} onPress={() => navigateClass(selectedIndex + (direction === 'left' ? -1 : 1))} onFocus={() => setFocused(direction)} onBlur={() => setFocused(null)} style={({ pressed }) => [styles.classArrow, { backgroundColor: pressed ? colors.primarySoft : 'transparent', borderColor: focused === direction ? blue : 'transparent', opacity: disabled ? 0.4 : 1 }]}><PlanIcon name={direction === 'left' ? 'chevron-left' : 'chevron-right'} color={blue} size={20} /></Pressable>;
-              })}
-            </View> : null}
-          </View> : null}
-          <Animated.View style={{ opacity: content.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1] }), transform: reducedMotion ? [] : [{ translateY: content.interpolate({ inputRange: [0, 1], outputRange: [2, 0] }) }] }}>
-            <View style={styles.taskLabel}><PlanIcon name={hasClass ? 'compass-outline' : 'lightning-bolt-outline'} color={blue} size={16} /><Text style={[styles.eyebrow, { color: blue }]}>{!hasMaterials ? 'YOUR FIRST STEP' : status.complete ? 'OPTIONAL NEXT STEP' : 'YOUR NEXT STEP'}</Text></View>
-            <Text accessibilityRole="header" style={[styles.taskTitle, { color: colors.text }]}>{taskTitle}</Text>
-            {focus.source ? <Text style={[styles.source, { color: colors.textSecondary }]}>{selectedCourse.dashboard.decks.find(deck => deck.id === selectedCourse.dashboard.recommendation.deckId)?.title ?? focus.source}{focus.actionDetail ? ' · ' + focus.actionDetail : ''}</Text> : null}
-            <Text style={[styles.reason, { color: colors.textSecondary }]}>{reason}</Text>
-            {focus.examLabel || (!focus.source && focus.actionDetail) ? <View style={styles.taskDetails}>
-              {focus.examLabel ? <View style={[styles.examTag, { backgroundColor: colors.goldSoft }]}><PlanIcon name="calendar-outline" color={colors.goldText} size={14} /><Text style={[styles.smallCopy, { color: colors.goldText }]}>{focus.examLabel}</Text></View> : null}
-              {!focus.source && focus.actionDetail ? <Text style={[styles.smallCopy, { color: colors.textSecondary }]}>{focus.actionDetail}</Text> : null}
-            </View> : null}
-            <Animated.View style={{ marginTop: 14, transform: reducedMotion ? [] : [{ scale: press.interpolate({ inputRange: [0, 1], outputRange: [1, 0.99] }) }] }}>
-              <Pressable accessibilityRole="button" accessibilityLabel={opening ? 'Opening your next step' : focus.actionLabel} accessibilityHint={reason} accessibilityState={{ busy: opening, disabled: opening }} disabled={opening} onPress={() => { void start(startSelected); }} onPressIn={() => animatePress(true)} onPressOut={() => animatePress(false)} onFocus={() => setFocused('action')} onBlur={() => setFocused(null)} style={({ pressed }) => [styles.action, { backgroundColor: colors.primary, borderColor: focused === 'action' ? colors.text : 'transparent', opacity: opening || pressed ? 0.8 : 1 }]}>
-                {opening ? <LoadingArtwork compact colors={{ ...colors, primary: actionColor }} /> : <PlanIcon name={!hasMaterials ? 'plus' : focus.medium === 'pack' ? 'file-document-outline' : focus.medium === 'notes' ? 'book-open-page-variant-outline' : 'play'} color={actionColor} />}
-                <Text style={[styles.actionText, { color: actionColor }]}>{opening ? 'Opening…' : focus.actionLabel}</Text><PlanIcon name="arrow-right" color={actionColor} size={18} />
-              </Pressable>
-            </Animated.View>
-            {error ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={[styles.error, { color: colors.danger }]}>{error}</Text> : null}
-            {selectedCourse.tasks.length ? <View style={styles.tasks}>{selectedCourse.tasks.map(task => <Pressable key={task.tool} accessibilityRole="button" accessibilityLabel={task.title + ' · ' + task.detail} disabled={opening} accessibilityState={{ disabled: opening }} onPress={() => { void start(() => {
-              const deck = state.decks.find(item => item.id === task.deckId && selected.packs.some(pack => pack.id === item.id));
-              if (!deck || !planToolReady(deck, task.tool)) throw new Error('Study material is no longer ready');
-              onOpenDeck(deck, task.tool);
-            }); }} onFocus={() => setFocused(task.tool)} onBlur={() => setFocused(null)} style={({ pressed }) => [styles.taskRow, compact && styles.taskRowCompact, { borderColor: focused === task.tool ? blue : colors.border, backgroundColor: pressed ? colors.primarySoft : colors.card, opacity: opening ? 0.65 : 1, transform: [{ scale: pressed && !reducedMotion ? 0.985 : 1 }] }]}>
-              <View style={[styles.taskIcon, { backgroundColor: task.tool === 'quiz' ? colors.goldSoft : colors.primarySoft }]}><PlanIcon name={task.tool === 'quiz' ? 'clipboard-check-outline' : task.tool === 'notes' ? 'note-text-outline' : 'cards-outline'} color={task.tool === 'quiz' ? colors.goldText : blue} size={18} /></View>
-              <View style={styles.flex}><Text style={[styles.taskRowTitle, { color: colors.text }]}>{task.title}</Text><Text style={[styles.taskRowDetail, { color: colors.textSecondary }]}>{task.detail}</Text></View>{compact ? <PlanIcon name="chevron-right" color={blue} size={16} /> : null}
-            </Pressable>)}</View> : null}
-          </Animated.View>
+        {!hydrated ? <View accessibilityState={{ busy: true }} style={styles.loading}>{!reducedMotion ? <LoadingArtwork compact colors={colors} /> : null}<Text style={[styles.smallCopy, { color: colors.textSecondary }]}>Loading your plan…</Text></View> : <>
+          {hasClass ? <View style={styles.selector} onLayout={event => setPageWidth(event.nativeEvent.layout.width)}>
+            {pages.length > 1 && pageWidth > 0 ? <>
+              <View style={styles.pagination}>
+                <Text style={[styles.smallCopy, styles.flex, { color: colors.textSecondary }]}>{selectedIndex + 1} of {pages.length} · Swipe classes</Text>
+                <View aria-hidden accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.dots}>
+                  {pages.slice(visibleDotsStart, visibleDotsStart + 5).map(({ group }, index) => {
+                    const active = index + visibleDotsStart === selectedIndex;
+                    return <View key={group.id} style={[styles.dot, { backgroundColor: active ? blue : colors.border }, active && styles.activeDot]} />;
+                  })}
+                </View>
+                {([-1, 1] as const).map(direction => {
+                  const disabled = opening || !pages[selectedIndex + direction];
+                  const key = direction < 0 ? 'previous' : 'next';
+                  return <Pressable key={key} accessibilityRole="button" accessibilityLabel={direction < 0 ? 'Previous class' : 'Next class'} disabled={disabled} accessibilityState={{ disabled }} onPress={() => navigateClass(selectedIndex + direction)} onFocus={() => setFocused(key)} onBlur={() => setFocused(null)} style={({ pressed }) => [styles.classArrow, { backgroundColor: pressed ? colors.primarySoft : 'transparent', borderColor: focused === key ? blue : 'transparent', opacity: disabled ? 0.35 : 1 }]}><PlanIcon name={direction < 0 ? 'chevron-left' : 'chevron-right'} color={blue} size={20} /></Pressable>;
+                })}
+              </View>
+              <ScrollView
+                ref={list}
+                horizontal
+                pagingEnabled
+                directionalLockEnabled
+                scrollEnabled={!opening}
+                showsHorizontalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                decelerationRate="fast"
+                scrollEventThrottle={16}
+                style={heights[selected.group.id] ? { height: heights[selected.group.id] } : undefined}
+                contentContainerStyle={styles.pages}
+                onScroll={event => {
+                  if (aligning.current) return;
+                  const index = Math.round(event.nativeEvent.contentOffset.x / pageWidth);
+                  select(Math.max(0, Math.min(index, pages.length - 1)));
+                }}
+              >
+                {pages.map((page, index) => renderPage(page, index, true))}
+              </ScrollView>
+            </> : renderPage(selected, selectedIndex, false)}
+          </View> : renderStep(selected.plan, true)}
           {dashboard.decks.length ? <>
-            <Pressable accessibilityRole="button" accessibilityState={{ expanded: optionsExpanded }} aria-expanded={optionsExpanded} accessibilityLabel={optionsExpanded ? 'Hide study priority details' : 'Show study priority details'} onPress={() => setOptionsExpanded(value => !value)} onFocus={() => setFocused('priorities')} onBlur={() => setFocused(null)} style={({ pressed }) => [styles.optionsToggle, { borderBottomColor: colors.border, borderColor: focused === 'priorities' ? blue : 'transparent', backgroundColor: pressed ? colors.primarySoft : 'transparent' }]}><Text style={[styles.linkText, { color: blue }]}>Study priorities</Text><Text style={[styles.optionsSummary, { color: colors.textSecondary }]}>{groups.length > 1 ? 'All classes · ' : ''}{dashboard.dueCount} due · {dashboard.weak.length} weak</Text><PlanIcon name={optionsExpanded ? 'chevron-up' : 'chevron-down'} color={blue} size={16} /></Pressable>
+            <Pressable accessibilityRole="button" accessibilityState={{ expanded: optionsExpanded }} aria-expanded={optionsExpanded} accessibilityLabel={optionsExpanded ? 'Hide study priority details' : 'Show study priority details'} onPress={() => setOptionsExpanded(value => !value)} onFocus={() => setFocused('priorities')} onBlur={() => setFocused(null)} style={({ pressed }) => [styles.optionsToggle, { borderBottomColor: colors.border, borderColor: focused === 'priorities' ? blue : 'transparent', backgroundColor: pressed ? colors.primarySoft : 'transparent' }]}><Text style={[styles.linkText, { color: blue }]}>Study priorities</Text><Text style={[styles.optionsSummary, { color: colors.textSecondary }]}>{pages.length > 1 ? 'All classes · ' : ''}{dashboard.dueCount} due · {dashboard.weak.length} weak</Text><PlanIcon name={optionsExpanded ? 'chevron-up' : 'chevron-down'} color={blue} size={16} /></Pressable>
             {optionsExpanded ? <View>
-              <View style={styles.tip}><PlanIcon name="lightbulb-on-outline" size={16} color={colors.goldText} /><Text style={[styles.tipText, { color: colors.textSecondary }]}>{focus.tip}</Text></View>
+              <View style={styles.tip}><PlanIcon name="lightbulb-on-outline" size={16} color={colors.goldText} /><Text style={[styles.tipText, { color: colors.textSecondary }]}>{getTodaysPlanFocus(dashboard).tip}</Text></View>
               {priorities.map(priority => <Pressable key={priority.kind} accessibilityRole="button" accessibilityLabel={priority.value + ' ' + priority.label} accessibilityHint={priority.detail + '. View study options for all classes.'} onPress={() => onOpenPriority(priority.kind)} onFocus={() => setFocused(priority.kind)} onBlur={() => setFocused(null)} style={({ pressed }) => [styles.priority, { borderColor: focused === priority.kind ? blue : 'transparent', backgroundColor: focused === priority.kind ? colors.primarySoft : 'transparent', opacity: pressed ? 0.65 : 1 }]}>
                 <PlanIcon name={priority.icon} color={colors.textSecondary} size={17} /><Text style={[styles.priorityValue, { color: colors.text }]}>{priority.value > 0 ? priority.value.toLocaleString() : '—'}</Text><Text style={[styles.priorityLabel, { color: colors.textSecondary }]}>{priority.label}</Text><Text style={[styles.priorityHint, { color: colors.textSecondary }]}>{priority.value > 0 ? 'View details' : priority.empty}</Text><PlanIcon name="chevron-right" color={blue} size={15} />
               </Pressable>)}
             </View> : null}
             {status.hasActivity || dashboard.today.planTotal > 0 ? <Animated.View accessibilityLiveRegion="polite" style={[styles.status, { backgroundColor: status.complete ? colors.mintSoft : colors.cardStrong, opacity: acknowledgment.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1] }), transform: reducedMotion ? [] : [{ scale: acknowledgment.interpolate({ inputRange: [0, 0.6, 1], outputRange: [0.98, 1.01, 1] }) }] }]}>
               <PlanIcon name={status.complete || status.hasActivity ? 'check-circle-outline' : 'sprout-outline'} color={status.complete || status.hasActivity ? green : blue} size={18} />
-              <View style={styles.statusCopy}><Text style={[styles.statusTitle, { color: colors.text }]}>{status.title}{groups.length > 1 && dashboard.today.planTotal > 0 ? ' · All classes' : ''}</Text><Text style={[styles.statusDetail, { color: colors.textSecondary }]}>{status.detail}</Text></View>
+              <View style={styles.statusCopy}><Text style={[styles.statusTitle, { color: colors.text }]}>{status.title}{pages.length > 1 && dashboard.today.planTotal > 0 ? ' · All classes' : ''}</Text><Text style={[styles.statusDetail, { color: colors.textSecondary }]}>{status.detail}</Text></View>
               {dashboard.today.planTotal > 0 ? <View accessible accessibilityRole="progressbar" accessibilityLabel="Today's study plan tasks marked complete" accessibilityValue={{ min: 0, max: dashboard.today.planTotal, now: dashboard.today.planCompleted, text: status.detail }} style={[styles.completionTrack, { backgroundColor: colors.border }]}><View style={{ height: '100%', width: `${dashboard.today.planCompleted / dashboard.today.planTotal * 100}%`, backgroundColor: green, borderRadius: 3 }} /></View> : null}
             </Animated.View> : null}
           </> : null}
         </>}
       </View>
     </LinearGradient>
-    <PlanBorderHighlight width={cardWidth} still={reducedMotion} selection={selected.id} colors={colors} />
   </Animated.View>;
 }
 
 const styles = StyleSheet.create({
   card: { borderRadius: 24, shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.055, shadowRadius: 16, elevation: 2 },
-  frame: { padding: 1, borderRadius: 24 },
-  surface: { padding: 16, borderRadius: 23, overflow: 'hidden' },
+  frame: { padding: 2, borderRadius: 24 },
+  surface: { padding: 16, borderRadius: 22, overflow: 'hidden' },
   wash: { position: 'absolute', top: 0, left: 0, right: 0, height: 145, opacity: 0.55 },
   heading: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
   headingCopy: { flex: 1, flexBasis: 0, minWidth: 88 },
@@ -263,22 +316,23 @@ const styles = StyleSheet.create({
   plannerLink: { minHeight: 44, borderWidth: 1, borderRadius: 13, paddingHorizontal: 9, flexDirection: 'row', alignItems: 'center', gap: 1 },
   linkText: { fontSize: 12, lineHeight: 19, fontWeight: '600' },
   loading: { minHeight: 120, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 9 },
-  selector: { marginTop: 16 },
-  courseCard: { borderRadius: 17, borderWidth: 1, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 90 },
-  courseCompact: { padding: 10, gap: 8 },
-  courseStacked: { flexDirection: 'column', alignItems: 'stretch' },
+  selector: { marginTop: 12 },
+  courseCard: { borderRadius: 17, borderWidth: StyleSheet.hairlineWidth, padding: 12, gap: 8 },
+  courseCompact: { padding: 10 },
   courseHeading: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  courseMetrics: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  courseMetricsStacked: { flexDirection: 'column', alignItems: 'flex-start' },
-  courseScore: { alignItems: 'center', gap: 1, flexShrink: 0 },
-  scoreCaption: { fontSize: 11, lineHeight: 17, fontWeight: '600' },
-  courseCopy: { flex: 1, minWidth: 0 },
+  courseIdentity: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  classDot: { width: 8, height: 8, borderRadius: 4 },
+  courseMetrics: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  courseMetricsStacked: { flexWrap: 'wrap' },
+  courseCopy: { flexGrow: 1, flexShrink: 1, minWidth: 110, gap: 2 },
   courseName: { fontSize: 15, lineHeight: 22, fontWeight: '700' },
   smallCopy: { fontSize: 12, lineHeight: 18 },
-  selectorControls: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2 },
-  selectorPosition: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  selectedMarker: { width: 5, height: 5, borderRadius: 3 },
+  pagination: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: 4, marginBottom: 4 },
+  dots: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  dot: { width: 5, height: 5, borderRadius: 3 },
+  activeDot: { width: 11 },
   classArrow: { width: 44, height: 44, borderWidth: 1, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  pages: { alignItems: 'flex-start' },
   flex: { flex: 1, minWidth: 0 },
   taskLabel: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16 },
   eyebrow: { fontSize: 10, lineHeight: 16, letterSpacing: 0.8, fontWeight: '700', flexShrink: 1 },
@@ -289,11 +343,8 @@ const styles = StyleSheet.create({
   examTag: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 7, paddingVertical: 4, borderRadius: 8 },
   action: { minHeight: 50, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 11, borderRadius: 14, borderWidth: 2 },
   actionText: { flex: 1, minWidth: 0, fontSize: 15, lineHeight: 22, fontWeight: '700' },
-  tasks: { gap: 7, marginTop: 10, flexDirection: 'row', flexWrap: 'wrap' },
-  taskRow: { minHeight: 62, borderRadius: 14, borderWidth: 1, paddingVertical: 10, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 8, flexBasis: 140, flexGrow: 1 },
-  taskRowCompact: { flexBasis: '100%' },
-  taskRowDetail: { fontSize: 12, lineHeight: 18, marginTop: 1 },
-  taskIcon: { width: 30, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  tasks: { marginTop: 4 },
+  taskRow: { minHeight: 44, paddingVertical: 6, paddingHorizontal: 4, borderWidth: 1, borderRadius: 10, flexDirection: 'row', alignItems: 'center', gap: 8 },
   taskRowTitle: { fontSize: 13, lineHeight: 20, fontWeight: '600' },
   error: { fontSize: 14, lineHeight: 21, marginTop: 10 },
   optionsToggle: { minHeight: 44, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 7, marginTop: 7, paddingVertical: 6, paddingHorizontal: 2 },

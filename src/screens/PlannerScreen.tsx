@@ -1,8 +1,10 @@
-import { PolishedScreen as Screen, PolishedSectionHeader as SectionHeader } from '../components/PagePresentation';
+import { PolishedSectionHeader as SectionHeader } from '../components/PagePresentation';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import { typography } from '../theme';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Platform, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Animated, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { bottomTabBarTop } from '../components/BottomTabs';
 
 import { Card, Header, Icon, Pill, PrimaryButton, ProgressBar } from '../components/ui';
 import { SubjectIcon } from '../components/SubjectIcon';
@@ -74,15 +76,21 @@ function formatPlanDayDate(value?: string): string | null {
 
 export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: string; onFocusApplied?: () => void }) {
   const reducedMotion = useReducedMotion();
+  const insets = useSafeAreaInsets();
+  const { width, fontScale } = useWindowDimensions();
+  const largeText = fontScale > 1.3;
+  const compactOptions = width < 360 || largeText;
   const { colors, recordStudyEvent, state, setPlan, setFocusMinutes } = useStudyBolt();
   const [notice, setNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
   const [examDate, setExamDate] = useState(() => toDateInputValue(state.plan.targetDate));
   const [examTitle, setExamTitle] = useState(() => state.plan.exam?.title ?? '');
   const [examNotice, setExamNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
   const [editingPlan, setEditingPlan] = useState(false);
+  const [showStudyOptions, setShowStudyOptions] = useState(false);
   const [showTimer, setShowTimer] = useState(false);
+  const dateField = useRef<TextInput>(null);
   const appliedFocus = useRef<string | undefined>(undefined);
-  const entrance = useRef(new Animated.Value(0)).current;
+  const entrance = useRef(new Animated.Value(1)).current;
 
   const decksForScope = useCallback((scope: StudyScope): StudyPack[] => scope.type === 'deck'
     ? state.decks.filter((deck) => deck.id === scope.id)
@@ -90,11 +98,14 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
 
   useEffect(() => {
     if (reducedMotion) { entrance.setValue(1); return; }
-    Animated.timing(entrance, {
+    entrance.setValue(0);
+    const animation = Animated.timing(entrance, {
       toValue: 1,
-      duration: 350,
+      duration: 220,
       useNativeDriver: Platform.OS !== 'web',
-    }).start();
+    });
+    animation.start();
+    return () => animation.stop();
   }, [entrance, reducedMotion]);
 
   useEffect(() => {
@@ -252,165 +263,234 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
     setExamNotice({ tone: 'success', text: `Your ${days}-day study plan is set through ${readableDate}. It will rebalance as you study.` });
   };
 
-  return (
-    <Screen animate={false}>
-      <Animated.View style={{ opacity: entrance, transform: [{ translateY: entrance.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) }] }}>
-        <Header title="Planner" />
-        <Text style={[styles.title, { color: colors.text }]}>Study plan</Text>
-        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>A realistic route that adjusts as you study.</Text>
+  const canBuild = examDateIsBuildable && selectedDecks.length > 0;
+  const invalidDate = Boolean(examDate.trim()) && !examDateIsBuildable;
+  const dateHelper = !selectedDecks.length
+    ? 'Choose a Study Pack to build a plan.'
+    : !examDate.trim()
+      ? 'Enter a test date within the next 90 days.'
+      : examDateOffset === null
+        ? 'Use a real date in YYYY-MM-DD format.'
+        : examDateOffset < 0
+          ? 'Choose today or a future date.'
+          : examDateOffset >= 90
+            ? 'Choose a test date within the next 90 days.'
+            : `${new Date(`${examDate}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} · ${examDateOffset + 1} plan day${examDateOffset === 0 ? '' : 's'} · about ${Math.max(1, Math.ceil(previewTotalMinutes / previewActiveDays))} min per study day`;
+  const packCount = `${selectedDecks.length} Study Pack${selectedDecks.length === 1 ? '' : 's'}`;
+  const sampleRoute = selectedDecks.length > 0 && selectedDecks.every(deck => deck.fileType === 'demo');
+  const routeStatus = remainingPlanDays === null ? 'No test date' : `${remainingPlanDays}-day window`;
 
-        <Card style={[styles.planSummary, styles.flatCard, { backgroundColor: colors.mode === 'dark' ? colors.primarySoft : '#EEF4FF' }]}>
+  return (
+    <ScrollView
+      style={{ backgroundColor: colors.background }}
+      contentContainerStyle={{
+        paddingTop: insets.top + 8,
+        paddingBottom: Math.max(120, bottomTabBarTop(insets.bottom) + 32),
+        paddingLeft: Math.max(16, insets.left + 8),
+        paddingRight: Math.max(16, insets.right + 8),
+      }}
+      automaticallyAdjustKeyboardInsets
+      contentInsetAdjustmentBehavior="never"
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+      showsVerticalScrollIndicator={false}
+    >
+      <Animated.View style={[
+        styles.content,
+        {
+          opacity: entrance.interpolate({ inputRange: [0, 1], outputRange: [0.96, 1] }),
+          transform: [{ translateY: entrance.interpolate({ inputRange: [0, 1], outputRange: [4, 0] }) }],
+        },
+      ]}>
+        <Header title="Planner" />
+        <Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>Study plan</Text>
+
+        <Card style={[styles.majorCard, styles.planSummary, { backgroundColor: colors.primarySoft, borderColor: colors.mode === 'dark' ? colors.border : '#CBDCF4' }]}>
           <View style={styles.summaryTop}>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.summaryEyebrow, { color: colors.mode === 'dark' ? '#8FB5EE' : colors.primary }]}>{selectedDecks.length > 0 && selectedDecks.every((deck) => deck.fileType === 'demo') ? 'SAMPLE ROUTE' : 'YOUR ROUTE'}</Text>
-              <Text style={[styles.summaryTitle, { color: colors.mode === 'dark' ? '#EDF1F5' : colors.text }]}>{subject}</Text>
-              <Text style={[styles.summaryDetail, { color: colors.mode === 'dark' ? '#C1CAD3' : colors.textSecondary }]}>{selectedDecks.length} Study Pack{selectedDecks.length === 1 ? '' : 's'} · {remainingPlanDays === null ? 'set a test date' : `${remainingPlanDays}-day plan`}</Text>
+            <View style={styles.routeLabel}>
+              <View style={[styles.routeIcon, { backgroundColor: colors.card }]}>
+                <Icon name="map-marker-path" size={19} color={colors.primary} />
+              </View>
+              <Text style={[styles.summaryEyebrow, { color: colors.primary }]}>{sampleRoute ? 'Sample route' : 'Your route'}</Text>
             </View>
-            <View style={[styles.timeBubble, { backgroundColor: colors.mode === 'dark' ? '#FFFFFF14' : colors.card }]}>
-              <Text style={[styles.timeValue, { color: colors.mode === 'dark' ? '#EDF1F5' : colors.text }]}>{formatMinutes(totalMinutes)}</Text>
-              <Text style={[styles.timeLabel, { color: colors.mode === 'dark' ? '#AAB6C2' : colors.textMuted }]}>estimated</Text>
-            </View>
+            <Pill label={routeStatus} tone={remainingPlanDays === null ? 'neutral' : 'blue'} />
           </View>
-          <View style={styles.summaryMetrics}>
-            <Text style={[styles.summaryMetric, { color: colors.mode === 'dark' ? '#C6CED6' : colors.textSecondary }]}>≈ {formatMinutes(Math.ceil(totalMinutes / activeDayCount))}/study day</Text>
-            <Text style={[styles.summaryMetric, { color: colors.mode === 'dark' ? '#C6CED6' : colors.textSecondary }]}>{mastery}% study estimate</Text>
+          <Text accessibilityRole="header" style={[styles.summaryTitle, { color: colors.text }]}>
+            {selectedDecks.length ? subject : 'No study material selected'}
+          </Text>
+          <Text style={[styles.summaryDetail, { color: colors.textSecondary }]}>{packCount}</Text>
+
+          <View style={[styles.summaryMetrics, largeText && styles.stacked, { borderColor: colors.border }]}>
+            <RouteMetric label="Estimated total" value={formatMinutes(totalMinutes)} stacked={largeText} />
+            <RouteMetric label="Per study day" value={`≈ ${formatMinutes(Math.ceil(totalMinutes / activeDayCount))}`} stacked={largeText} />
+            <RouteMetric label="Study estimate" value={`${mastery}%`} stacked={largeText} />
           </View>
-          <ProgressBar progress={planProgress} color={colors.mint} />
-          <Text style={[styles.progressLabel, { color: colors.mode === 'dark' ? '#AAB6C2' : colors.textMuted }]}>{planProgress}% complete</Text>
+
+          <View style={styles.progressHeading}>
+            <Text style={[styles.progressLabel, { color: colors.textSecondary }]}>Plan completion</Text>
+            <Text style={[styles.progressValue, { color: planProgress > 0 ? colors.mint : colors.text }]}>{planProgress}%</Text>
+          </View>
+          <PlanCompletion progress={planProgress} reducedMotion={reducedMotion} />
         </Card>
 
-        <Card style={[styles.examModeCard, styles.examCard, { backgroundColor: colors.mode === 'dark' ? colors.primarySoft : '#F3F7FF', borderColor: colors.mode === 'dark' ? colors.border : '#DCE7FA' }]}>
+        <Card style={[styles.majorCard, styles.testCard, { borderColor: colors.mode === 'dark' ? colors.border : '#D7E1F0' }]}>
           <View style={styles.examModeHeading}>
-            <View style={[styles.examModeIcon, { backgroundColor: colors.primary }]}><Icon name="school-outline" size={22} color={colors.primaryText} /></View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.examModeTitle, { color: colors.text }]}>Study toward a test</Text>
-              <Text style={[styles.examModeText, { color: colors.textSecondary }]}>Choose a date and we’ll pace your selected material through test day.</Text>
+            <View style={[styles.examModeIcon, { backgroundColor: colors.goldSoft }]}>
+              <Icon name="school-outline" size={21} color={colors.goldText} />
+            </View>
+            <View style={styles.flexCopy}>
+              <Text accessibilityRole="header" style={[styles.examModeTitle, { color: colors.text }]}>Study toward a test</Text>
+              <Text style={[styles.examModeText, { color: colors.textSecondary }]}>Pace your material through test day.</Text>
             </View>
           </View>
-          <View style={[styles.examSelection, { backgroundColor: colors.mode === 'dark' ? '#FFFFFF0C' : '#FFFFFF' }]}>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.selectionEyebrow, { color: colors.textMuted }]}>{state.plan.scope.type === 'deck' ? 'ONE STUDY PACK' : 'ENTIRE CLASS'}</Text>
-              <Text numberOfLines={1} style={[styles.selectionTitle, { color: colors.text }]}>{subject}</Text>
-              <Text style={[styles.selectionDetail, { color: colors.textMuted }]}>{selectedDecks.length} selected Study Pack{selectedDecks.length === 1 ? '' : 's'}</Text>
+
+          <View style={[styles.examSelection, { backgroundColor: colors.cardStrong }]}>
+            <Text style={[styles.selectionTitle, { color: colors.text }]}>{selectedDecks.length ? subject : 'Choose a Study Pack'}</Text>
+            <View style={styles.selectionHeader}>
+              <Text style={[styles.selectionDetail, { color: colors.textSecondary }]}>
+                {state.plan.scope.type === 'course' ? 'Entire class · ' : ''}{packCount} selected
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={editingPlan ? 'Done choosing study material' : 'Change study material'}
+                accessibilityState={{ expanded: editingPlan }}
+                aria-expanded={editingPlan}
+                onPress={() => setEditingPlan(value => !value)}
+                style={({ pressed }) => [styles.changeSelection, { backgroundColor: colors.card }, pressed && styles.controlPressed]}
+              >
+                <Text style={[styles.changeSelectionText, { color: colors.primary }]}>{editingPlan ? 'Done' : 'Change'}</Text>
+                <Icon name={editingPlan ? 'chevron-up' : 'chevron-down'} size={16} color={colors.primary} />
+              </Pressable>
             </View>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityHint="Opens the study material and study mix controls below."
-              onPress={() => setEditingPlan(true)}
-              style={({ pressed }) => [styles.changeSelection, { backgroundColor: colors.primarySoft }, pressed && styles.controlPressed]}
-            >
-              <Text style={[styles.changeSelectionText, { color: colors.primary }]}>Change</Text>
-              <Icon name="chevron-right" size={16} color={colors.primary} />
-            </Pressable>
           </View>
-          <Text style={[styles.dateFieldLabel, { color: colors.textSecondary }]}>TEST NAME · OPTIONAL</Text>
-          <TextInput accessibilityLabel="Test name, optional" value={examTitle} onChangeText={setExamTitle} placeholder="e.g. Midterm" placeholderTextColor={colors.textMuted} maxLength={80} style={[styles.examNameInput, { color: colors.text, backgroundColor: colors.card, borderColor: colors.border }]} />
-          <Text style={[styles.dateFieldLabel, { color: colors.textSecondary }]}>TEST DATE</Text>
-          <View style={styles.examDateRow}>
-            <View style={[styles.dateInputWrap, { borderColor: colors.border, backgroundColor: colors.card }]}>
-              <Icon name="calendar-month-outline" size={18} color={colors.primary} />
+
+          {editingPlan ? <View style={styles.materialEditor}>
+            <View style={[styles.segmented, largeText && styles.stacked, { backgroundColor: colors.cardStrong }]}>
+              {(['deck', 'course'] as const).map((type) => {
+                const selected = state.plan.scope.type === type;
+                return (
+                  <Pressable accessibilityRole="radio" aria-checked={selected} accessibilityState={{ checked: selected }} key={type} onPress={() => chooseScopeType(type)} style={[styles.segment, largeText && styles.stackedSegment, selected && { backgroundColor: colors.card }]}>
+                    <Icon name={type === 'deck' ? 'file-powerpoint-box' : 'bookshelf'} size={18} color={selected ? colors.primary : colors.textMuted} />
+                    <Text style={[styles.segmentText, { color: selected ? colors.text : colors.textMuted }]}>{type === 'deck' ? 'One Study Pack' : 'Entire class'}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <View style={styles.choiceList}>
+              {(state.plan.scope.type === 'deck' ? state.decks : state.classes).map((item) => {
+                const id = item.id;
+                const label = 'title' in item ? item.title : item.name;
+                const detail = 'pageCount' in item ? `${item.courseName} · ${item.pageCount} slides` : `${state.decks.filter((deck) => deck.courseId === item.id).length} Study Packs`;
+                const selected = state.plan.scope.id === id;
+                return (
+                  <Pressable accessibilityRole="radio" aria-checked={selected} accessibilityState={{ checked: selected }} key={id} onPress={() => applyPlan({ type: state.plan.scope.type, id })} style={[styles.scopeChoice, { backgroundColor: selected ? colors.primarySoft : colors.card, borderColor: selected ? colors.primary : colors.border }]}>
+                    <SubjectIcon subject={'courseName' in item ? item.courseName : item.name} emoji={item.emoji} size={40} />
+                    <View style={styles.flexCopy}>
+                      <Text style={[styles.scopeTitle, { color: colors.text }]}>{label}</Text>
+                      <Text style={[styles.scopeDetail, { color: colors.textMuted }]}>{detail}</Text>
+                    </View>
+                    <Icon name={selected ? 'check-circle' : 'circle-outline'} color={selected ? colors.primary : colors.textMuted} size={22} />
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            {!state.decks.length ? <Text style={[styles.dateHelper, { color: colors.textSecondary }]}>Add study material from Home to see it here.</Text> : null}
+          </View> : null}
+
+          <View style={styles.testFields}>
+            <View style={styles.field}>
+              <Text style={[styles.dateFieldLabel, { color: colors.text }]}>Test name <Text style={{ color: colors.textMuted, fontWeight: '400' }}>· Optional</Text></Text>
               <TextInput
-                accessibilityLabel="Test date"
-                accessibilityHint="Enter the date as four-digit year, month, and day."
-                value={examDate}
-                onChangeText={(value) => { setExamDate(value); setExamNotice(null); }}
-                placeholder="YYYY-MM-DD"
+                accessibilityLabel="Test name, optional"
+                value={examTitle}
+                onChangeText={setExamTitle}
+                placeholder="e.g. Midterm"
                 placeholderTextColor={colors.textMuted}
-                keyboardType="numbers-and-punctuation"
-                maxLength={10}
-                style={[styles.examDateInput, { color: colors.text }]}
+                maxLength={80}
+                returnKeyType="next"
+                submitBehavior="submit"
+                onSubmitEditing={() => dateField.current?.focus()}
+                style={[styles.fieldInput, styles.fieldSurface, { color: colors.text, backgroundColor: colors.card, borderColor: colors.border }]}
               />
             </View>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={remainingPlanDays === null ? 'Build study plan' : 'Update study plan'}
-              disabled={!examDateIsBuildable || !selectedDecks.length}
-              onPress={applyExamDate}
-              style={({ pressed }) => [styles.examDateButton, { backgroundColor: examDateIsBuildable && selectedDecks.length ? colors.primary : colors.border }, pressed && styles.controlPressed]}
-            >
-              <Text style={[styles.examDateButtonText, { color: examDateIsBuildable && selectedDecks.length ? colors.primaryText : colors.textMuted }]}>{remainingPlanDays === null ? 'Build plan' : 'Update plan'}</Text>
-            </Pressable>
+            <View style={styles.field}>
+              <Text style={[styles.dateFieldLabel, { color: colors.text }]}>Test date</Text>
+              <View style={[styles.dateInputWrap, styles.fieldSurface, { borderColor: invalidDate ? colors.danger : colors.border, backgroundColor: colors.card }]}>
+                <Icon name="calendar-month-outline" size={18} color={colors.primary} />
+                <TextInput
+                  ref={dateField}
+                  accessibilityLabel="Test date"
+                  accessibilityHint="Enter the date as four-digit year, month, and day."
+                  value={examDate}
+                  onChangeText={(value) => { setExamDate(value); setExamNotice(null); }}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor={colors.textMuted}
+                  keyboardType="numbers-and-punctuation"
+                  returnKeyType="done"
+                  maxLength={10}
+                  style={[styles.fieldInput, styles.examDateInput, { color: colors.text }]}
+                />
+              </View>
+            </View>
           </View>
-          <Text style={[styles.dateHelper, { color: examDate.trim() && !examDateIsBuildable ? colors.danger : colors.textMuted }]}>
-            {!selectedDecks.length
-              ? 'Add a study pack, then choose it under Edit plan.'
-              : !examDate.trim()
-                ? 'Enter a date to plan up to 90 study days.'
-                : examDateOffset === null
-                  ? 'Use a real date in YYYY-MM-DD format.'
-                  : examDateOffset < 0
-                    ? 'Choose today or a future date.'
-                    : examDateOffset >= 90
-                      ? 'Choose a test date that fits a 90-day study window.'
-                      : `${new Date(`${examDate}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} · ${examDateOffset + 1} study-plan day${examDateOffset === 0 ? '' : 's'} · about ${Math.max(1, Math.ceil(previewTotalMinutes / previewActiveDays))} min per study day`}
+          <Text accessibilityLiveRegion="polite" style={[styles.dateHelper, { color: invalidDate ? colors.danger : colors.textMuted }]}>
+            {dateHelper}
           </Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={remainingPlanDays === null ? 'Build study plan' : 'Update study plan'}
+            accessibilityState={{ disabled: !canBuild }}
+            accessibilityHint={canBuild ? 'Saves your dated study route.' : dateHelper}
+            disabled={!canBuild}
+            onPress={applyExamDate}
+            style={({ pressed }) => [
+              styles.examDateButton,
+              { backgroundColor: canBuild ? colors.primary : colors.cardStrong, borderColor: canBuild ? colors.primary : colors.border },
+              pressed && styles.controlPressed,
+            ]}
+          >
+            <Text style={[styles.examDateButtonText, { color: canBuild ? colors.primaryText : colors.textMuted }]}>
+              {remainingPlanDays === null ? 'Build plan' : 'Update plan'}
+            </Text>
+            <Icon name="arrow-right" size={18} color={canBuild ? colors.primaryText : colors.textMuted} />
+          </Pressable>
           {examNotice ? (
             <View accessibilityLiveRegion="polite" style={[styles.examNotice, { backgroundColor: examNotice.tone === 'success' ? colors.mintSoft : `${colors.danger}14` }]}>
               <Icon name={examNotice.tone === 'success' ? 'check-circle' : 'alert-circle-outline'} color={examNotice.tone === 'success' ? colors.mint : colors.danger} size={16} />
-              <Text style={[styles.examNoticeText, { color: colors.textSecondary }]}>{examNotice.text}</Text>
+              <Text style={[styles.examNoticeText, { color: colors.text }]}>{examNotice.text}</Text>
             </View>
           ) : null}
         </Card>
 
-        <Pressable aria-expanded={editingPlan}
+        <Pressable
+          aria-expanded={showStudyOptions}
           accessibilityRole="button"
-          accessibilityState={{ expanded: editingPlan }}
-          onPress={() => setEditingPlan((value) => !value)}
-          style={({ pressed }) => [styles.editPlanButton, { backgroundColor: colors.cardStrong }, pressed && styles.controlPressed]}
+          accessibilityState={{ expanded: showStudyOptions }}
+          onPress={() => setShowStudyOptions(value => !value)}
+          style={({ pressed }) => [styles.editPlanButton, { backgroundColor: colors.card, borderColor: colors.border }, pressed && styles.controlPressed]}
         >
           <Icon name="tune-variant" size={19} color={colors.primary} />
-          <Text style={[styles.editPlanText, { color: colors.text }]}>{editingPlan ? 'Done editing' : 'Edit materials & study mix'}</Text>
-          <Icon name={editingPlan ? 'chevron-up' : 'chevron-down'} size={20} color={colors.textMuted} />
+          <Text style={[styles.editPlanText, { color: colors.text }]}>Study window & methods</Text>
+          <Icon name={showStudyOptions ? 'chevron-up' : 'chevron-down'} size={20} color={colors.textMuted} />
         </Pressable>
 
-        {editingPlan ? <View style={styles.planControls}>
-
-        <SectionHeader title="1 · What are you learning?" />
-        <View style={[styles.segmented, { backgroundColor: colors.cardStrong }]}>
-          {(['deck', 'course'] as const).map((type) => {
-            const selected = state.plan.scope.type === type;
-            return (
-              <Pressable accessibilityRole="radio" aria-checked={selected} accessibilityState={{ checked: selected }} key={type} onPress={() => chooseScopeType(type)} style={[styles.segment, selected && { backgroundColor: colors.card }]}>
-                <Icon name={type === 'deck' ? 'file-powerpoint-box' : 'bookshelf'} size={18} color={selected ? colors.primary : colors.textMuted} />
-                <Text style={[styles.segmentText, { color: selected ? colors.text : colors.textMuted }]}>{type === 'deck' ? 'One Study Pack' : 'Entire class'}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
-
-        <View style={styles.choiceList}>
-          {(state.plan.scope.type === 'deck' ? state.decks : state.classes).map((item) => {
-            const id = item.id;
-            const label = 'title' in item ? item.title : item.name;
-            const detail = 'pageCount' in item ? `${item.courseName} · ${item.pageCount} slides` : `${state.decks.filter((deck) => deck.courseId === item.id).length} Study Packs`;
-            const selected = state.plan.scope.id === id;
-            return (
-              <Pressable accessibilityRole="radio" aria-checked={selected} accessibilityState={{ checked: selected }} key={id} onPress={() => applyPlan({ type: state.plan.scope.type, id })} style={[styles.scopeChoice, { backgroundColor: selected ? colors.primarySoft : colors.card, borderColor: selected ? colors.primary : colors.border }]}>
-                <SubjectIcon subject={'courseName' in item ? item.courseName : item.name} emoji={item.emoji} size={40} />
-                <View style={{ flex: 1 }}>
-                  <Text numberOfLines={1} style={[styles.scopeTitle, { color: colors.text }]}>{label}</Text>
-                  <Text style={[styles.scopeDetail, { color: colors.textMuted }]}>{detail}</Text>
-                </View>
-                <Icon name={selected ? 'check-circle' : 'circle-outline'} color={selected ? colors.primary : colors.textMuted} size={22} />
-              </Pressable>
-            );
-          })}
-        </View>
-
+        {showStudyOptions ? <View style={styles.planControls}>
         <Text style={[styles.quickDeadlineLabel, { color: colors.textMuted }]}>OR USE A QUICK STUDY WINDOW</Text>
-        <View style={styles.durationGrid}>
+        <View style={[styles.durationGrid, compactOptions && styles.wrapOptions]}>
           {DURATIONS.map((duration) => {
             const selected = state.plan.durationDays === duration.days;
             return (
-              <Pressable accessibilityRole="radio" aria-checked={selected} accessibilityState={{ checked: selected }} key={duration.days} onPress={() => applyPlan(state.plan.scope, duration.days)} style={[styles.duration, { backgroundColor: selected ? colors.primary : colors.card, borderColor: selected ? colors.primary : colors.border }]}>
+              <Pressable accessibilityRole="radio" aria-checked={selected} accessibilityState={{ checked: selected }} key={duration.days} onPress={() => applyPlan(state.plan.scope, duration.days)} style={[styles.duration, compactOptions && styles.wideDuration, { backgroundColor: selected ? colors.primary : colors.card, borderColor: selected ? colors.primary : colors.border }]}>
                 <Text style={[styles.durationLabel, { color: selected ? colors.primaryText : colors.text }]}>{duration.label}</Text>
-                <Text style={[styles.durationDetail, { color: selected ? colors.primaryText : colors.textMuted, opacity: selected ? 0.72 : 1 }]}>{duration.detail}</Text>
+                <Text style={[styles.durationDetail, { color: selected ? colors.primaryText : colors.textMuted }]}>{duration.detail}</Text>
               </Pressable>
             );
           })}
         </View>
 
-        <SectionHeader title="2 · Choose your study mix" action="Use recommended" onAction={() => applyPlan(state.plan.scope, undefined, RECOMMENDED_MODALITIES)} />
+        <SectionHeader title="Choose your study mix" action="Use recommended" onAction={() => applyPlan(state.plan.scope, undefined, RECOMMENDED_MODALITIES)} />
         <Card style={[styles.recommendation, { backgroundColor: colors.mintSoft }]}>
           <Icon name="creation" color={colors.mint} size={22} />
           <View style={{ flex: 1 }}>
@@ -480,6 +560,7 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
             <Text style={[styles.reminderText, { color: colors.textMuted }]}>A reminder near 6 PM on each active study day.</Text>
           </View>
           <Switch
+            accessibilityLabel="Study reminders"
             value={state.plan.remindersEnabled}
             onValueChange={(enabled) => void toggleReminders(enabled)}
             trackColor={{ false: colors.border, true: colors.primary }}
@@ -508,7 +589,46 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
           recordStudyEvent({ type: 'focus', durationMinutes: 25 });
         }} /> : null}
       </Animated.View>
-    </Screen>
+    </ScrollView>
+  );
+}
+
+function RouteMetric({ label, value, stacked }: { label: string; value: string; stacked: boolean }) {
+  const { colors } = useStudyBolt();
+  return (
+    <View accessible accessibilityLabel={`${label}, ${value}`} style={[styles.routeMetric, stacked && styles.routeMetricStacked]}>
+      <Text style={[styles.metricValue, { color: colors.text }]}>{value}</Text>
+      <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>{label}</Text>
+    </View>
+  );
+}
+
+function PlanCompletion({ progress, reducedMotion }: { progress: number; reducedMotion: boolean }) {
+  const { colors } = useStudyBolt();
+  const fill = useRef(new Animated.Value(progress / 100)).current;
+  useEffect(() => {
+    if (reducedMotion) { fill.setValue(progress / 100); return; }
+    const animation = Animated.timing(fill, {
+      toValue: progress / 100,
+      duration: 260,
+      useNativeDriver: Platform.OS !== 'web',
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [fill, progress, reducedMotion]);
+  return (
+    <View
+      accessible
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={progress}
+      accessibilityRole="progressbar"
+      accessibilityLabel="Plan completion"
+      accessibilityValue={{ min: 0, max: 100, now: progress }}
+      style={[styles.planTrack, { backgroundColor: colors.border }]}
+    >
+      <Animated.View style={[styles.planFill, { backgroundColor: colors.mint, transform: [{ scaleX: fill }] }]} />
+    </View>
   );
 }
 
@@ -543,10 +663,10 @@ function FocusTimer({ focusMinutes, onRecord }: { focusMinutes: number; onRecord
   const seconds = (secondsLeft % 60).toString().padStart(2, '0');
 
   return (
-    <Card style={[styles.timerCard, styles.flatCard, { backgroundColor: colors.purpleSoft }]}>
-      <View style={[styles.timerModes, { backgroundColor: colors.mode === 'dark' ? '#18202A' : colors.card }]}>
+    <Card style={[styles.timerCard, styles.flatCard]}>
+      <View style={[styles.timerModes, { backgroundColor: colors.cardStrong }]}>
         {(['focus', 'break'] as const).map((item) => (
-          <Pressable accessibilityRole="button" key={item} onPress={() => switchMode(item)} style={[styles.timerMode, mode === item && { backgroundColor: colors.purple }]}>
+          <Pressable accessibilityRole="button" key={item} onPress={() => switchMode(item)} style={[styles.timerMode, mode === item && { backgroundColor: colors.primary }]}>
             <Text style={[styles.timerModeText, { color: mode === item ? colors.primaryText : colors.textSecondary }]}>{item === 'focus' ? 'Focus' : 'Short Break'}</Text>
           </Pressable>
         ))}
@@ -555,14 +675,14 @@ function FocusTimer({ focusMinutes, onRecord }: { focusMinutes: number; onRecord
         <Text style={[styles.timerValue, { color: colors.text }]}>{minutes}:{seconds}</Text>
         <Text style={[styles.timerLabel, { color: colors.textSecondary }]}>{running ? 'Stay with one task' : 'Ready when you are'}</Text>
       </View>
-      <ProgressBar progress={((totalSeconds - secondsLeft) / totalSeconds) * 100} color={colors.purple} />
+      <ProgressBar progress={((totalSeconds - secondsLeft) / totalSeconds) * 100} color={colors.primary} />
       <PrimaryButton label={running ? 'Pause session' : secondsLeft === 0 ? 'Start again' : 'Start focus'} icon={running ? 'pause' : 'play'} onPress={() => {
         if (secondsLeft === 0) {
           setSecondsLeft(totalSeconds);
           hasRecorded.current = false;
         }
         setRunning((value) => !value);
-      }} style={[styles.timerButton, { backgroundColor: colors.purple }]} />
+      }} style={styles.timerButton} />
     </Card>
   );
 }
@@ -575,46 +695,71 @@ function formatMinutes(minutes: number): string {
 }
 
 const styles = StyleSheet.create({
-  title: { ...typography.pageTitle, marginTop: 13 },
-  subtitle: { fontSize: 14, lineHeight: 21, marginTop: 4 },
+  content: { width: '100%', maxWidth: 760, alignSelf: 'center' },
+  flexCopy: { flex: 1, minWidth: 0 },
+  title: { ...typography.pageTitle, marginTop: 12 },
+  majorCard: { padding: 16, borderRadius: 22, borderWidth: 1, shadowOpacity: 0.045, shadowRadius: 10 },
+  planSummary: { marginTop: 12 },
+  summaryTop: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  routeLabel: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 },
+  routeIcon: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  summaryEyebrow: { ...typography.caption, fontWeight: '700', flexShrink: 1 },
+  summaryTitle: { ...typography.sectionTitle, marginTop: 8 },
+  summaryDetail: { ...typography.caption, marginTop: 2 },
+  summaryMetrics: { flexDirection: 'row', gap: 8, marginTop: 12, paddingVertical: 12, borderTopWidth: 1, borderBottomWidth: 1 },
+  routeMetric: { flex: 1, minWidth: 0, gap: 2 },
+  routeMetricStacked: { flexGrow: 0, flexShrink: 0, flexBasis: 'auto', flexDirection: 'row-reverse', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 },
+  metricValue: { fontSize: 16, lineHeight: 22, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  metricLabel: { ...typography.caption, flexShrink: 1 },
+  progressHeading: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginTop: 10, marginBottom: 6 },
+  progressLabel: { ...typography.caption, fontWeight: '600' },
+  progressValue: { ...typography.caption, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  planTrack: { height: 6, borderRadius: 3, overflow: 'hidden' },
+  planFill: { height: '100%', width: '100%', borderRadius: 3, transformOrigin: 'left center' },
+  testCard: { marginTop: 16 },
+  examModeHeading: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  examModeIcon: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  examModeTitle: { ...typography.sectionTitle },
+  examModeText: { ...typography.secondary, marginTop: 2 },
+  examSelection: { borderRadius: 14, padding: 12, marginTop: 16 },
+  selectionHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 4, marginTop: 4 },
+  selectionTitle: { ...typography.cardTitle },
+  selectionDetail: { ...typography.caption, flexShrink: 1 },
+  changeSelection: { minHeight: 44, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, flexDirection: 'row', alignItems: 'center', gap: 2 },
+  changeSelectionText: { ...typography.secondary, fontWeight: '700', flexShrink: 1 },
+  materialEditor: { marginTop: 8 },
+  testFields: { gap: 12, marginTop: 16 },
+  field: { gap: 6 },
+  dateFieldLabel: { ...typography.secondary, fontWeight: '600' },
+  fieldSurface: { minHeight: 48, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12 },
+  fieldInput: { ...typography.control, fontWeight: '400', paddingVertical: 11 },
+  dateInputWrap: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  examDateInput: { flex: 1, minWidth: 0, paddingHorizontal: 0 },
+  dateHelper: { ...typography.caption, marginTop: 8 },
+  examDateButton: { minHeight: 50, borderWidth: 1, borderRadius: 13, marginTop: 12, paddingHorizontal: 12, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  examDateButtonText: { ...typography.control, fontWeight: '700', flexShrink: 1, textAlign: 'center' },
+  examNotice: { marginTop: 12, borderRadius: 12, padding: 12, flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  examNoticeText: { ...typography.secondary, flex: 1 },
   planControls: { marginTop: 2 },
-  editPlanButton: { minHeight: 48, borderRadius: 14, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 10 },
-  editPlanText: { flex: 1, fontSize: 14, lineHeight: 21, fontWeight: '700' },
-  controlPressed: { opacity: 0.76, transform: [{ scale: 0.99 }] },
-  segmented: { flexDirection: 'row', borderRadius: 16, padding: 5, gap: 4 },
-  segment: { flex: 1, minHeight: 48, borderRadius: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
-  segmentText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
-  choiceList: { gap: 8, marginTop: 10 },
-  scopeChoice: { minHeight: 62, borderRadius: 16, borderWidth: 1, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 11 },
-  scopeTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
-  scopeDetail: { fontSize: 14, lineHeight: 21, marginTop: 3 },
-  examModeCard: { padding: 15 },
-  examCard: { marginTop: 15, borderWidth: 1, shadowOpacity: 0, elevation: 0 },
-  examModeHeading: { flexDirection: 'row', alignItems: 'center', gap: 11 },
-  examModeIcon: { width: 43, height: 43, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  examModeTitle: { fontSize: 14, fontWeight: '900' },
-  examModeText: { fontSize: 14, lineHeight: 21, marginTop: 4 },
-  examSelection: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14, paddingHorizontal: 11, paddingVertical: 9, marginTop: 14 },
-  selectionEyebrow: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 0.8 },
-  selectionTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700', marginTop: 3 },
-  selectionDetail: { fontSize: 14, lineHeight: 21, marginTop: 2 },
-  changeSelection: { minHeight: 44, borderRadius: 10, paddingHorizontal: 9, flexDirection: 'row', alignItems: 'center', gap: 2 },
-  changeSelectionText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
-  dateFieldLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 0.8, marginTop: 14 },
-  examNameInput: { minHeight: 44, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, fontSize: 15, lineHeight: 22, marginTop: 6 },
-  examDateRow: { flexDirection: 'row', gap: 8, marginTop: 6 },
-  dateInputWrap: { flex: 1, minWidth: 0, minHeight: 46, borderWidth: 1, borderRadius: 12, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  examDateInput: { flex: 1, minWidth: 0, height: 42, paddingHorizontal: 0, fontSize: 15, lineHeight: 22, fontWeight: '700' },
-  examDateButton: { minHeight: 46, minWidth: 96, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 11 },
-  examDateButtonText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
-  dateHelper: { fontSize: 14, lineHeight: 21, marginTop: 7 },
-  examNotice: { marginTop: 10, borderRadius: 12, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 7 },
-  examNoticeText: { flex: 1, fontSize: 14, lineHeight: 21 },
+  editPlanButton: { minHeight: 48, borderRadius: 14, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12 },
+  editPlanText: { flex: 1, ...typography.control },
+  controlPressed: { opacity: 0.76 },
+  segmented: { flexDirection: 'row', borderRadius: 14, padding: 4, gap: 4 },
+  stacked: { flexDirection: 'column' },
+  segment: { flex: 1, minHeight: 48, borderRadius: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 6, gap: 6 },
+  stackedSegment: { flexGrow: 0, flexShrink: 0, flexBasis: 'auto' },
+  segmentText: { ...typography.caption, fontWeight: '700', flexShrink: 1 },
+  choiceList: { gap: 8, marginTop: 8 },
+  scopeChoice: { minHeight: 62, borderRadius: 14, borderWidth: 1, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  scopeTitle: { ...typography.secondary, fontWeight: '700' },
+  scopeDetail: { ...typography.caption, marginTop: 2 },
   quickDeadlineLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 0.9, marginTop: 15, marginBottom: 8 },
   durationGrid: { flexDirection: 'row', gap: 7 },
-  duration: { flex: 1, minHeight: 76, borderRadius: 18, borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, padding: 12 },
+  wrapOptions: { flexWrap: 'wrap' },
+  wideDuration: { flexBasis: '45%', flexGrow: 1 },
+  duration: { flex: 1, minHeight: 62, minWidth: 0, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 8, paddingHorizontal: 4 },
   durationLabel: { fontSize: 13, lineHeight: 19, fontWeight: '700' },
-  durationDetail: { fontSize: 14, lineHeight: 21, marginTop: 3 },
+  durationDetail: { ...typography.caption, marginTop: 2, textAlign: 'center' },
   recommendation: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, padding: 18, borderRadius: 20 },
   recommendationTitle: { fontSize: 16, lineHeight: 23, fontWeight: '700' },
   recommendationText: { fontSize: 14, lineHeight: 21, marginTop: 2 },
@@ -625,17 +770,6 @@ const styles = StyleSheet.create({
   modalityTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   modalityDetail: { fontSize: 14, lineHeight: 21, marginTop: 2 },
   modalityMinutes: { fontSize: 12, lineHeight: 18, fontWeight: '700' },
-  planSummary: { marginTop: 16, padding: 17 },
-  summaryTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  summaryEyebrow: { color: '#8FB5EE', fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 1.2 },
-  summaryTitle: { color: '#EDF1F5', fontSize: 18, lineHeight: 23, fontWeight: '900', marginTop: 4 },
-  summaryDetail: { color: '#C1CAD3', fontSize: 14, lineHeight: 21, marginTop: 4 },
-  timeBubble: { minWidth: 78, height: 65, borderRadius: 18, backgroundColor: '#FFFFFF14', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 },
-  timeValue: { color: '#EDF1F5', fontSize: 17, fontWeight: '900' },
-  timeLabel: { color: '#AAB6C2', fontSize: 12, lineHeight: 18, marginTop: 2 },
-  summaryMetrics: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 16, marginBottom: 10 },
-  summaryMetric: { color: '#C6CED6', fontSize: 14, lineHeight: 21, fontWeight: '700' },
-  progressLabel: { color: '#AAB6C2', fontSize: 12, lineHeight: 18, marginTop: 8 },
   timeline: { gap: 0 },
   timelineRow: { flexDirection: 'row' },
   timelineRail: { width: 36, alignItems: 'center' },
@@ -644,10 +778,10 @@ const styles = StyleSheet.create({
   dayCard: { flex: 1, marginBottom: 11 },
   dayHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
   dayTitle: { fontSize: 14, fontWeight: '800' },
-  daySubtitle: { fontSize: 16, lineHeight: 24, marginTop: 3 },
+  daySubtitle: { ...typography.secondary, marginTop: 2 },
   blockList: { marginTop: 12, gap: 7 },
-  block: { minHeight: 38, borderRadius: 11, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  blockLabel: { flex: 1, fontSize: 12, lineHeight: 18, fontWeight: '600' },
+  block: { minHeight: 44, borderRadius: 11, paddingHorizontal: 10, paddingVertical: 6, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  blockLabel: { flex: 1, minWidth: 0, fontSize: 12, lineHeight: 18, fontWeight: '600' },
   blockMinutes: { fontSize: 12, lineHeight: 18 },
   reminderCard: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 8 },
   reminderIcon: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
@@ -661,12 +795,12 @@ const styles = StyleSheet.create({
   timerToggleTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   timerToggleText: { fontSize: 14, lineHeight: 21, marginTop: 3 },
   timerCard: { padding: 20, marginTop: 8, borderRadius: 22 },
-  timerModes: { flexDirection: 'row', gap: 8, alignSelf: 'center', backgroundColor: '#18202A', borderRadius: 14, padding: 4 },
-  timerMode: { paddingHorizontal: 15, paddingVertical: 8, borderRadius: 11 },
+  timerModes: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, borderRadius: 14, padding: 4 },
+  timerMode: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 11 },
   timerModeText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   timerCenter: { alignItems: 'center', paddingVertical: 24 },
   timerValue: { fontSize: 50, lineHeight: 56, fontWeight: '700', letterSpacing: -1, fontVariant: ['tabular-nums'] },
   timerLabel: { fontSize: 12, lineHeight: 18, marginTop: 4 },
-  timerButton: { marginTop: 18, backgroundColor: '#8D6BFF' },
+  timerButton: { marginTop: 16 },
   flatCard: { shadowOpacity: 0, elevation: 0 },
 });

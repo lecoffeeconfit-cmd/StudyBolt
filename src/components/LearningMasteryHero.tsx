@@ -2,15 +2,14 @@ import { LoadingArtwork } from './StudyBoltLoading';
 import { SubjectIcon } from './SubjectIcon';
 import React, { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Animated, FlatList, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle } from 'react-native-svg';
 
-import { Card, Icon } from './ui';
+import { Card, Icon, PrimaryButton } from './ui';
 import { useStudyBolt } from '../StudyBoltContext';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import type { StatDetail } from '../data/statExplanations';
-import type { LearningMasteryGroup, LearningPracticeAction } from '../services/learningMastery';
-import { radius, typography } from '../theme';
+import type { LearningMasteryGroup } from '../services/learningMastery';
+import { radius, spacing, typography } from '../theme';
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 const plural = (count: number, word: string) => count + ' ' + word + (count === 1 ? '' : 's');
@@ -20,7 +19,7 @@ const materialSummary = (group: LearningMasteryGroup) => [
   group.noteSets ? plural(group.noteSets, 'note set') : '',
 ].filter(Boolean).join(' · ');
 
-function classBreakdown(group: LearningMasteryGroup): StatDetail {
+export function classKnowledgeDetail(group: LearningMasteryGroup): StatDetail {
   return {
     label: group.name + ' · course evidence',
     value: group.mastery === null ? '—' : group.mastery + '%',
@@ -32,9 +31,11 @@ function classBreakdown(group: LearningMasteryGroup): StatDetail {
   };
 }
 
-export function LearningMasteryHero({ groups, selectedId, onSelect, onExplore }: {
+export function LearningMasteryHero({ groups, selectedId, onSelect, onExplore, onAddMaterial, compact = false }: {
   groups: LearningMasteryGroup[]; selectedId: string; onSelect: (id: string) => void;
   onExplore: (detail: StatDetail) => void;
+  onAddMaterial: () => void;
+  compact?: boolean;
 }) {
   const { colors, hydrated } = useStudyBolt();
   const reducedMotion = useReducedMotion();
@@ -72,9 +73,11 @@ export function LearningMasteryHero({ groups, selectedId, onSelect, onExplore }:
   };
   if (!hydrated) return <Card style={styles.card}><View accessibilityState={{ busy: true }} style={styles.loading}><LoadingArtwork colors={colors} /><Text style={[styles.copy, { color: colors.textSecondary }]}>Loading your course progress…</Text></View></Card>;
   return <Card style={styles.card}>
-    <LinearGradient pointerEvents="none" colors={[colors.primarySoft, colors.card, colors.goldSoft]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.wash} />
     <View style={styles.topRow}>
-      <View style={styles.heading}><Text style={[styles.eyebrow, { color: colors.primary }]}>01 · YOUR CLASS KNOWLEDGE</Text><Text style={[styles.smallCopy, { color: colors.textSecondary }]}>{groups.length > 1 ? `${selectedIndex + 1} of ${groups.length} · swipe to explore` : 'Your saved study material'}</Text></View>
+      <View style={styles.heading}>
+        <Text style={[styles.eyebrow, { color: colors.primary }]}>Class knowledge</Text>
+        {groups.length > 1 ? <Text style={[styles.smallCopy, { color: colors.textSecondary }]}>{selectedIndex + 1} of {groups.length} · Swipe to change class</Text> : null}
+      </View>
       {groups.length > 1 ? <View style={styles.arrows}><ClassArrow direction="left" disabled={selectedIndex === 0} onPress={() => navigate(selectedIndex - 1)} /><ClassArrow direction="right" disabled={selectedIndex === groups.length - 1} onPress={() => navigate(selectedIndex + 1)} /></View> : null}
     </View>
     <View onLayout={event => setWidth(event.nativeEvent.layout.width)}>
@@ -83,102 +86,110 @@ export function LearningMasteryHero({ groups, selectedId, onSelect, onExplore }:
         getItemLayout={(_, index) => ({ length: width, offset: width * index, index })} extraData={selectedId}
         onMomentumScrollEnd={event => select(Math.max(0, Math.min(groups.length - 1, Math.round(event.nativeEvent.contentOffset.x / width))), true)}
         onScrollEndDrag={event => { if (reducedMotion) select(Math.max(0, Math.min(groups.length - 1, Math.round(event.nativeEvent.contentOffset.x / width))), true); }}
-        renderItem={({ item }) => <CoursePage group={item} width={width} active={item.id === selected.id} />} />
-        : <CoursePage group={selected} width={undefined} active />}
+        renderItem={({ item }) => <CoursePage group={item} width={width} active={item.id === selected.id} compact={compact} />} />
+        : <CoursePage group={selected} width={undefined} active compact={compact} />}
     </View>
-    <Pressable accessibilityRole="button" onPress={() => onExplore(classBreakdown(selected))} style={({ pressed }) => [styles.evidenceLink, { opacity: pressed ? 0.65 : 1 }]}><Icon name="information-outline" size={16} color={colors.primary} /><Text style={[styles.linkText, { color: colors.primary }]}>View evidence and material</Text><Icon name="chevron-right" size={18} color={colors.primary} /></Pressable>
-    {groups.length > 1 && groups.length <= 7 ? <View accessible={false} style={styles.pager}>{groups.map((group, index) => <View key={group.id} style={[styles.dot, { width: index === selectedIndex ? 20 : 5, backgroundColor: index === selectedIndex ? colors.primary : colors.border }]} />)}</View> : null}
+    {!compact && !selected.packs.length ? (
+      <View style={[styles.empty, { backgroundColor: colors.primarySoft }]}>
+        <View aria-hidden style={[styles.emptyIcon, { backgroundColor: colors.goldSoft }]}><Icon name="school-outline" size={23} color={colors.goldText} /></View>
+        <View style={styles.heading}>
+          <Text accessibilityRole="header" style={[styles.statusTitle, { color: colors.text }]}>Ready when you are</Text>
+          <Text style={[styles.copy, { color: colors.textSecondary }]}>Add notes, a PDF, or a presentation, then practice to start building recall evidence.</Text>
+        </View>
+        <PrimaryButton label="Add study material" icon="plus" onPress={onAddMaterial} style={styles.primaryAction} />
+      </View>
+    ) : null}
+    <Pressable accessibilityRole="button" onPress={() => onExplore(classKnowledgeDetail(selected))} style={({ pressed }) => [styles.evidenceLink, { opacity: pressed ? 0.65 : 1 }]}>
+      <Icon name="information-outline" size={16} color={colors.primary} />
+      <Text style={[styles.linkText, { color: colors.primary }]}>Evidence and material details</Text>
+      <Icon name="chevron-right" size={17} color={colors.primary} />
+    </Pressable>
   </Card>;
 }
 
 function ClassArrow({ direction, disabled, onPress }: { direction: 'left' | 'right'; disabled: boolean; onPress: () => void }) {
   const { colors } = useStudyBolt();
-  return <Pressable accessibilityRole="button" accessibilityLabel={direction === 'left' ? 'Previous course' : 'Next course'} accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.arrow, { backgroundColor: colors.card, borderColor: colors.border, opacity: disabled ? 0.4 : pressed ? 0.65 : 1 }]}><Icon name={direction === 'left' ? 'chevron-left' : 'chevron-right'} color={colors.text} size={24} /></Pressable>;
+  return <Pressable accessibilityRole="button" accessibilityLabel={direction === 'left' ? 'Previous course' : 'Next course'} accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.arrow, { backgroundColor: colors.cardStrong, opacity: disabled ? 0.4 : pressed ? 0.65 : 1 }]}><Icon name={direction === 'left' ? 'chevron-left' : 'chevron-right'} color={colors.text} size={24} /></Pressable>;
 }
 
-function CoursePage({ group, width, active }: { group: LearningMasteryGroup; width: number | undefined; active: boolean }) {
+function CoursePage({ group, width, active, compact }: { group: LearningMasteryGroup; width: number | undefined; active: boolean; compact: boolean }) {
   const { colors, state } = useStudyBolt();
   const { fontScale } = useWindowDimensions();
-  const wide = (width ?? 0) >= 235 && fontScale <= 1.25;
   const course = state.classes.find(course => group.id === `class:${course.id}`);
-  return <View aria-hidden={!active} accessibilityElementsHidden={!active} importantForAccessibility={active ? 'auto' : 'no-hide-descendants'} style={[styles.page, { width }]}>
-    <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}><SubjectIcon subject={group.name} emoji={course?.emoji} size={42} /><View style={{ flex: 1, minWidth: 0 }}><Text accessibilityRole="header" style={[styles.courseName, { color: colors.text }]}>{group.name}</Text><Text style={[styles.smallCopy, { color: colors.textSecondary }]}>{materialSummary(group) || 'Add your first Study Pack to begin'}</Text></View></View>
-    <View style={[styles.main, wide && styles.mainWide]}><RecallRing value={group.mastery} /><View style={styles.status}><Text style={[styles.statusTitle, { color: colors.text }]}>Knowledge readiness</Text><Text style={[styles.copy, { color: colors.textSecondary }]}>{group.mastery === null ? 'Building evidence through practice' : `${group.supportedTopics} of ${group.topicCount} topics with consistent recall`}</Text><Text style={[styles.smallCopy, { color: colors.textMuted }]}>{group.topicCount ? `${group.assessedTopics} of ${group.topicCount} topics assessed across days` : 'Your topics will appear with your material'}</Text></View></View>
-    {group.pendingPacks ? <Text style={[styles.smallCopy, { color: group.failedPacks ? colors.warning : colors.textSecondary, marginBottom: 10 }]}>{group.failedPacks ? 'Some tools need attention. Check their Study Pack in Library.' : 'Some practice tools are still being prepared.'}</Text> : null}
-    <View style={[styles.metrics, fontScale > 1.4 && styles.stacked]}><HeroMetric label="Practice coverage" value={group.materialPracticed} detail={group.packs.length ? `${group.practicedPacks} of ${group.packs.length} packs practiced` : 'Add material to begin'} /><HeroMetric label="First-answer accuracy" value={group.quizAccuracy} detail={group.quizQuestions ? `${group.quizQuestions} source questions` : 'No quiz answers yet'} /></View>
-    <Text style={[styles.smallCopy, { color: colors.textMuted }]}>{group.flashcards} flashcards · {group.completedQuizzes} quizzes recorded</Text>
-  </View>;
+  const hasPacks = group.packs.length > 0;
+  return (
+    <View aria-hidden={!active} accessibilityElementsHidden={!active} importantForAccessibility={active ? 'auto' : 'no-hide-descendants'} style={{ width }}>
+      <View style={styles.courseRow}>
+        <SubjectIcon subject={group.name} emoji={course?.emoji} size={36} animated={false} />
+        <View style={styles.heading}>
+          <Text accessibilityRole="header" style={[styles.courseName, { color: colors.text }]}>{group.name}</Text>
+          {hasPacks ? <Text style={[styles.smallCopy, { color: colors.textSecondary }]}>{materialSummary(group) || plural(group.packs.length, 'Study Pack')}</Text> : null}
+        </View>
+      </View>
+      {!compact && hasPacks ? (
+        <View style={styles.courseDetails}>
+          <View style={[styles.main, fontScale > 1.4 && styles.stacked]}>
+            <View style={styles.heading}>
+              <Text style={[styles.statusTitle, { color: colors.text }]}>{group.mastery === null ? 'Not assessed yet' : 'Knowledge readiness'}</Text>
+              <Text style={[styles.copy, { color: colors.textSecondary }]}>{group.mastery === null ? 'Practice again on different days to build recall evidence.' : `${group.supportedTopics} of ${group.topicCount} topics show consistent recall.`}</Text>
+              {group.topicCount ? <Text style={[styles.smallCopy, { color: colors.textMuted }]}>{group.assessedTopics} of {group.topicCount} topics assessed across days</Text> : null}
+            </View>
+            {group.mastery !== null ? <RecallRing value={group.mastery} /> : null}
+          </View>
+          {group.pendingPacks ? <Text style={[styles.smallCopy, { color: group.failedPacks ? colors.warning : colors.textSecondary }]}>{group.failedPacks ? 'Some tools need attention. Check their Study Pack in Library.' : 'Some practice tools are still being prepared.'}</Text> : null}
+          <Text style={[styles.smallCopy, { color: colors.textMuted }]}>{group.flashcards} flashcards · {group.completedQuizzes} quizzes recorded</Text>
+        </View>
+      ) : null}
+    </View>
+  );
 }
 
-function RecallRing({ value }: { value: number | null }) {
+function RecallRing({ value }: { value: number }) {
   const { colors } = useStudyBolt();
   const reducedMotion = useReducedMotion();
   const { fontScale } = useWindowDimensions();
-  const size = Math.min(170, 92 * Math.max(1, fontScale));
+  const size = Math.min(140, 76 * Math.max(1, fontScale));
   const radius = 49;
   const circumference = 2 * Math.PI * radius;
-  const progress = useRef(new Animated.Value(value ?? 0)).current;
+  const progress = useRef(new Animated.Value(value)).current;
   const previous = useRef(value);
   useEffect(() => {
     progress.stopAnimation();
-    if (value === null || previous.current === null || reducedMotion || Platform.OS === 'web') progress.setValue(value ?? 0);
-    else Animated.timing(progress, { toValue: value, duration: 400, useNativeDriver: false }).start();
+    if (reducedMotion || Platform.OS === 'web') progress.setValue(value);
+    else if (previous.current !== value) Animated.timing(progress, { toValue: value, duration: 300, useNativeDriver: false, isInteraction: false }).start();
     previous.current = value;
     return () => progress.stopAnimation();
   }, [progress, reducedMotion, value]);
-  return <View accessible accessibilityRole="image" accessibilityLabel={value === null ? 'Knowledge readiness is not assessed yet. More spaced practice is needed.' : value + ' percent of identified topics show consistent spaced recall.'} style={{ width: size, height: size }}>
+  return <View accessible accessibilityRole="image" accessibilityLabel={value + ' percent of identified topics show consistent spaced recall.'} style={{ width: size, height: size }}>
     <Svg width={size} height={size} viewBox="0 0 120 120" {...(Platform.OS === 'web' ? { 'aria-hidden': true, focusable: false } : { accessible: false })}>
       <Circle cx={60} cy={60} r={radius} stroke={colors.border} strokeWidth={8} fill="none" />
-      {value !== null ? Platform.OS === 'web' ? <Circle cx={60} cy={60} r={radius} stroke={colors.primary} strokeWidth={8} strokeLinecap="round" fill="none" strokeDasharray={circumference + ' ' + circumference} strokeDashoffset={circumference * (1 - value / 100)} transform="rotate(-90 60 60)" /> : <AnimatedCircle cx={60} cy={60} r={radius} stroke={colors.primary} strokeWidth={8} strokeLinecap="round" fill="none" strokeDasharray={circumference + ' ' + circumference} strokeDashoffset={progress.interpolate({ inputRange: [0, 100], outputRange: [circumference, 0] })} transform="rotate(-90 60 60)" /> : null}
+      {value > 0 ? Platform.OS === 'web' ? <Circle cx={60} cy={60} r={radius} stroke={colors.primary} strokeWidth={8} strokeLinecap="round" fill="none" strokeDasharray={circumference + ' ' + circumference} strokeDashoffset={circumference * (1 - value / 100)} transform="rotate(-90 60 60)" /> : <AnimatedCircle cx={60} cy={60} r={radius} stroke={colors.primary} strokeWidth={8} strokeLinecap="round" fill="none" strokeDasharray={circumference + ' ' + circumference} strokeDashoffset={progress.interpolate({ inputRange: [0, 100], outputRange: [circumference, 0] })} transform="rotate(-90 60 60)" /> : null}
     </Svg>
-    <View style={styles.ringCenter}><Text adjustsFontSizeToFit numberOfLines={1} style={[styles.ringValue, { color: value === null ? colors.textMuted : colors.text }]}>{value === null ? '—' : value + '%'}</Text><Text style={[styles.smallCopy, { color: colors.textSecondary }]}>{value === null ? 'Not assessed' : 'Recall evidence'}</Text></View>
+    <View aria-hidden style={styles.ringCenter}><Text style={[styles.ringValue, { color: colors.text }]}>{value}%</Text></View>
   </View>;
 }
 
-function CourseCount({ value, label }: { value: number; label: string }) {
-  const { colors } = useStudyBolt();
-  return <View accessible accessibilityLabel={value + ' ' + label} style={styles.count}><Text style={[styles.countValue, { color: colors.text }]}>{value}</Text><Text style={[styles.countLabel, { color: colors.textSecondary }]}>{label}</Text></View>;
-}
-
-function HeroMetric({ label, value, detail }: { label: string; value: number | null; detail: string }) {
-  const { colors } = useStudyBolt();
-  return <View accessible accessibilityLabel={label + ': ' + (value === null ? 'not assessed' : value + ' percent') + '. ' + detail} style={styles.metric}><Text style={[styles.smallCopy, { color: colors.textSecondary }]}>{label}</Text><Text style={[styles.metricValue, { color: value === null ? colors.textMuted : colors.text }]}>{value === null ? '—' : value + '%'}</Text><Text style={[styles.smallCopy, { color: colors.textMuted }]}>{detail}</Text></View>;
-}
-
 const styles = StyleSheet.create({
-  card: { marginTop: 18, padding: 18, overflow: 'hidden' },
-  wash: { position: 'absolute', top: 0, left: 0, right: 0, height: 240 },
-  topRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 },
-  heading: { flex: 1, gap: 2 },
-  eyebrow: { fontSize: 11, lineHeight: 17, fontWeight: '700', letterSpacing: 1 },
-  arrows: { flexDirection: 'row', gap: 6 },
-  arrow: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill, borderWidth: StyleSheet.hairlineWidth },
-  page: { paddingBottom: 2 },
-  courseName: { fontSize: 20, lineHeight: 27, fontWeight: '800', letterSpacing: -0.55, marginBottom: 4 },
+  card: { padding: spacing.lg, overflow: 'hidden' },
+  topRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md },
+  heading: { flex: 1, minWidth: 0, gap: spacing.xs },
+  eyebrow: { ...typography.caption, fontWeight: '700' },
+  arrows: { flexDirection: 'row', gap: spacing.xs },
+  arrow: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill },
+  courseRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  courseName: { ...typography.sectionTitle },
   copy: { ...typography.secondary },
   smallCopy: { ...typography.caption },
-  main: { alignItems: 'center', gap: 12, marginTop: 18, marginBottom: 18 },
-  mainWide: { flexDirection: 'row', alignItems: 'center', gap: 13 },
-  status: { flex: 1, alignSelf: 'stretch', justifyContent: 'center', gap: 5 },
+  courseDetails: { gap: spacing.sm, marginTop: spacing.md },
+  main: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  stacked: { flexDirection: 'column', alignItems: 'stretch' },
   statusTitle: { ...typography.cardTitle },
-  ringCenter: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
-  ringValue: { fontSize: 25, lineHeight: 33, fontWeight: '800', letterSpacing: -0.8, fontVariant: ['tabular-nums'] },
-  counts: { flexDirection: 'row', borderRadius: radius.md, paddingHorizontal: 8, paddingVertical: 12, gap: 6 },
-  count: { flex: 1, alignItems: 'center', gap: 2 },
-  countValue: { fontSize: 19, lineHeight: 26, fontWeight: '700', fontVariant: ['tabular-nums'] },
-  countLabel: { fontSize: 11, lineHeight: 16, textAlign: 'center' },
-  metrics: { flexDirection: 'row', gap: 18, paddingVertical: 12 },
-  stacked: { flexDirection: 'column' },
-  metric: { flex: 1, gap: 2 },
-  metricValue: { fontSize: 25, lineHeight: 33, fontWeight: '800', fontVariant: ['tabular-nums'] },
-  focus: { borderRadius: radius.md, padding: 13, gap: 6 },
-  focusHeading: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  focusTitle: { ...typography.cardTitle },
-  primaryAction: { minHeight: 50, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, borderRadius: radius.md, paddingHorizontal: 14, paddingVertical: 13, marginTop: 14 },
-  actionText: { ...typography.control, flexShrink: 1 },
-  evidenceLink: { minHeight: 44, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 7, paddingVertical: 11, marginTop: 4 },
-  linkText: { fontSize: 13, lineHeight: 20, fontWeight: '600', flexShrink: 1 },
-  pager: { flexDirection: 'row', justifyContent: 'center', gap: 5, paddingTop: 4 },
-  dot: { height: 5, borderRadius: 3 },
-  loading: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 24 },
+  ringCenter: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },
+  ringValue: { fontSize: 18, lineHeight: 24, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  empty: { borderRadius: radius.md, padding: spacing.md, marginTop: spacing.md, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: spacing.sm },
+  emptyIcon: { width: 40, height: 40, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center' },
+  primaryAction: { width: '100%', minHeight: 46, marginTop: spacing.xs },
+  evidenceLink: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingTop: spacing.xs, marginTop: spacing.xs },
+  linkText: { ...typography.caption, fontWeight: '700', flexShrink: 1 },
+  loading: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.xxl },
 });

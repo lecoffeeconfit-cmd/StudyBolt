@@ -52,6 +52,7 @@ export function StudyBoltNavigator() {
   const [tab, setTab] = useState<MainTab>('home');
   const [route, setRoute] = useState<Route>({ type: 'main' });
   const [plannerFocusDeckId, setPlannerFocusDeckId] = useState<string>();
+  const [planClassId, setPlanClassId] = useState<string>();
   const [pendingSharedToken, setPendingSharedToken] = useState<string | null>(null);
   const [pendingRoute, setPendingRoute] = useState<Route | null>(null);
   const isAdmin = useAdminAccess(user?.id);
@@ -170,7 +171,6 @@ export function StudyBoltNavigator() {
           onOpenDeck={openDeck}
           onCreateReview={createReview}
           onOpenFlagged={openFlagged}
-          onOpenSpeedReview={(courseId) => openSpeedReview({ courseId })}
           onImport={(assets, studyClass) => setRoute({ type: 'processing', assets, courseId: studyClass.id, courseName: studyClass.name })}
         />
       );
@@ -204,7 +204,9 @@ export function StudyBoltNavigator() {
     return (
       <HomeScreen
         onOpenDeck={openDeck}
-        onImport={(assets) => setRoute({ type: 'processing', assets })}
+        onImport={(assets, course) => setRoute({ type: 'processing', assets, courseId: course?.id, courseName: course?.name })}
+        planClassId={planClassId}
+        onSelectPlanClass={setPlanClassId}
         onStartStudy={(mode, focus) => setRoute({ type: 'smart-study', mode, ...focus })}
         onOpenMistakes={(itemIds) => setRoute({ type: 'mistakes', itemIds })}
         onPracticeTest={(deckId) => setRoute({ type: 'exam', deckId })}
@@ -215,7 +217,7 @@ export function StudyBoltNavigator() {
         onOpenPlanner={() => setTab('planner')}
       />
     );
-  }, [createReview, isAdmin, openDeck, openFlagged, openSpeedReview, plannerFocusDeckId, tab, user]);
+  }, [createReview, isAdmin, openDeck, openFlagged, openSpeedReview, planClassId, plannerFocusDeckId, tab, user]);
 
   if (!hydrated || authLoading) {
     return (

@@ -23,12 +23,12 @@ import { findHomeAudioResume } from '../services/homeStudy';
 import { buildHomeDashboard } from '../services/homeDashboard';
 import type { HomeDueReview, HomeWeakTopic } from '../services/homeDashboard';
 import { getRetentionCardSchedule } from '../services/retentionScheduler';
-import { HomePrioritySheet, RecentLearningCard, UpcomingExamCard } from '../components/HomeLearningCards';
+import { HomePrioritySheet } from '../components/HomeLearningCards';
 import type { HomePriority } from '../components/TodaysPlanCard';
 import { TodaysPlanCard } from '../components/TodaysPlanCard';
 import { AddStudyMaterialCard } from '../components/AddStudyMaterialCard';
 import { useAuth } from '../AuthContext';
-import { useStudyMaterialPicker } from '../hooks/useStudyMaterialPicker';
+import { useStudyMaterialPicker, type ImportClass } from '../hooks/useStudyMaterialPicker';
 
 const POMODORO_STORAGE_KEY = '@studybolt/pomodoro-timer/v1';
 
@@ -101,9 +101,11 @@ export function HomeScreen({
   onOpenLibrary,
   onOpenStats,
   onOpenProfile,
+  planClassId,
+  onSelectPlanClass,
 }: {
   onOpenDeck: (deck: StudyPack, tool?: StudyTool, cardIds?: string[]) => void;
-  onImport: (assets: ImportAsset[]) => void;
+  onImport: (assets: ImportAsset[], course?: ImportClass) => void;
   onStartStudy: (mode: SmartStudyMode, focus?: { deckId: string; sectionIds?: string[] }) => void;
   onOpenMistakes: (itemIds?: string[]) => void;
   onOpenFlagged: () => void;
@@ -112,6 +114,8 @@ export function HomeScreen({
   onOpenLibrary: () => void;
   onOpenStats: () => void;
   onOpenProfile: () => void;
+  planClassId: string | undefined;
+  onSelectPlanClass: (id: string) => void;
 }) {
   const { colors, state, setTheme } = useStudyBolt();
   const { user, profile } = useAuth();
@@ -132,7 +136,7 @@ export function HomeScreen({
     scheduleCard: (deckId, cardId) => getRetentionCardSchedule(academicState, deckId, cardId, state.retentionMode === 'standard' ? 'sm2' : state.retentionMode, now),
   }), [state, academicState, now, resumeDeck?.id]);
   const today = now.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
-  const recentMaterials = dashboard.decks.length ? dashboard.recent.slice(0, 2) : state.decks.filter((deck) => deck.fileType === 'demo').slice(0, 2).map((deck) => ({ deck, lastStudiedAt: null }));
+  const recentMaterials = dashboard.decks.length ? dashboard.recent.slice(0, 2) : [];
   const firstName = profile?.displayName?.trim().split(/\s+/)[0];
   const greeting = now.getHours() < 12 ? 'Good morning' : now.getHours() < 18 ? 'Good afternoon' : 'Good evening';
   const uploadStatus = useMemo(() => getHomeUploadStatus(state.decks, AUTOMATIC_STUDY_PACK_MATERIALS), [state.decks]);
@@ -198,7 +202,7 @@ export function HomeScreen({
         <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{!dashboard.decks.length ? 'Start with one class. Build a routine that works for you.' : dashboard.exam ? 'One focused step toward your next exam.' : 'A clear next step, built from your learning.'}</Text>
       </View>
 
-      <TodaysPlanCard dashboard={dashboard} colors={colors} onStartSession={startRecommended} onOpenPriority={setPriority} onOpenPlan={onOpenPlanner} onOpenDeck={onOpenDeck} onStartStudy={onStartStudy} onOpenMistakes={onOpenMistakes} onOpenLibrary={onOpenLibrary} onAddMaterial={pickDocument} />
+      <TodaysPlanCard dashboard={dashboard} now={now} colors={colors} selectedId={planClassId} onSelectClass={onSelectPlanClass} onOpenPriority={setPriority} onOpenPlan={onOpenPlanner} onOpenDeck={onOpenDeck} onStartStudy={onStartStudy} onOpenMistakes={onOpenMistakes} onAddMaterial={pickDocument} />
 
       <AddStudyMaterialCard
         colors={colors}
@@ -211,16 +215,15 @@ export function HomeScreen({
         onOpenPack={(deck) => onOpenDeck(deck)}
       />
 
-      <RecentLearningCard activity={dashboard.activity} today={dashboard.today} onOpenStats={onOpenStats} onStart={() => { void startRecommended(); }} />
+      {dashboard.decks.length ? <>
+        <View style={styles.sectionHeading}><Text accessibilityRole="header" style={[styles.sectionHeadingText, { color: colors.text }]}>Continue studying</Text><Pressable accessibilityRole="button" accessibilityLabel="Open study library" onPress={onOpenLibrary} style={styles.libraryLink}><Text style={[styles.libraryLinkText, { color: colors.mode === 'dark' ? colors.primary : '#075BC6' }]}>Library</Text><Icon name="chevron-right" size={18} color={colors.primary} /></Pressable></View>
+        <View style={styles.deckList}>
+          {!recentMaterials.length ? <Text style={[styles.emptyMaterials, { color: colors.textSecondary }]}>Your Study Packs will appear here after you import materials.</Text> : null}
+          {recentMaterials.map(({ deck, lastStudiedAt }) => <RecentDeck key={deck.id} deck={deck} lastStudiedAt={lastStudiedAt} onPress={() => onOpenDeck(deck)} />)}
+        </View>
+      </> : null}
 
-      <View style={styles.sectionHeading}><Text accessibilityRole="header" style={[styles.sectionHeadingText, { color: colors.text }]}>{dashboard.decks.length ? 'Continue studying' : 'Try the sample materials'}</Text><Pressable accessibilityRole="button" accessibilityLabel="Open study library" onPress={onOpenLibrary} style={styles.libraryLink}><Text style={[styles.libraryLinkText, { color: colors.mode === 'dark' ? colors.primary : '#075BC6' }]}>Library</Text><Icon name="chevron-right" size={18} color={colors.primary} /></Pressable></View>
-      <View style={styles.deckList}>
-        {!recentMaterials.length ? <Text style={[styles.emptyMaterials, { color: colors.textSecondary }]}>Your Study Packs will appear here after you import materials.</Text> : null}
-        {recentMaterials.map(({ deck, lastStudiedAt }) => <RecentDeck key={deck.id} deck={deck} lastStudiedAt={lastStudiedAt} onPress={() => onOpenDeck(deck)} />)}
-      </View>
       {resumeDeck && dashboard.recommendation.kind !== 'resume' ? <Card onPress={() => onOpenDeck(resumeDeck, 'audio')} accessibilityLabel={`Resume StudyCast, ${resumeDeck.title}, from your saved position`} style={styles.resumeCard}><View style={[styles.resumeIcon, { backgroundColor: colors.primarySoft }]}><Icon name="headphones" color={colors.primary} /></View><View style={styles.resumeCopy}><Text style={[styles.resumeTitle, { color: colors.text }]}>Continue listening</Text><Text style={[styles.resumeSubtitle, { color: colors.textSecondary }]}>{resumeDeck.title} · Saved position</Text></View><Icon name="play-circle-outline" color={colors.primary} /></Card> : null}
-
-      <UpcomingExamCard exam={dashboard.exam} onOpenPlan={onOpenPlanner} />
 
       <Text accessibilityRole="header" style={[styles.sectionLabel, { color: colors.text }]}>Study tools</Text>
       <View style={styles.quickActions}>
@@ -519,7 +522,6 @@ const styles = StyleSheet.create({
   resumeTitle: { fontSize: 15, lineHeight: 21, fontWeight: '800' },
   resumeSubtitle: { fontSize: 12, lineHeight: 18, marginTop: 2 },
   resumeDeck: { fontSize: 11, lineHeight: 17, marginTop: 4 },
-  emptyMaterials: { fontSize: 13, lineHeight: 20, paddingVertical: 8 },
   pomodoroCardStacked: { flexDirection: 'column', alignItems: 'stretch' },
   pomodoroHeading: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 9 },
   pomodoroControls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 8, flexShrink: 1 },
@@ -555,6 +557,7 @@ const styles = StyleSheet.create({
   deckSubtitle: { fontSize: 14, lineHeight: 21, marginTop: 2 },
   deckMetaRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 5 },
   deckMeta: { fontSize: 12, lineHeight: 19 },
+  emptyMaterials: { fontSize: 13, lineHeight: 20, paddingVertical: 8 },
   dot: { width: 3, height: 3, borderRadius: 2 },
   miniProgress: { marginTop: 7 },
   tipCard: { marginTop: 22 },

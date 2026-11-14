@@ -1,11 +1,14 @@
 import { LoadingArtwork } from '../components/StudyBoltLoading';
-import { typography } from '../theme';
+import { radius, spacing, typography } from '../theme';
 import React, { useEffect, useMemo, useState } from 'react';
 import { AppState, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
-import { Card, Header, Icon, Pill, ProgressBar, Screen } from '../components/ui';
+import { Card, Icon, Pill, PrimaryButton, ProgressBar } from '../components/ui';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { bottomTabBarTop } from '../components/BottomTabs';
+import { PageEntrance } from '../components/PagePresentation';
 import { SubjectIcon } from '../components/SubjectIcon';
-import { LearningMasteryHero } from '../components/LearningMasteryHero';
+import { classKnowledgeDetail, LearningMasteryHero } from '../components/LearningMasteryHero';
 import { StatsLearningDashboard } from '../components/StatsLearningDashboard';
 import { statsClassState } from '../components/statsLearningPresentation';
 import type { IconName } from '../components/ui';
@@ -44,6 +47,7 @@ export function StatsScreen({ onOpenDeck, onAddMaterial }: {
   onAddMaterial: () => void;
 }) {
   const { colors, state, hydrated } = useStudyBolt();
+  const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<StatsTab>('overview');
   const [selectedDetail, setSelectedDetail] = useState<StatsDetail | null>(null);
   const [includeSamples, setIncludeSamples] = useState(false);
@@ -58,6 +62,7 @@ export function StatsScreen({ onOpenDeck, onAddMaterial }: {
   const displayState = allClasses ? includeSamples ? state : personalState : classState;
   const analytics = useMemo(() => buildAnalytics(displayState), [activityEpoch, displayState]);
   const displayGroups = allClasses ? courseGroups : [selectedClass];
+  const allClassesEmpty = allClasses && analytics.packs.length === 0;
   const topicEvidence = useMemo(() => new Set((allClasses ? courseGroups : [selectedClass]).flatMap(group => group.practicedTopicIds)), [allClasses, courseGroups, selectedClass]);
   const selectClass = (id: string) => { setSelectedClassId(id); setAllClasses(false); setIncludeSamples(false); };
 
@@ -86,50 +91,179 @@ export function StatsScreen({ onOpenDeck, onAddMaterial }: {
 
   return (
     <StatDetailContext.Provider value={setSelectedDetail}>
-      <View style={[styles.screenShell, { backgroundColor: colors.background }]}>
-        <Screen>
-          <View aria-hidden={Boolean(selectedDetail)} accessibilityElementsHidden={Boolean(selectedDetail)} importantForAccessibility={selectedDetail ? 'no-hide-descendants' : 'auto'} style={styles.contentWidth}>
-          <Header
-            title="Stats"
-            right={(
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="About your statistics and data scope"
-                onPress={showAbout}
-                style={[styles.aboutButton, { backgroundColor: colors.card, borderColor: colors.border }]}
-              >
-                <Icon name="information-outline" color={colors.textSecondary} size={22} />
+      <View style={[styles.screenShell, {
+        backgroundColor: colors.background,
+        paddingTop: insets.top,
+        paddingBottom: bottomTabBarTop(insets.bottom) + 22,
+      }]}>
+        <ScrollView
+          style={styles.screenShell}
+          contentInsetAdjustmentBehavior="never"
+          contentContainerStyle={[styles.scrollContent, {
+            paddingLeft: Math.max(spacing.lg, insets.left),
+            paddingRight: Math.max(spacing.lg, insets.right),
+          }]}
+        >
+          <View
+            aria-hidden={Boolean(selectedDetail)}
+            accessibilityElementsHidden={Boolean(selectedDetail)}
+            importantForAccessibility={selectedDetail ? 'no-hide-descendants' : 'auto'}
+            style={styles.contentWidth}
+          >
+            <View style={styles.header}>
+              <View style={styles.flexCopy}>
+                <Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>Your progress</Text>
+                <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Review what you know and what to practice next.</Text>
+              </View>
+              <Pressable accessibilityRole="button" accessibilityLabel="About your statistics and data scope" onPress={showAbout} style={({ pressed }) => [styles.aboutButton, { backgroundColor: colors.primarySoft, opacity: pressed ? 0.65 : 1 }]}>
+                <Icon name="information-outline" color={colors.primary} size={21} />
               </Pressable>
+            </View>
+            {includeSamples ? <Pressable accessibilityRole="button" onPress={showAbout} style={styles.scopeRow}>
+              <Icon name="layers-outline" size={16} color={colors.warning} />
+              <Text style={[styles.scopeLabel, { color: colors.warning }]}>Includes sample and older totals</Text>
+              <Icon name="chevron-down" size={16} color={colors.textMuted} />
+            </Pressable> : null}
+            {!hydrated ? (
+              <View accessibilityState={{ busy: true }} style={styles.loadingState}>
+                <LoadingArtwork colors={colors} />
+                <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Loading your progress…</Text>
+              </View>
+            ) : (
+              <>
+                <View style={[styles.classScope, { backgroundColor: colors.cardStrong }]} accessibilityRole="tablist" accessibilityLabel="Statistics scope">
+                  {[{ all: false, label: 'Selected class' }, { all: true, label: 'All classes' }].map(option => {
+                    const active = allClasses === option.all;
+                    return <Pressable key={option.label} accessibilityRole="tab" accessibilityState={{ selected: active }} aria-selected={active}
+                      onPress={() => { setAllClasses(option.all); if (!option.all) setIncludeSamples(false); }}
+                      style={({ pressed }) => [styles.classScopeButton, active && { backgroundColor: colors.card }, { opacity: pressed ? 0.65 : 1 }]}
+                    >
+                      <Text style={[styles.classScopeText, { color: active ? colors.primary : colors.textSecondary }]}>{option.label}</Text>
+                    </Pressable>;
+                  })}
+                </View>
+                <StatsTabs tab={tab} onChange={setTab} />
+                <View style={styles.overviewStart}>
+                  {!allClasses ? (
+                    <LearningMasteryHero groups={courseGroups} selectedId={selectedClass.id} onSelect={selectClass} onExplore={setSelectedDetail} onAddMaterial={onAddMaterial} compact={tab !== 'overview'} />
+                  ) : (
+                    <>
+                      <Text accessibilityRole="header" style={[styles.allClassesLabel, { color: colors.text }]}>All classes</Text>
+                      {tab !== 'overview' ? <StatsDisclosure title="Knowledge by class" subtitle="Browse course evidence and saved material">
+                        <LearningMasteryHero groups={courseGroups} selectedId={selectedClass.id} onSelect={selectClass} onExplore={setSelectedDetail} onAddMaterial={onAddMaterial} compact />
+                      </StatsDisclosure> : null}
+                    </>
+                  )}
+                </View>
+                {tab === 'overview' ? (
+                  <>
+                    {allClassesEmpty ? <Card style={styles.nextStep}>
+                      <Text accessibilityRole="header" style={[styles.nextStepTitle, { color: colors.text }]}>Start with one Study Pack</Text>
+                      <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Add study material and practice to build your progress across classes.</Text>
+                      <PrimaryButton label="Add study material" icon="plus" onPress={onAddMaterial} style={styles.addMaterial} />
+                    </Card> : null}
+                    <PageEntrance key={allClasses ? 'all' : selectedClass.id} style={styles.overviewStart}>
+                      <OverviewMetrics analytics={analytics} group={allClasses ? undefined : selectedClass}
+                        onEvidence={!allClasses ? () => setSelectedDetail(classKnowledgeDetail(selectedClass)) : () => setSelectedDetail(makeStatDetail('Knowledge by class', 'Course evidence', 'Personal course assessments', {
+                          insight: courseGroups.map(group => `${group.name}: ${group.mastery === null ? 'Not assessed yet' : group.mastery + '%'}\n${group.assessedTopics} of ${group.topicCount} topics assessed.`).join('\n\n'),
+                          calculation: 'See a class’s evidence for the requirements for consistent spaced recall.',
+                        }))}
+                      />
+                      {!allClasses && selectedClass.packs.length ? <NextClassPractice group={selectedClass} onPractice={openPractice} /> : null}
+                    </PageEntrance>
+                    {allClasses ? (
+                      <>
+                        <StatsDisclosure title="Knowledge by class" subtitle="Browse course evidence and saved material">
+                          <LearningMasteryHero groups={courseGroups} selectedId={selectedClass.id} onSelect={selectClass} onExplore={setSelectedDetail} onAddMaterial={onAddMaterial} />
+                        </StatsDisclosure>
+                        <Overview analytics={analytics} groups={courseGroups} onPractice={openPractice} onAddMaterial={onAddMaterial} />
+                      </>
+                    ) : (
+                      <>
+                        <StatsDisclosure title="Class learning insights" subtitle="Topics, practice trends, materials, and review evidence">
+                          <StatsLearningDashboard key={selectedClass.id} state={classState} group={selectedClass} analytics={analytics} onDetail={setSelectedDetail} onPractice={openPractice} />
+                        </StatsDisclosure>
+                        <StatsDisclosure title="More study activity" subtitle="Study time, coverage, and session details">
+                          <Overview analytics={analytics} groups={displayGroups} onPractice={openPractice} onAddMaterial={onAddMaterial} />
+                        </StatsDisclosure>
+                      </>
+                    )}
+                  </>
+                ) : null}
+                {tab === 'insights' ? <AdvancedInsights analytics={analytics} topicEvidence={includeSamples ? undefined : topicEvidence} /> : null}
+                {tab === 'mastery' ? <MasteryAnalytics analytics={analytics} topicEvidence={includeSamples ? undefined : topicEvidence} /> : null}
+                {tab === 'quizzes' ? <QuizAnalytics analytics={analytics} /> : null}
+                {tab === 'activity' ? <ActivityAnalytics analytics={analytics} goalMinutes={state.dailyStudyGoalMinutes} /> : null}
+                {tab === 'methods' ? <MethodAnalytics analytics={analytics} classCount={allClasses ? includeSamples ? state.classes.length : courseGroups.filter(group => group.kind === 'class').length : selectedClass.kind === 'class' ? 1 : 0} presentationCount={displayGroups.reduce((sum, group) => sum + group.powerpoints, 0)} /> : null}
+              </>
             )}
-          />
-          <Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>Your learning, made clear.</Text>
-          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>What you know. What is growing. What to study next.</Text>
-          <Pressable accessibilityRole="button" accessibilityLabel={includeSamples ? 'Sample and personal data. Change statistics scope' : 'Personal progress. About your statistics'} onPress={showAbout} style={styles.scopeRow}>
-            <Icon name={includeSamples ? 'layers-outline' : 'account-check-outline'} size={16} color={includeSamples ? colors.warning : colors.primary} />
-            <Text style={[styles.scopeLabel, { color: includeSamples ? colors.warning : colors.textSecondary }]}>{includeSamples ? 'Includes sample and older totals' : 'Your saved material only'}</Text>
-            <Icon name="chevron-down" size={16} color={colors.textMuted} />
-          </Pressable>
-          {!hydrated ? <View accessibilityState={{ busy: true }} style={styles.loadingState}><LoadingArtwork colors={colors} /><Text style={[styles.subtitle, { color: colors.textSecondary }]}>Loading your progress…</Text></View> : <>
-          <LearningMasteryHero groups={courseGroups} selectedId={selectedClass.id} onSelect={selectClass} onExplore={setSelectedDetail} />
-          <View style={styles.classScope} accessibilityRole="tablist" accessibilityLabel="Statistics scope">
-            {[{ all: false, label: 'Selected class' }, { all: true, label: 'All classes' }].map(option => <Pressable key={option.label} accessibilityRole="tab" accessibilityState={{ selected: allClasses === option.all }} aria-selected={allClasses === option.all} onPress={() => { setAllClasses(option.all); if (!option.all) setIncludeSamples(false); }} style={[styles.classScopeButton, { backgroundColor: allClasses === option.all ? colors.primarySoft : colors.card, borderColor: allClasses === option.all ? colors.primary : colors.border }]}><Text style={[styles.classScopeText, { color: allClasses === option.all ? colors.primary : colors.textSecondary }]}>{option.label}</Text></Pressable>)}
           </View>
-          <Text style={[styles.inlineHint, { color: colors.textMuted }]}>{allClasses ? includeSamples ? 'All classes · includes sample and older totals' : 'All classes · your personal progress' : selectedClass.name + ' · all sections below follow this class'}</Text>
-          <StatsTabs tab={tab} onChange={setTab} />
-          <Text style={[styles.inlineHint, { color: colors.textMuted }]}>Tap a stat to explore its meaning and evidence.</Text>
-          {tab === 'overview' && !allClasses ? <><StatsLearningDashboard key={selectedClass.id} state={classState} group={selectedClass} analytics={analytics} onDetail={setSelectedDetail} onPractice={openPractice} onAddMaterial={onAddMaterial} /><StatsDisclosure title="More study activity" subtitle="Your existing activity, coverage, and session details"><Overview analytics={analytics} groups={displayGroups} onPractice={openPractice} onAddMaterial={onAddMaterial} /></StatsDisclosure></> : null}
-          {tab === 'overview' && allClasses ? <Overview analytics={analytics} groups={courseGroups} onPractice={openPractice} onAddMaterial={onAddMaterial} /> : null}
-          {tab === 'insights' ? <AdvancedInsights analytics={analytics} topicEvidence={includeSamples ? undefined : topicEvidence} /> : null}
-          {tab === 'mastery' ? <MasteryAnalytics analytics={analytics} topicEvidence={includeSamples ? undefined : topicEvidence} /> : null}
-          {tab === 'quizzes' ? <QuizAnalytics analytics={analytics} /> : null}
-          {tab === 'activity' ? <ActivityAnalytics analytics={analytics} goalMinutes={state.dailyStudyGoalMinutes} /> : null}
-          {tab === 'methods' ? <MethodAnalytics analytics={analytics} classCount={allClasses ? includeSamples ? state.classes.length : courseGroups.filter(group => group.kind === 'class').length : selectedClass.kind === 'class' ? 1 : 0} presentationCount={displayGroups.reduce((sum, group) => sum + group.powerpoints, 0)} /> : null}
-          </>}
-          </View>
-        </Screen>
+        </ScrollView>
         <StatDetailSheet detail={selectedDetail} onClose={() => setSelectedDetail(null)} />
       </View>
     </StatDetailContext.Provider>
+  );
+}
+
+function OverviewMetrics({ group, analytics, onEvidence }: { group?: LearningMasteryGroup; analytics: AnalyticsSnapshot; onEvidence: () => void }) {
+  const showStatDetail = useStatDetail();
+  const coverage = group ? group.materialPracticed : analytics.packs.length ? analytics.packCompletion : null;
+  const accuracy = group ? group.quizAccuracy : analytics.quizzes.firstTryAccuracy;
+  const coverageDetail = coverage === null
+    ? 'Add a Study Pack to begin'
+    : group
+      ? `${group.practicedPacks} of ${group.packs.length} packs practiced`
+      : 'Activity coverage across saved packs';
+  const accuracyDetail = group?.quizQuestions
+    ? `${group.quizQuestions} source questions`
+    : accuracy === null ? 'Complete a quiz to see accuracy' : 'Recorded first answers';
+  const readiness = group ? (group.mastery === null ? 'Not assessed yet' : percent(group.mastery)) : 'By class';
+  const readinessDetail = group?.topicCount
+    ? `${group.assessedTopics} of ${group.topicCount} topics assessed`
+    : group ? 'Build evidence through practice' : 'See recall evidence by course';
+  const coverageValue = coverage === null ? 'No material yet' : percent(coverage);
+  const accuracyValue = accuracy === null ? 'No quiz answers yet' : percent(accuracy);
+  const activityValue = formatMinutes(analytics.studyTimeThisWeek);
+  return (
+    <View style={styles.metricGrid}>
+      <MetricCard icon="brain" label="Knowledge readiness" value={readiness} detail={readinessDetail} tone="blue" compact onPress={onEvidence} />
+      <MetricCard icon="layers-outline" label={group ? 'Practice coverage' : 'Pack completion'}
+        value={coverageValue} detail={coverageDetail} tone="orange" compact
+        onPress={group ? () => showStatDetail(makeStatDetail('Practice coverage', coverageValue, coverageDetail, {
+          description: 'The share of this class’s saved Study Packs with recorded practice.',
+          calculation: 'Count packs with a quiz answer or flashcard review, then divide by the number of saved packs in the class.',
+        })) : undefined} />
+      <MetricCard icon="target" label="First-answer accuracy" value={accuracyValue} detail={accuracyDetail} tone="blue" compact
+        onPress={() => showStatDetail({
+          ...makeStatDetail('First-try accuracy', accuracyValue, accuracyDetail, group ? {
+            calculation: 'Count fully correct first answers once per source question in this class, then divide by the number of source questions answered.',
+          } : undefined),
+          label: 'First-answer accuracy',
+        })} />
+      <MetricCard icon="calendar-clock" label="Study activity" value={activityValue}
+        detail="Recorded study time this week" tone="orange" compact
+        onPress={() => showStatDetail(makeStatDetail('Study time this week', activityValue, 'Recorded study time this week'))} />
+    </View>
+  );
+}
+
+function NextClassPractice({ group, onPractice }: { group: LearningMasteryGroup; onPractice: (action: LearningPracticeAction) => void }) {
+  const { colors } = useStudyBolt();
+  const action = group.nextPractice;
+  const topic = group.focusTopics[0];
+  return (
+    <Card style={styles.nextStep}>
+      <View style={styles.nextStepHeading}>
+        <View style={[styles.nextStepIcon, { backgroundColor: colors.goldSoft }]}><Icon name="lightning-bolt-outline" color={colors.goldText} size={21} /></View>
+        <Text accessibilityRole="header" style={[styles.nextStepTitle, { color: colors.text }]}>Your next step</Text>
+      </View>
+      {topic ? <Text style={[styles.rowTitle, { color: colors.text }]}>{topic.title}</Text> : null}
+      <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{action?.reason ?? group.explanation}</Text>
+      {topic ? <Text style={[styles.rowMeta, { color: colors.textMuted }]}>{topic.packTitle} · Based on recorded recall</Text> : null}
+      {action ? <Pressable accessibilityRole="button" onPress={() => onPractice(action)} style={({ pressed }) => [styles.nextStepLink, { opacity: pressed ? 0.65 : 1 }]}>
+        <Text style={[styles.classScopeText, { color: colors.primary }]}>{action.label}</Text><Icon name="arrow-right" color={colors.primary} size={18} />
+      </Pressable> : null}
+    </Card>
   );
 }
 
@@ -138,7 +272,7 @@ function StatsTabs({ tab, onChange }: { tab: StatsTab; onChange: (value: StatsTa
   const { width, fontScale } = useWindowDimensions();
   return <View role="tablist" accessibilityLabel="Statistics sections" style={styles.tabGrid}>{TABS.map(item => {
     const active = tab === item.id;
-    return <Pressable key={item.id} accessibilityRole="tab" aria-selected={active} accessibilityState={{ selected: active }} onPress={() => onChange(item.id)} style={({ pressed }) => [styles.sectionTab, fontScale > 1.35 && styles.tabHalf, fontScale > 1.9 && styles.tabFull, width > 740 && fontScale <= 1.35 && styles.tabSixth, { backgroundColor: active ? colors.primarySoft : colors.card, borderColor: active ? colors.primary : colors.border, opacity: pressed ? 0.7 : 1 }]}>
+    return <Pressable key={item.id} accessibilityRole="tab" aria-selected={active} accessibilityState={{ selected: active }} onPress={() => onChange(item.id)} style={({ pressed }) => [styles.sectionTab, fontScale > 1.35 && styles.tabHalf, fontScale > 1.9 && styles.tabFull, width > 740 && fontScale <= 1.35 && styles.tabSixth, { backgroundColor: active ? colors.primarySoft : 'transparent', opacity: pressed ? 0.7 : 1 }]}>
       <Icon name={item.icon} size={16} color={active ? colors.primary : colors.textSecondary} /><Text style={[styles.sectionTabText, { color: active ? colors.primary : colors.textSecondary }]}>{item.label}</Text>
     </Pressable>;
   })}</View>;
@@ -147,16 +281,16 @@ function StatsTabs({ tab, onChange }: { tab: StatsTab; onChange: (value: StatsTa
 function StatDetailSheet({ detail, onClose }: { detail: StatsDetail | null; onClose: () => void }) {
   const { colors } = useStudyBolt();
   const reducedMotion = useReducedMotion();
+  const insets = useSafeAreaInsets();
   return (
     <Modal visible={Boolean(detail)} transparent animationType={reducedMotion ? 'none' : 'slide'} onRequestClose={onClose} statusBarTranslucent>
-      <View style={styles.modalRoot}>
+      <View style={[styles.modalRoot, { paddingTop: insets.top }]}>
         <Pressable accessibilityRole="button" accessibilityLabel="Close stat details" style={styles.modalBackdrop} onPress={onClose} />
         {detail ? (
-          <View accessibilityViewIsModal aria-modal role="dialog" accessibilityLabel="Statistic details" style={[styles.detailSheet, { backgroundColor: colors.backgroundRaised, borderColor: colors.border }]}>
+          <View accessibilityViewIsModal aria-modal role="dialog" accessibilityLabel="Statistic details" style={[styles.detailSheet, { backgroundColor: colors.backgroundRaised, borderColor: colors.border, paddingBottom: Math.max(insets.bottom, spacing.sm) }]}>
             <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
             <View style={styles.detailHeader}>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.detailEyebrow, { color: colors.primary }]}>STAT EXPLAINER</Text>
                 <Text style={[styles.detailTitle, { color: colors.text }]}>{detail.label}</Text>
               </View>
               <Pressable accessibilityRole="button" accessibilityLabel="Close" hitSlop={10} onPress={onClose} style={[styles.detailClose, { backgroundColor: colors.cardStrong }]}>
@@ -167,7 +301,7 @@ function StatDetailSheet({ detail, onClose }: { detail: StatsDetail | null; onCl
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.detailScroll}>
               <View style={[styles.detailValueCard, { backgroundColor: colors.primarySoft }]}>
                 <Text style={[styles.detailValueLabel, { color: colors.primary }]}>YOUR CURRENT VALUE</Text>
-                <Text adjustsFontSizeToFit numberOfLines={1} style={[styles.detailValue, { color: colors.text }]}>{detail.value}</Text>
+                <Text style={[styles.detailValue, { color: colors.text }]}>{detail.value}</Text>
                 <Text style={[styles.detailSupporting, { color: colors.textSecondary }]}>{detail.supporting}</Text>
               </View>
 
@@ -231,7 +365,7 @@ function Overview({ analytics, groups, onPractice, onAddMaterial }: {
       <SectionHeader title={nextGroups.some(group => group.focusTopics.length) ? 'Worth revisiting' : 'Continue learning'} action="From your material" />
       <View style={styles.stack}>
         {nextGroups.map(group => <Card key={group.id} onPress={() => onPractice(group.nextPractice!)} accessibilityLabel={group.nextPractice!.label + ' · ' + group.name + '. ' + group.nextPractice!.reason} style={styles.nextStepCard}>
-          <View style={[styles.nextStepIcon, { backgroundColor: colors.mintSoft }]}><Icon name={group.nextPractice!.tool === 'quiz' ? 'clipboard-check-outline' : group.nextPractice!.tool === 'notes' ? 'note-text-outline' : 'cards-outline'} color={colors.mint} size={22} /></View>
+          <View style={[styles.nextStepIcon, { backgroundColor: colors.goldSoft }]}><Icon name={group.nextPractice!.tool === 'quiz' ? 'clipboard-check-outline' : group.nextPractice!.tool === 'notes' ? 'note-text-outline' : 'cards-outline'} color={colors.goldText} size={22} /></View>
           <View style={styles.flexCopy}><Text style={[styles.rowMeta, { color: colors.textMuted }]}>{group.name}</Text><Text style={[styles.rowTitle, { color: colors.text }]}>{group.nextPractice!.label}</Text><Text style={[styles.rowMeta, { color: colors.textSecondary }]}>{group.nextPractice!.reason}</Text></View>
           <Icon name="arrow-right" color={colors.primary} size={20} />
         </Card>)}
@@ -278,7 +412,7 @@ function StatsDisclosure({ title, subtitle, children }: { title: string; subtitl
   const { colors } = useStudyBolt();
   const [expanded, setExpanded] = useState(false);
   return <View style={styles.disclosure}>
-    <Pressable accessibilityRole="button" accessibilityLabel={title} accessibilityState={{ expanded }} onPress={() => setExpanded(value => !value)} style={({ pressed }) => [styles.disclosureHeading, { borderColor: colors.border, opacity: pressed ? 0.7 : 1 }]}>
+    <Pressable accessibilityRole="button" accessibilityLabel={title} aria-expanded={expanded} accessibilityState={{ expanded }} onPress={() => setExpanded(value => !value)} style={({ pressed }) => [styles.disclosureHeading, { borderColor: colors.border, opacity: pressed ? 0.7 : 1 }]}>
       <View style={styles.flexCopy}><Text style={[styles.disclosureTitle, { color: colors.text }]}>{title}</Text><Text style={[styles.rowMeta, { color: colors.textSecondary }]}>{subtitle}</Text></View><Icon name={expanded ? 'chevron-up' : 'chevron-down'} color={colors.primary} size={22} />
     </Pressable>
     {expanded ? <View style={styles.disclosureBody}>{children}</View> : null}
@@ -307,7 +441,7 @@ function AdvancedInsights({ analytics, topicEvidence }: { analytics: AnalyticsSn
   return (
     <>
       <Card
-        style={[styles.advancedHero, { backgroundColor: colors.mode === 'dark' ? colors.primarySoft : '#EEF5FF' }]}
+        style={styles.advancedHero}
       >
         <View style={[styles.advancedHeroIcon, { backgroundColor: colors.primary }]}><Icon name="chart-box-plus-outline" color={colors.primaryText} size={24} /></View>
         <View style={{ flex: 1 }}>
@@ -449,7 +583,7 @@ function MasteryAnalytics({ analytics, topicEvidence }: { analytics: AnalyticsSn
   return (
     <>
       <SectionHeader title="Mastery & retention" action="Recall over time" />
-      <Card style={[styles.sectionHero, { backgroundColor: colors.purpleSoft }]}>
+      <Card style={styles.sectionHero}>
         <View style={[styles.heroIcon, { backgroundColor: colors.card }]}><Icon name="brain" color={colors.purple} size={25} /></View>
         <View style={{ flex: 1 }}>
           <Text style={[styles.sectionHeroTitle, { color: colors.text }]}>Recall that holds over time</Text>
@@ -587,7 +721,7 @@ function ActivityAnalytics({ analytics, goalMinutes }: { analytics: AnalyticsSna
           calculation: 'Today’s positive-duration study events are added and compared with your saved daily goal.',
           whyItMatters: 'Use the goal to create a realistic study cue. The quality and spacing of those minutes still matter more than simply filling the bar.',
         }))}
-        style={[styles.goalCard, { backgroundColor: colors.primarySoft }]}
+        style={styles.goalCard}
       >
         <View style={[styles.goalIcon, { backgroundColor: colors.primary }]}><Icon name="flag-checkered" color={colors.primaryText} /></View>
         <View style={{ flex: 1 }}>
@@ -730,37 +864,37 @@ function MethodAnalytics({ analytics, classCount, presentationCount }: { analyti
 
       <SectionHeader title="Study milestones" />
       <Card>
-        {analytics.more.milestones.length ? analytics.more.milestones.map((milestone, index) => (
+        {analytics.more.milestones.length ? <PageEntrance>{analytics.more.milestones.map((milestone, index) => (
           <View key={milestone} style={[styles.milestone, index > 0 && { borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth }]}>
-            <View style={[styles.milestoneIcon, { backgroundColor: colors.purpleSoft }]}><Icon name="star-four-points" color={colors.purple} size={17} /></View>
-            <Text style={[styles.rowTitle, { color: colors.text }]}>{milestone}</Text>
+            <View style={[styles.milestoneIcon, { backgroundColor: colors.goldSoft }]}><Icon name="star-four-points" color={colors.goldText} size={17} /></View>
+            <Text style={[styles.rowTitle, styles.flexCopy, { color: colors.text }]}>{milestone}</Text>
           </View>
-        )) : <EmptyInsight icon="flag-outline" title="Your first milestone is close" detail="Complete a quiz or master five concepts." />}
+        ))}</PageEntrance> : <EmptyInsight icon="flag-outline" title="Your first milestone is close" detail="Complete a quiz or master five concepts." />}
       </Card>
     </>
   );
 }
 
-function MetricCard({ icon, label, value, detail, tone, muted = false }: { icon: IconName; label: string; value: string; detail: string; tone: 'blue' | 'mint' | 'purple' | 'orange' | 'red'; muted?: boolean }) {
+function MetricCard({ icon, label, value, detail, tone, muted = false, compact = false, onPress }: { icon: IconName; label: string; value: string; detail: string; tone: 'blue' | 'mint' | 'purple' | 'orange' | 'red'; muted?: boolean; compact?: boolean; onPress?: () => void }) {
   const { colors } = useStudyBolt();
   const { fontScale } = useWindowDimensions();
   const showStatDetail = useStatDetail();
-  const color = tone === 'mint' ? colors.mint : tone === 'purple' ? colors.purple : tone === 'orange' ? colors.warning : tone === 'red' ? colors.danger : colors.primary;
-  const background = tone === 'mint' ? colors.mintSoft : tone === 'purple' ? colors.purpleSoft : tone === 'orange' ? `${colors.warning}18` : tone === 'red' ? `${colors.danger}14` : colors.primarySoft;
+  const color = tone === 'mint' ? colors.mint : tone === 'orange' ? colors.goldText : tone === 'red' ? colors.danger : colors.primary;
+  const background = tone === 'mint' ? colors.mintSoft : tone === 'orange' ? colors.goldSoft : tone === 'red' ? `${colors.danger}14` : colors.primarySoft;
   const isMuted = muted || value === '—';
   const displayedValue = isMuted ? '—' : value;
   return (
     <Card
       accessibilityLabel={`${label}, ${displayedValue}. Tap for details`}
-      onPress={() => showStatDetail(makeStatDetail(label, displayedValue, detail))}
+      onPress={onPress ?? (() => showStatDetail(makeStatDetail(label, displayedValue, detail)))}
       style={[styles.metricCard, fontScale > 1.3 && styles.fullWidth]}
     >
       <View style={styles.metricTopRow}>
         <View style={[styles.metricIcon, { backgroundColor: background }]}><Icon name={icon} size={19} color={color} /></View>
         <View style={[styles.metricInfo, { backgroundColor: colors.cardStrong }]}><Icon name="information-outline" size={14} color={colors.textMuted} /></View>
       </View>
-      <Text style={[styles.metricValue, { color: isMuted ? colors.textMuted : colors.text }]}>{displayedValue}</Text>
       <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>{label}</Text>
+      <Text style={[styles.metricValue, compact && !/^\d/.test(displayedValue) && styles.metricStatus, { color: isMuted ? colors.textMuted : colors.text }]}>{displayedValue}</Text>
       <Text style={[styles.metricDetail, { color: colors.textMuted }]}>{detail}</Text>
     </Card>
   );
@@ -1020,7 +1154,7 @@ function BarChart({ values, labels, minutes = false, compact = false }: { values
       <View style={styles.progressHeading}><Text style={[styles.rowTitle, { color: colors.text }]}>{labels[index]}</Text><Text style={[styles.rowMeta, { color: colors.textSecondary }]}>{formatted(value)}</Text></View><ProgressBar accessibilityLabel={labels[index] + ' ' + formatted(value)} progress={(value / max) * 100} />
     </View> : <View key={labels[index] + '-' + index} style={styles.chartColumn}>
       <Text style={[styles.chartValue, { color: colors.textSecondary }]}>{formatted(value)}</Text>
-      <View style={[styles.barTrack, compact && styles.barTrackCompact, { backgroundColor: colors.cardStrong }]}><View style={[styles.bar, { height: `${(value / max) * 100}%`, backgroundColor: index === values.length - 1 ? colors.purple : colors.primary }]} /></View>
+      <View style={[styles.barTrack, compact && styles.barTrackCompact, { backgroundColor: colors.cardStrong }]}><View style={[styles.bar, { height: `${(value / max) * 100}%`, backgroundColor: index === values.length - 1 ? colors.goldBright : colors.primary }]} /></View>
       <Text style={[styles.dayLabel, { color: colors.textMuted }]}>{labels[index]}</Text>
     </View>)}
   </Pressable>;
@@ -1151,25 +1285,33 @@ function getNextStudyAdjustment(analytics: AnalyticsSnapshot): StatDetail {
 }
 
 const styles = StyleSheet.create({
-  classScope: { flexDirection: 'row', gap: 8, marginTop: 16 },
-  classScopeButton: { flex: 1, minHeight: 44, borderWidth: 1, borderRadius: 13, alignItems: 'center', justifyContent: 'center', padding: 9 },
-  classScopeText: { fontSize: 13, lineHeight: 20, fontWeight: '700' },
+  classScope: { flexDirection: 'row', gap: spacing.xs, padding: spacing.xs, borderRadius: radius.md, marginTop: spacing.lg },
+  classScopeButton: { flex: 1, minHeight: 44, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center', padding: spacing.sm },
+  classScopeText: { fontSize: 13, lineHeight: 20, fontWeight: '700', textAlign: 'center', flexShrink: 1 },
+  header: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
+  scrollContent: { paddingVertical: spacing.lg },
+  overviewStart: { marginTop: spacing.lg },
+  allClassesLabel: { ...typography.sectionTitle },
+  nextStep: { marginTop: spacing.md, gap: spacing.xs },
+  addMaterial: { marginTop: spacing.sm, minHeight: 46 },
+  nextStepHeading: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.xs },
+  nextStepTitle: { ...typography.cardTitle, flex: 1 },
+  nextStepLink: { minHeight: 44, flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: spacing.sm },
   contentWidth: { width: '100%', maxWidth: 760, alignSelf: 'center' },
   sectionHeading: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline', justifyContent: 'space-between', columnGap: 10, rowGap: 3, marginTop: 26, marginBottom: 12 },
   sectionHeadingTitle: { ...typography.sectionTitle, maxWidth: '100%' },
   sectionHeadingMeta: { ...typography.caption, maxWidth: '100%' },
   methodHeading: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'baseline', gap: 6 },
   flexCopy: { flex: 1, minWidth: 0 },
-  aboutButton: { width: 44, height: 44, borderRadius: 22, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center' },
+  aboutButton: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   scopeRow: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 7, alignSelf: 'flex-start', paddingVertical: 8 },
   scopeLabel: { fontSize: 12, lineHeight: 18, flexShrink: 1 },
   tabGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
-  sectionTab: { width: '31%', flexGrow: 1, minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 7, paddingVertical: 10, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth },
+  sectionTab: { width: '31%', flexGrow: 1, minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 7, paddingVertical: 10, borderRadius: radius.sm },
   sectionTabText: { fontSize: 13, lineHeight: 20, fontWeight: '600', flexShrink: 1 },
   tabHalf: { width: '47%' },
   tabFull: { width: '100%' },
   tabSixth: { width: '15%' },
-  inlineHint: { fontSize: 12, lineHeight: 18, marginTop: 10 },
   loadingState: { minHeight: 260, alignItems: 'center', justifyContent: 'center', gap: 12 },
   detailAction: { minHeight: 50, borderRadius: 15, paddingHorizontal: 16, paddingVertical: 13, marginHorizontal: 20, marginBottom: 24, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 10 },
   detailActionText: { fontSize: 15, lineHeight: 22, fontWeight: '600', flexShrink: 1 },
@@ -1186,20 +1328,19 @@ const styles = StyleSheet.create({
   chartListRow: { width: '100%' },
   barTrackCompact: { height: 88 },
   screenShell: { flex: 1 },
-  title: { ...typography.pageTitle },
+  title: { fontSize: 25, lineHeight: 32, fontWeight: '800', letterSpacing: -0.45 },
   subtitle: { fontSize: 14, lineHeight: 21, marginTop: 5, marginBottom: 2, maxWidth: 510 },
   modalRoot: { flex: 1, justifyContent: 'flex-end', alignItems: 'center' },
   modalBackdrop: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: 'rgba(4, 9, 20, 0.56)' },
   detailSheet: { width: '100%', maxWidth: 620, maxHeight: '88%', borderTopLeftRadius: 28, borderTopRightRadius: 28, borderWidth: StyleSheet.hairlineWidth, paddingTop: 9, shadowColor: '#000000', shadowOffset: { width: 0, height: -8 }, shadowOpacity: 0.18, shadowRadius: 24, elevation: 18 },
   sheetHandle: { width: 38, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 8 },
   detailHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 8 },
-  detailEyebrow: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 1.1 },
-  detailTitle: { fontSize: 24, lineHeight: 30, fontWeight: '900', letterSpacing: -0.65, marginTop: 2 },
+  detailTitle: { fontSize: 21, lineHeight: 28, fontWeight: '800', letterSpacing: -0.3 },
   detailClose: { width: 44, height: 44, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   detailScroll: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 34, gap: 10 },
   detailValueCard: { minHeight: 116, borderRadius: 20, padding: 17, justifyContent: 'center' },
   detailValueLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', letterSpacing: 1 },
-  detailValue: { fontSize: 32, lineHeight: 39, fontWeight: '900', letterSpacing: -0.8, marginTop: 3 },
+  detailValue: { fontSize: 24, lineHeight: 31, fontWeight: '800', letterSpacing: -0.4, marginTop: spacing.xs },
   detailSupporting: { fontSize: 14, lineHeight: 21, marginTop: 3 },
   detailSection: { flexDirection: 'row', alignItems: 'flex-start', gap: 11, borderRadius: 17, padding: 13 },
   detailSectionIcon: { width: 36, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
@@ -1213,13 +1354,14 @@ const styles = StyleSheet.create({
   advancedHeroTitle: { fontSize: 14, fontWeight: '900' },
   advancedHeroText: { fontSize: 14, lineHeight: 21, marginTop: 3 },
   advancedHeroMode: { fontSize: 14, lineHeight: 21, fontWeight: '700', marginTop: 5 },
-  metricGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  metricCard: { width: '48%', flexGrow: 1, minHeight: 148, padding: 15 },
+  metricGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  metricCard: { flexBasis: '46%', flexGrow: 1, minWidth: 0, padding: spacing.md },
   metricTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   metricIcon: { width: 35, height: 35, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   metricInfo: { width: 25, height: 25, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
-  metricValue: { fontSize: 26, lineHeight: 34, fontWeight: '800', letterSpacing: -0.5, marginTop: 10, fontVariant: ['tabular-nums'] },
-  metricLabel: { fontSize: 14, lineHeight: 21, fontWeight: '600', marginTop: 1 },
+  metricValue: { fontSize: 21, lineHeight: 28, fontWeight: '800', letterSpacing: -0.3, marginTop: spacing.xs, fontVariant: ['tabular-nums'] },
+  metricStatus: { ...typography.secondary, fontWeight: '700' },
+  metricLabel: { ...typography.caption, fontWeight: '700', marginTop: spacing.sm },
   metricDetail: { fontSize: 12, lineHeight: 18, marginTop: 4 },
   stack: { gap: 9 },
   insightCard: { paddingVertical: 3 },

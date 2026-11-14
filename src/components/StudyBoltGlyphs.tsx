@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { Animated, Easing, Platform, View } from 'react-native';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 import { SettingsTabGlyph } from './SettingsTabGlyph';
+import { StudyTabArtwork } from './StudyTabArtwork';
 
 export type StudyTabGlyphName = 'home' | 'library' | 'planner' | 'stats' | 'discover' | 'profile';
 export type PriorityGlyphName = 'due' | 'weak' | 'mistakes';
@@ -20,7 +21,10 @@ type StudyTabGlyphProps = {
 };
 
 export function StudyTabGlyph(props: StudyTabGlyphProps) {
-  return props.name === 'profile' ? <SettingsTabGlyph {...props} /> : <NavigationGlyph {...props} />;
+  const { name } = props;
+  if (name === 'profile') return <SettingsTabGlyph {...props} />;
+  if (name === 'discover') return <NavigationGlyph {...props} />;
+  return <StudyTabArtwork {...props} name={name} />;
 }
 
 function NavigationGlyph({ name, color, accent, active, reducedMotion, size = 27 }: StudyTabGlyphProps) {
@@ -74,33 +78,6 @@ function NavigationGlyph({ name, color, accent, active, reducedMotion, size = 27
       style={{ width: size, height: size, transform: [{ translateY: lift }, { scale }, { rotate: rotation }] }}
     >
       <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" accessibilityElementsHidden>
-        {name === 'home' ? <>
-          <Path d="m3.4 10.4 8.6-6.9 8.6 6.9" stroke={color} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
-          <Path d="M5.5 9.7v10h13v-10M9.4 19.7v-5.8h5.2v5.8" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-          <Circle cx="18.7" cy="5.6" r="1.25" fill={active ? accent : color} opacity={active ? 1 : 0.52} />
-        </> : null}
-        {name === 'library' ? <>
-          <Path d="M3.6 5.2c2.8-.8 5.5-.3 8.4 1.3v13c-2.9-1.6-5.6-2.1-8.4-1.3v-13ZM20.4 5.2c-2.8-.8-5.5-.3-8.4 1.3v13c2.9-1.6 5.6-2.1 8.4-1.3v-13Z" stroke={color} strokeWidth="1.7" strokeLinejoin="round" />
-          <Path d="M6.3 9.2c1.5-.2 2.8 0 4 .6M6.3 12c1.5-.2 2.8 0 4 .6m7.4-3.4c-1.5-.2-2.8 0-4 .6m4 2.2c-1.5-.2-2.8 0-4 .6" stroke={active ? accent : color} strokeWidth="1.45" strokeLinecap="round" />
-          <Path d="M12 6.6v12.8" stroke={color} strokeWidth="1.4" />
-        </> : null}
-        {name === 'planner' ? <>
-          <Rect x="4" y="5.2" width="16" height="15" rx="3" stroke={color} strokeWidth="1.8" />
-          <Path d="M8 3.7v3.2m8-3.2v3.2M4.5 9.3h15" stroke={color} strokeWidth="1.8" strokeLinecap="round" />
-          <Circle cx="8" cy="12.3" r=".85" fill={color} opacity=".62" />
-          <Circle cx="12" cy="12.3" r=".85" fill={color} opacity=".62" />
-          {active
-            ? <Path d="m11 16 1.6 1.6 3.1-3.4" stroke={accent} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-            : <Circle cx="16" cy="12.3" r=".85" fill={color} opacity=".62" />}
-        </> : null}
-        {name === 'stats' ? <>
-          <Path d="M4 19.5h16" stroke={color} strokeWidth="1.7" strokeLinecap="round" />
-          <Rect x="5.2" y="12.4" width="3.3" height="7.1" rx="1.1" fill={active ? accent : color} opacity={active ? 0.9 : 0.48} />
-          <Rect x="10.4" y="9.2" width="3.3" height="10.3" rx="1.1" fill={active ? accent : color} opacity={active ? 0.68 : 0.36} />
-          <Rect x="15.6" y="5.3" width="3.3" height="14.2" rx="1.1" fill={active ? accent : color} opacity={active ? 0.48 : 0.27} />
-          <Path d="m5.7 10 4.8-3.1 4.1.8 4-3" stroke={color} strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" opacity=".72" />
-          <Circle cx="18.6" cy="4.7" r="1.1" fill={active ? accent : color} />
-        </> : null}
         {name === 'discover' ? <>
           <Circle cx="12" cy="12" r="8.7" stroke={color} strokeWidth="1.8" />
           <Path d="m15.8 8.1-2.2 5.4-5.4 2.4 2.3-5.5 5.3-2.3Z" fill={active ? accent : 'none'} opacity={active ? 0.34 : 1} stroke={active ? accent : color} strokeWidth="1.55" strokeLinejoin="round" />
