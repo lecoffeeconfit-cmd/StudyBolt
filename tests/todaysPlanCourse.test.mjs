@@ -75,6 +75,14 @@ test('class-targeted review uses real evidence and keeps repeated mistakes separ
   assert.ok(b.tasks.every(task => task.action.deck.id === 'Two'));
 });
 
+test('reviewed notes lead to recall practice without counting as an assessment', () => {
+  const deck = pack('One', 'a', { reviewedNoteIds: ['note'] });
+  const [plan] = plans(state([course('a')], [deck]));
+  assert.equal(plan.primary.action.tool, 'flashcards');
+  assert.equal(plan.group.mastery, null);
+  assert.ok(plan.tasks.some(task => task.action.tool === 'quiz'));
+});
+
 test('queued tools never launch, while a ready quiz can be the first study action', () => {
   const deck = (status) => pack('One', 'a', { generation: {
     materials: Object.fromEntries(['quiz', 'flashcards', 'simpleNotes', 'detailedNotes', 'audio', 'keyConcepts']

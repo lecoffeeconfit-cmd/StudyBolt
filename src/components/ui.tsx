@@ -29,6 +29,46 @@ export function Icon({ name, size = 22, color }: { name: IconName; size?: number
   return <MaterialCommunityIcons name={name} size={size} color={color ?? colors.text} accessible={false} aria-hidden accessibilityElementsHidden importantForAccessibility="no-hide-descendants" />;
 }
 
+export function ThemeToggle({ style, size, darkIconColor, reducedMotion }: {
+  style: StyleProp<ViewStyle>;
+  size: number;
+  darkIconColor?: string;
+  reducedMotion: boolean;
+}) {
+  const { colors, cycleTheme, themeToggleLabel } = useStudyBolt();
+  const neon = colors.neon;
+  const animate = Boolean(neon) && !reducedMotion;
+  const reveal = React.useRef(new Animated.Value(1)).current;
+
+  React.useEffect(() => {
+    if (!animate) return;
+    reveal.setValue(0.65);
+    const animation = Animated.timing(reveal, {
+      toValue: 1, duration: 180, useNativeDriver: Platform.OS !== 'web', isInteraction: false,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [animate, reveal]);
+
+  const icon = <Icon
+    name={neon ? 'creation' : colors.mode === 'dark' ? 'weather-sunny' : 'weather-night'}
+    size={size}
+    color={neon?.glow ?? (colors.mode === 'dark' ? darkIconColor ?? colors.primary : colors.primary)}
+  />;
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={themeToggleLabel}
+      accessibilityHint={neon ? 'Seasonal Neon mode is on.' : undefined}
+      onPress={cycleTheme}
+      style={[style, { backgroundColor: neon ? colors.primarySoft : colors.card, borderColor: neon?.edge ?? colors.border }]}
+    >
+      {animate ? <Animated.View style={{ opacity: reveal }}>{icon}</Animated.View> : icon}
+    </Pressable>
+  );
+}
+
 export function FlagButton({ flagged, onPress, label = 'Flag for later' }: { flagged: boolean; onPress: () => void; label?: string }) {
   const { colors } = useStudyBolt();
   return (
@@ -117,8 +157,8 @@ export function BoltLogo({ compact = false }: { compact?: boolean }) {
       <BoltMark
         size={36}
         iconSize={compact ? 21 : 27}
-        backgroundColor={colors.primary}
-        color={colors.mode === 'dark' ? '#FFE68A' : '#FFE04F'}
+        backgroundColor={colors.neon ? colors.primarySoft : colors.primary}
+        color={colors.neon ? colors.goldBright : colors.mode === 'dark' ? '#FFE68A' : '#FFE04F'}
         style={{
           shadowColor: colors.primary,
           shadowOffset: { width: 0, height: 2 },
@@ -269,9 +309,13 @@ export function Pill({ label, tone = 'blue' }: { label: string; tone?: 'blue' | 
 export function ProgressBar({ progress, color, accessibilityLabel = 'Progress' }: { progress: number; color?: string; accessibilityLabel?: string }) {
   const { colors } = useStudyBolt();
   const safe = Math.max(0, Math.min(100, progress));
+  const fill = color === undefined || color === colors.primary ? colors.neon?.progressFill ?? colors.primary : color;
+  const highlight = colors.neon && safe > 0
+    ? { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.neon.progressHighlight }
+    : undefined;
   return (
-    <View aria-valuemin={0} aria-valuemax={100} aria-valuenow={safe} accessible accessibilityRole="progressbar" accessibilityLabel={accessibilityLabel} accessibilityValue={{ min: 0, max: 100, now: safe }} style={[styles.progressTrack, { backgroundColor: colors.border }]}>
-      <View style={[styles.progressFill, { backgroundColor: color ?? colors.primary, width: `${safe}%` }]} />
+    <View aria-valuemin={0} aria-valuemax={100} aria-valuenow={safe} accessible accessibilityRole="progressbar" accessibilityLabel={accessibilityLabel} accessibilityValue={{ min: 0, max: 100, now: safe }} style={[styles.progressTrack, { backgroundColor: colors.neon?.progressTrack ?? colors.border }]}>
+      <View style={[styles.progressFill, { backgroundColor: fill, width: `${safe}%` }, highlight]} />
     </View>
   );
 }

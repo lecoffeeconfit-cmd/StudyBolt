@@ -7,18 +7,27 @@ import type { ExamAttempt, FlaggedItemInput, LibrarySort, QuizQuestionCount, Ret
 import { getFlaggedItemId } from './models';
 import { useAuth } from './AuthContext';
 import { useAdminActivity } from './hooks/useAdminActivity';
+import { useSeasonalThemeMonth } from './hooks/useSeasonalThemeMonth';
 import { AUTOMATIC_STUDY_PACK_MATERIALS, generateStudyPackMaterial, STUDY_PACK_MATERIAL_LABELS, STUDY_PACK_MATERIAL_STAGES, StudyBoltProcessingError } from './services/documentProcessor';
-import { loadStudyBoltState, saveStudyBoltState } from './services/persistence';
+import { loadGuestStudyLibrary, loadStudyBoltState, saveStudyBoltState } from './services/persistence';
+import { copyGuestLibrary, guestPacksToSave, hasLibraryContentChanges, markLibraryEdit } from './services/libraryData';
+import { useStudyLibrarySync, type LibrarySyncStatus } from './hooks/useStudyLibrarySync';
 import { updateStudyBoltWidgets } from './services/widgets';
 import { clearStudyBoltLocalAccountData } from './services/accountDeletionLocal';
 import { clearStudyBoltAiResponseCache } from './services/aiRouter';
-import { AppColors, resolveColors } from './theme';
+import { type AppColors, nextThemePreference, resolveColors } from './theme';
 
 interface StudyBoltContextValue {
   state: StudyBoltState;
   colors: AppColors;
   hydrated: boolean;
+  librarySyncStatus: LibrarySyncStatus;
+  syncLibraryNow: () => void;
+  guestPacksAvailable: number;
+  saveGuestPacks: () => void;
   setTheme: (theme: ThemePreference) => void;
+  cycleTheme: () => void;
+  themeToggleLabel: string;
   setRetentionMode: (mode: RetentionMode) => void;
   completeOnboarding: () => void;
   resetLocalData: (deletedUserId?: string) => Promise<void>;
@@ -41,12 +50,18 @@ interface StudyBoltContextValue {
 const StudyBoltContext = createContext<StudyBoltContextValue | null>(null);
 
 export function StudyBoltProvider({ children, onInitialContentReady }: { children: ReactNode; onInitialContentReady?: () => void }) {
-  const { getAccessToken, user } = useAuth();
+  const { getAccessToken, getDocumentAccessToken, user, recoveryMode } = useAuth();
+  const documentAccess = useRef(getDocumentAccessToken);
+  documentAccess.current = getDocumentAccessToken;
   const systemScheme = useColorScheme();
   const [state, setState] = useState<StudyBoltState>(initialState);
+  const localMonth = useSeasonalThemeMonth(state.theme === 'neon');
+  const colors = resolveColors(state.theme, systemScheme, localMonth);
+  const nextTheme = nextThemePreference(state.theme, systemScheme);
   const [hydrated, setHydrated] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
+  const [guestLibrary, setGuestLibrary] = useState<StudyBoltState>();
   const activeMaterialJobs = useRef(new Set<string>());
   const runningDecks = useRef(new Set<string>());
   const materialQueues = useRef(new Map<string, StudyPackMaterial[]>());
@@ -54,6 +69,22 @@ export function StudyBoltProvider({ children, onInitialContentReady }: { childre
   const generationEpoch = useRef(0);
   const stateRef = useRef(state);
   useAdminActivity(user?.id, state.activityEvents, hydrated);
+  const { status: librarySyncStatus, syncNow: syncLibraryNow } = useStudyLibrarySync(
+    recoveryMode ? undefined : user?.id, hydrated, state, setState, getAccessToken,
+  );
+  const guestPacksAvailable = guestLibrary ? guestPacksToSave(guestLibrary, state).length : 0;
+  const saveGuestPacks = useCallback(() => {
+    if (user && guestLibrary) setState(current => copyGuestLibrary(current, guestLibrary));
+  }, [user, guestLibrary]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    let mounted = true;
+    void loadGuestStudyLibrary().then(library => {
+      if (mounted) setGuestLibrary(library);
+    }).catch(() => undefined);
+    return () => { mounted = false; };
+  }, [user?.id]);
 
   // Presentation-only signal: also uncover the existing retry UI after a read failure.
   useEffect(() => {
@@ -132,14 +163,13 @@ export function StudyBoltProvider({ children, onInitialContentReady }: { childre
       }),
     }));
 
-    void getAccessToken()
-      .catch(() => null)
+    void documentAccess.current()
       .then((accessToken) => epoch === generationEpoch.current ? generateStudyPackMaterial(deck, material, accessToken) : undefined)
       .then((generated) => {
         if (!generated || epoch !== generationEpoch.current) return;
         setState((current) => ({
           ...current,
-          decks: current.decks.map((item) => item.id !== deckId || !item.generation || item.generation.materials[material]?.status === 'ready' ? item : {
+          decks: current.decks.map((item) => item.id !== deckId || !item.generation || item.generation.materials[material]?.status === 'ready' ? item : markLibraryEdit({
             ...item,
             ...generated,
             generation: {
@@ -149,7 +179,7 @@ export function StudyBoltProvider({ children, onInitialContentReady }: { childre
                 [material]: { status: 'ready', updatedAt: new Date().toISOString() },
               },
             },
-          }),
+          })),
         }));
       })
       .catch((reason: unknown) => {
@@ -159,7 +189,7 @@ export function StudyBoltProvider({ children, onInitialContentReady }: { childre
           : `${STUDY_PACK_MATERIAL_LABELS[material]} could not be created. Retry just this item.`;
         setState((current) => ({
           ...current,
-          decks: current.decks.map((item) => item.id !== deckId || !item.generation || item.generation.materials[material]?.status === 'ready' ? item : {
+          decks: current.decks.map((item) => item.id !== deckId || !item.generation || item.generation.materials[material]?.status === 'ready' ? item : markLibraryEdit({
             ...item,
             generation: {
               ...item.generation,
@@ -168,7 +198,7 @@ export function StudyBoltProvider({ children, onInitialContentReady }: { childre
                 [material]: { status: 'failed', error, updatedAt: new Date().toISOString() },
               },
             },
-          }),
+          })),
         }));
       })
       .finally(() => {
@@ -177,7 +207,7 @@ export function StudyBoltProvider({ children, onInitialContentReady }: { childre
         runningDecks.current.delete(deckId);
         processNextStudyPackMaterial(deckId);
       });
-  }, [getAccessToken]);
+  }, []);
 
   const enqueueStudyPackMaterial = useCallback((deck: StudyPack, material: StudyPackMaterial, prioritize = false) => {
     if (!deck.generation || !deck.processedSource) return;
@@ -234,8 +264,14 @@ export function StudyBoltProvider({ children, onInitialContentReady }: { childre
     () => ({
       state,
       hydrated,
-      colors: resolveColors(state.theme, systemScheme),
+      librarySyncStatus,
+      syncLibraryNow,
+      guestPacksAvailable,
+      saveGuestPacks,
+      colors,
       setTheme: (theme) => setState((current) => ({ ...current, theme })),
+      cycleTheme: () => setState(current => ({ ...current, theme: nextThemePreference(current.theme, systemScheme) })),
+      themeToggleLabel: `Switch to ${nextTheme === 'neon' ? 'seasonal neon' : nextTheme} mode`,
       setRetentionMode: (retentionMode) => setState((current) => ({ ...current, retentionMode })),
       completeOnboarding: () => setState((current) => ({ ...current, hasCompletedOnboarding: true })),
       resetLocalData: async (deletedUserId) => {
@@ -255,12 +291,16 @@ export function StudyBoltProvider({ children, onInitialContentReady }: { childre
       addClass: (studyClass) =>
         setState((current) => ({
           ...current,
-          classes: [studyClass, ...current.classes.filter((item) => item.id !== studyClass.id)],
+          classes: [markLibraryEdit(studyClass), ...current.classes.filter((item) => item.id !== studyClass.id)],
         })),
       updateDeck: (deckId, updater) =>
         setState((current) => ({
           ...current,
-          decks: current.decks.map((deck) => (deck.id === deckId ? updater(deck) : deck)),
+          decks: current.decks.map((deck) => {
+            if (deck.id !== deckId) return deck;
+            const updated = updater(deck);
+            return hasLibraryContentChanges(deck, updated) ? markLibraryEdit(updated) : updated;
+          }),
         })),
       addDeck: (deck) =>
         setState((current) => ({
@@ -271,7 +311,7 @@ export function StudyBoltProvider({ children, onInitialContentReady }: { childre
                 ...current.classes,
                 { id: deck.courseId, name: deck.courseName, emoji: deck.emoji, color: deck.color, createdAt: deck.createdAt },
               ],
-          decks: [deck, ...current.decks],
+          decks: [markLibraryEdit(deck), ...current.decks],
           activityEvents: [
             ...current.activityEvents,
             {
@@ -343,11 +383,10 @@ export function StudyBoltProvider({ children, onInitialContentReady }: { childre
       startStudyPackGeneration,
       retryStudyPackMaterial,
     }),
-    [hydrated, retryStudyPackMaterial, startStudyPackGeneration, state, systemScheme],
+    [colors, guestPacksAvailable, hydrated, librarySyncStatus, nextTheme, retryStudyPackMaterial, saveGuestPacks, startStudyPackGeneration, state, syncLibraryNow, systemScheme],
   );
 
   if (loadFailed) {
-    const colors = resolveColors(state.theme, systemScheme);
     return <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 28, gap: 16, backgroundColor: colors.background }}>
       <Text style={{ color: colors.text, fontSize: 18, fontWeight: '700', textAlign: 'center' }}>Your saved study space couldn't be opened.</Text>
       <Text style={{ color: colors.textSecondary, textAlign: 'center' }}>Your saved data has been kept. Try again, or contact support if this continues.</Text>

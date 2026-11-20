@@ -1,87 +1,32 @@
 import type { StudyPack } from '../models';
+import { getFileExtension, getImportFormat, type ImportDocumentType } from '../../supabase/functions/_shared/importFormats.ts';
 
-export type ImportDocumentType = 'pdf' | 'powerpoint' | 'notes';
+export { getFileExtension, UNSUPPORTED_DOCUMENT_MESSAGE } from '../../supabase/functions/_shared/importFormats.ts';
+export type { ImportDocumentType };
 
-/**
- * Keep this list in one place. Some mobile document providers return a generic
- * MIME type for Office files, so the extension is still the source of truth
- * during validation.
- */
-export const SUPPORTED_DOCUMENT_EXTENSIONS = [
-  'pdf',
-  'ppt',
-  'pptx',
-  'txt',
-  'md',
-  'markdown',
-  'rtf',
-  'doc',
-  'docx',
-] as const;
-
-// A few iOS/Android providers hide .pptx when given a MIME allow-list and
-// report Office files as application/zip or application/octet-stream. Let the
-// system picker show documents, then enforce the extension in validateImport.
+// Mobile providers may report Office documents as ZIP or octet-stream.
 export const DOCUMENT_PICKER_TYPE = '*/*' as const;
 
-const MIME_TYPES: Record<ImportDocumentType, string> = {
-  pdf: 'application/pdf',
-  powerpoint: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  notes: 'text/plain',
-};
-
-export function getFileExtension(name: string): string {
-  const cleanName = name.trim().split(/[?#]/, 1)[0] ?? '';
-  const lastDot = cleanName.lastIndexOf('.');
-  return lastDot < 0 ? '' : cleanName.slice(lastDot + 1).toLowerCase();
-}
-
 export function getImportDocumentType(name: string, mimeType?: string | null): ImportDocumentType | null {
-  const extension = getFileExtension(name);
-  if (extension === 'pdf') return 'pdf';
-  if (extension === 'ppt' || extension === 'pptx') return 'powerpoint';
-  if (extension === 'txt' || extension === 'md' || extension === 'markdown' || extension === 'rtf' || extension === 'doc' || extension === 'docx') return 'notes';
-  const mime = mimeType?.toLowerCase();
-  if (mime === 'application/pdf') return 'pdf';
-  if (mime === 'application/vnd.ms-powerpoint' || mime === 'application/vnd.openxmlformats-officedocument.presentationml.presentation') return 'powerpoint';
-  if (mime === 'text/plain' || mime === 'text/markdown' || mime === 'application/rtf' || mime === 'application/msword' || mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return 'notes';
-  return null;
+  return getImportFormat(name, mimeType)?.type ?? null;
 }
 
 export function getImportFileName(name: string, mimeType?: string | null): string {
-  const trimmed = name.trim() || 'study-material';
+  const trimmed = name.trim().replace(/\.+$/, '') || 'study-material';
   if (getFileExtension(trimmed)) return trimmed;
-  const documentType = getImportDocumentType(trimmed, mimeType);
-  const extension = documentType === 'pdf' ? 'pdf' : documentType === 'powerpoint' ? 'pptx' : documentType === 'notes' ? 'txt' : 'bin';
-  return `${trimmed}.${extension}`;
+  return `${trimmed}.${getImportFormat(trimmed, mimeType)?.extension ?? 'bin'}`;
 }
 
-/**
- * File providers sometimes report Office documents as application/octet-stream.
- * The extension is more reliable for uploads, so use the canonical MIME type
- * that matches the normalized document name.
- */
 export function getImportMimeType(name: string, mimeType?: string | null): string {
-  const documentType = getImportDocumentType(name, mimeType);
-  if (documentType === 'pdf' || documentType === 'powerpoint') return MIME_TYPES[documentType];
+  return getImportFormat(name, mimeType)?.mimeType ?? 'application/octet-stream';
+}
 
-  const extension = getFileExtension(name);
-  if (extension === 'md' || extension === 'markdown') return 'text/markdown';
-  if (extension === 'rtf') return 'application/rtf';
-  if (extension === 'doc') return 'application/msword';
-  if (extension === 'docx') return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-  return mimeType?.includes('/') ? mimeType : MIME_TYPES.notes;
+export function getImportDocumentLabel(name: string, mimeType?: string | null): string {
+  return getImportFormat(name, mimeType)?.label ?? 'document';
 }
 
 export function studyPackFileType(documentType: ImportDocumentType): StudyPack['fileType'] {
-  if (documentType === 'powerpoint') return 'pptx';
-  return documentType;
-}
-
-export function documentTypeLabel(documentType: ImportDocumentType): string {
-  if (documentType === 'powerpoint') return 'PowerPoint';
-  if (documentType === 'pdf') return 'PDF';
-  return 'notes';
+  return documentType === 'powerpoint' ? 'pptx' : documentType;
 }
 
 export function documentIcon(documentType: ImportDocumentType): 'file-pdf-box' | 'microsoft-powerpoint' | 'note-text-outline' {

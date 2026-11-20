@@ -28,6 +28,15 @@ export interface AppColors {
   purple: string;
   purpleSoft: string;
   tabBar: string;
+  neon?: {
+    name: string;
+    edge: string;
+    glow: string;
+    secondarySoft: string;
+    progressTrack: string;
+    progressFill: string;
+    progressHighlight: string;
+  };
 }
 
 const light: AppColors = {
@@ -88,9 +97,89 @@ const dark: AppColors = {
   tabBar: '#111820',
 };
 
-export function resolveColors(preference: ThemePreference, system: ColorSchemeName): AppColors {
+// Calendar order: January to December. Seasonal accents are separate from
+// success, warning, and error colors so that feedback keeps its meaning.
+const seasonalAccents = [
+  { name: 'Winter Frost', primary: '#8BD8FF', secondary: '#B7A7FF', highlight: '#BDEDFF' },
+  { name: "Valentine's", primary: '#FFA2D7', secondary: '#C2ACFC', highlight: '#FF7291' },
+  { name: 'Emerald', primary: '#B3F582', secondary: '#42DA99', highlight: '#72FFB0' },
+  { name: 'Spring Bloom', primary: '#FCAAE4', secondary: '#BDAAFF', highlight: '#A3DFFF' },
+  { name: 'Spring Glow', primary: '#67F0C8', secondary: '#51DDE2', highlight: '#FCE17E' },
+  { name: 'Summer Solstice', primary: '#FFE175', secondary: '#FFAB93', highlight: '#FFC16B' },
+  { name: 'Fireworks', primary: '#8BB8FF', secondary: '#FF7596', highlight: '#E1EDFF' },
+  { name: 'Electric Summer', primary: '#6BE6FF', secondary: '#43E2CA', highlight: '#FFAD73' },
+  { name: 'Autumn', primary: '#FFC275', secondary: '#FF9B70', highlight: '#FFE08A' },
+  { name: 'Halloween', primary: '#FFAD67', secondary: '#B69BFF', highlight: '#BDE89A' },
+  { name: 'Harvest', primary: '#F6CB82', secondary: '#F8A381', highlight: '#EB788D' },
+  { name: 'Holiday Lights', primary: '#91D8FF', secondary: '#64DE9E', highlight: '#FF778F' },
+] as const;
+
+const neonBase = {
+  mode: 'dark',
+  background: '#090E1A',
+  backgroundRaised: '#0F1728',
+  card: '#131D30',
+  cardStrong: '#1A2740',
+  text: '#EFF4FF',
+  textSecondary: '#C0CDE4',
+  textMuted: '#A2B0CA',
+  primaryText: '#0A111F',
+  gold: '#E9BD63',
+  goldBright: '#FFE18C',
+  goldSoft: '#30271B',
+  goldText: '#FFDA8A',
+  onGold: '#241907',
+  mint: '#75E1B9',
+  mintSoft: '#12362F',
+  shadow: '#020510',
+  danger: '#FFA1AE',
+  warning: '#F3C579',
+  purple: '#C3B3FF',
+  purpleSoft: '#282040',
+  tabBar: '#11192B',
+} satisfies Omit<AppColors, 'primary' | 'primarySoft' | 'border' | 'neon'>;
+
+function mixHex(base: string, accent: string, amount: number): string {
+  const channels = [1, 3, 5].map(offset => {
+    const from = Number.parseInt(base.slice(offset, offset + 2), 16);
+    const to = Number.parseInt(accent.slice(offset, offset + 2), 16);
+    return Math.round(from + (to - from) * amount).toString(16).padStart(2, '0');
+  });
+  return '#' + channels.join('');
+}
+
+const monthlyNeonColors: readonly AppColors[] = seasonalAccents.map(({ name, primary, secondary, highlight }) => ({
+  ...neonBase,
+  primary,
+  primarySoft: mixHex(neonBase.card, primary, 0.14),
+  border: mixHex('#29364C', primary, 0.12),
+  neon: {
+    name,
+    edge: mixHex('#24314A', secondary, 0.42),
+    glow: highlight,
+    secondarySoft: mixHex(neonBase.card, secondary, 0.16),
+    progressTrack: '#293953',
+    progressFill: mixHex(primary, highlight, 0.16),
+    progressHighlight: '#EFF4FF55',
+  },
+}));
+
+export function nextThemePreference(preference: ThemePreference, system: ColorSchemeName): Exclude<ThemePreference, 'system'> {
+  if (preference === 'neon') return 'light';
+  const visibleMode = preference === 'system' ? system : preference;
+  return visibleMode === 'dark' ? 'neon' : 'dark';
+}
+
+export function resolveColors(preference: ThemePreference, system: ColorSchemeName, localMonth?: number): AppColors {
+  if (preference === 'neon') return monthlyNeonColors[localMonth ?? new Date().getMonth()] ?? dark;
   const selected = preference === 'system' ? system : preference;
   return selected === 'dark' ? dark : light;
+}
+
+export function seasonalThemeCheckDelay(now: Date): number {
+  const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  // Recheck the local clock after at most a minute to catch timezone or clock changes.
+  return Math.min(60_000, Math.max(1, nextMonth.getTime() - now.getTime()));
 }
 
 export const spacing = {

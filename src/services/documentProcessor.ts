@@ -10,10 +10,11 @@ import {
   getImportMimeType,
   getImportDocumentType,
   studyPackFileType,
-  SUPPORTED_DOCUMENT_EXTENSIONS,
+  UNSUPPORTED_DOCUMENT_MESSAGE,
 } from './documentTypes';
 
 export const MAX_IMPORT_BYTES = 20 * 1024 * 1024;
+export const MAX_TYPED_SOURCE_CHARS = 180_000;
 const PROCESSOR_TIMEOUT_MS = 180_000;
 
 /**
@@ -64,15 +65,20 @@ export const STUDY_PACK_MATERIAL_STAGES: Record<StudyPackMaterial, string> = {
 };
 
 export function validateImport(asset: ImportAsset): void {
-  if (!asset.uri?.trim()) {
+  if (asset.text !== undefined) {
+    if (!asset.text.trim()) throw new StudyBoltProcessingError('Notes are empty', 'Paste or type some study material first.');
+    if (asset.text.length > MAX_TYPED_SOURCE_CHARS) {
+      throw new StudyBoltProcessingError('Notes exceed the text limit', 'These notes are too long for one Study Pack. Try a shorter section.');
+    }
+  } else if (!asset.uri?.trim()) {
     throw new StudyBoltProcessingError('Document URI is missing', 'The selected file could not be read. Please choose it again.');
   }
   const extension = getFileExtension(asset.name);
   const documentType = getImportDocumentType(asset.name, asset.mimeType);
-  if (!documentType || (extension && !SUPPORTED_DOCUMENT_EXTENSIONS.includes(extension as typeof SUPPORTED_DOCUMENT_EXTENSIONS[number]))) {
+  if (!documentType) {
     throw new StudyBoltProcessingError(
-      `Unsupported document extension: ${extension ?? 'none'}`,
-      'Choose a PDF, PowerPoint, or notes file (.txt, .md, .rtf, .doc, or .docx).',
+      `Unsupported document extension: ${extension || 'none'}`,
+      UNSUPPORTED_DOCUMENT_MESSAGE,
     );
   }
   if (typeof asset.size === 'number' && asset.size > MAX_IMPORT_BYTES) {
@@ -126,46 +132,61 @@ async function uploadDocument(
 ): Promise<ProcessorResponse> {
   const headers = processorHeaders(anonKey, accessToken);
   if (Platform.OS !== 'web') {
+    const notes = asset.text;
+    const cache = FileSystem.cacheDirectory;
+    if (notes !== undefined && !cache) {
+      throw new StudyBoltProcessingError('Cache unavailable', 'StudyBolt couldn’t prepare your notes. Please try again.');
+    }
+    const temporaryUri = notes === undefined ? undefined : `${cache}study-notes-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`;
     // React Native's fetch/FormData bridge is inconsistent with iOS document
     // provider URIs. Expo's native uploader builds the multipart body in
     // native code and preserves the picked file without a base64 copy.
-    const task = FileSystem.createUploadTask(endpoint, asset.uri, {
-      fieldName: 'file',
-      httpMethod: 'POST',
-      mimeType,
-      parameters: {
-        courseName,
-        documentType,
-        extension: getFileExtension(fileName),
-        action: 'extract',
-      },
-      uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-      headers,
-    });
-    const result = await withUploadTimeout(
-      task.uploadAsync(),
-      PROCESSOR_TIMEOUT_MS,
-      () => task.cancelAsync(),
-      () => new StudyBoltProcessingError(
-        'Processor request timed out',
-        'Document processing took too long. Check your connection and try again.',
-      ),
-    );
-    if (!result) {
-      throw new StudyBoltProcessingError(
-        'Processor upload was cancelled',
-        'The file upload did not finish. Please choose the file again and try again.',
+    try {
+      if (temporaryUri && notes !== undefined) {
+        await FileSystem.writeAsStringAsync(temporaryUri, notes, { encoding: FileSystem.EncodingType.UTF8 });
+      }
+      const task = FileSystem.createUploadTask(endpoint, temporaryUri ?? asset.uri, {
+        fieldName: 'file',
+        httpMethod: 'POST',
+        mimeType,
+        parameters: {
+          courseName,
+          documentType,
+          sourceName: fileName,
+          action: 'extract',
+        },
+        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+        headers,
+      });
+      const result = await withUploadTimeout(
+        task.uploadAsync(),
+        PROCESSOR_TIMEOUT_MS,
+        () => task.cancelAsync(),
+        () => new StudyBoltProcessingError(
+          'Processor request timed out',
+          'Document processing took too long. Check your connection and try again.',
+        ),
       );
+      if (!result) {
+        throw new StudyBoltProcessingError(
+          'Processor upload was cancelled',
+          notes === undefined ? 'The file upload did not finish. Please choose the file again and try again.' : 'The notes upload did not finish. Please try again.',
+        );
+      }
+      return {
+        ok: result.status >= 200 && result.status < 300,
+        status: result.status,
+        json: async () => JSON.parse(result.body) as unknown,
+      };
+    } finally {
+      if (temporaryUri) await FileSystem.deleteAsync(temporaryUri, { idempotent: true }).catch(() => undefined);
     }
-    return {
-      ok: result.status >= 200 && result.status < 300,
-      status: result.status,
-      json: async () => JSON.parse(result.body) as unknown,
-    };
   }
 
   const form = new FormData();
-  if (typeof Blob !== 'undefined' && asset.file instanceof Blob) {
+  if (asset.text !== undefined) {
+    form.append('file', new Blob([asset.text], { type: mimeType }), fileName);
+  } else if (typeof Blob !== 'undefined' && asset.file instanceof Blob) {
     form.append('file', asset.file, fileName);
   } else {
     const browserFile = { uri: asset.uri, name: fileName, type: mimeType };
@@ -173,7 +194,6 @@ async function uploadDocument(
   }
   form.append('courseName', courseName);
   form.append('documentType', documentType);
-  form.append('extension', getFileExtension(fileName));
   form.append('action', 'extract');
   return fetch(endpoint, { method: 'POST', headers, body: form });
 }
@@ -266,7 +286,7 @@ export async function processDocument(
   const endpoint = resolveProcessorEndpoint();
   const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
   if (!accessToken?.trim()) {
-    throw new StudyBoltProcessingError('Document processing requires a signed-in account', 'Sign in to securely process and save this study material.');
+    throw new StudyBoltProcessingError('Document processing requires a signed-in account', 'Reconnect to secure processing and try again.');
   }
   if (!endpoint) {
     throw new StudyBoltProcessingError(
@@ -351,7 +371,7 @@ export async function generateStudyPackMaterial(
   accessToken?: string | null,
 ): Promise<GeneratedStudyPackMaterial> {
   if (!accessToken?.trim()) {
-    throw new StudyBoltProcessingError('Material generation requires a signed-in account', 'Sign in to finish generating this Study Pack.');
+    throw new StudyBoltProcessingError('Material generation requires a signed-in account', 'Reconnect to finish generating this Study Pack.');
   }
   const endpoint = resolveProcessorEndpoint();
   if (!endpoint) {

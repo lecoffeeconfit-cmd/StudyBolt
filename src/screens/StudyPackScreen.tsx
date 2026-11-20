@@ -229,7 +229,7 @@ export function StudyPackScreen({
             <Text numberOfLines={2} style={[styles.sharedBannerText, { color: colors.textSecondary }]}>{sharedMetadata?.description || `${sharedMetadata?.itemCount ?? deck.notes.length + deck.flashcards.length} study items · Save your own editable copy.`}</Text>
           </View>
           <Pressable accessibilityRole="button" onPress={onSaveShared} style={[styles.sharedSaveButton, { backgroundColor: colors.purple }]}>
-            <Text style={styles.sharedSaveText}>Save copy</Text>
+            <Text style={[styles.sharedSaveText, colors.neon && { color: colors.primaryText }]}>Save copy</Text>
           </Pressable>
         </Card>
       ) : null}
@@ -303,7 +303,7 @@ function Overview({ deck, onTool, onPlan, onStartStudy, onOpenSpeedReview, onOpe
         <ToolCard icon="note-text-outline" title="Layered Notes" detail={materialReady('simpleNotes') || materialReady('detailedNotes') ? 'Simplified + full-detail views' : 'Creating your note layers…'} color={colors.primary} background={colors.primarySoft} onPress={() => onTool('notes')} />
         <ToolCard icon="cards-outline" title="Flashcards" detail={materialReady('flashcards') ? `${deck.flashcards.length} active recall cards` : 'Building flashcards…'} color={colors.purple} background={colors.purpleSoft} onPress={() => onTool('flashcards')} />
         <ToolCard icon="clipboard-text-outline" title="Quiz & Exam" detail={materialReady('quiz') ? 'Practice questions + cumulative test' : 'Preparing your quiz…'} color={colors.mint} background={colors.mintSoft} onPress={() => onTool('quiz')} />
-        <ToolCard icon="headphones" title="StudyCast" detail={materialReady('audio') ? 'Listen and ask about any section' : 'Creating audio summary…'} color="#A45FEB" background={colors.purpleSoft} onPress={() => onTool('audio')} />
+        <ToolCard icon="headphones" title="StudyCast" detail={materialReady('audio') ? 'Listen and ask about any section' : 'Creating audio summary…'} color={colors.neon ? colors.purple : '#A45FEB'} background={colors.purpleSoft} onPress={() => onTool('audio')} />
         {!shared && visualCount > 0 && onOpenVisualReview ? <ToolCard icon="image-multiple-outline" title="Visuals" detail={`${visualCount} saved study visual${visualCount === 1 ? '' : 's'} from your slides`} color={colors.purple} background={colors.purpleSoft} onPress={onOpenVisualReview} /> : null}
       </View>
 
@@ -330,7 +330,7 @@ function Overview({ deck, onTool, onPlan, onStartStudy, onOpenSpeedReview, onOpe
 
       {!shared && onStartStudy ? (
         <View style={styles.deckAdaptiveActions}>
-          <Pressable accessibilityRole="button" onPress={() => onStartStudy('smart')} style={[styles.deckAdaptivePrimary, { backgroundColor: colors.primary }]}><Icon name="lightning-bolt" color={colors.goldBright} /><View><Text style={[styles.deckAdaptiveTitle, { color: colors.primaryText }]}>Study this pack</Text><Text style={[styles.deckAdaptiveText, { color: colors.primaryText }]}>Adaptive mix</Text></View></Pressable>
+          <Pressable accessibilityRole="button" onPress={() => onStartStudy('smart')} style={[styles.deckAdaptivePrimary, { backgroundColor: colors.primary }]}><Icon name="lightning-bolt" color={colors.neon ? colors.primaryText : colors.goldBright} /><View><Text style={[styles.deckAdaptiveTitle, { color: colors.primaryText }]}>Study this pack</Text><Text style={[styles.deckAdaptiveText, { color: colors.primaryText }]}>Adaptive mix</Text></View></Pressable>
           <Pressable accessibilityRole="button" onPress={() => onStartStudy('pretest')} style={[styles.deckAdaptiveSecondary, { backgroundColor: colors.card, borderColor: colors.border }]}><Icon name="radar" color={colors.primary} /><View><Text style={[styles.deckAdaptiveTitle, { color: colors.text }]}>Pre-test</Text><Text style={[styles.deckAdaptiveText, { color: colors.textMuted }]}>Find your baseline</Text></View></Pressable>
         </View>
       ) : null}
@@ -344,7 +344,7 @@ function Overview({ deck, onTool, onPlan, onStartStudy, onOpenSpeedReview, onOpe
 
       {!shared && visualReviewCount > 0 && onOpenVisualReview ? (
         <Card onPress={onOpenVisualReview} style={[styles.visualReviewBanner, styles.flatCard, { backgroundColor: colors.purpleSoft, borderColor: `${colors.purple}44` }]}>
-          <View style={[styles.visualReviewIcon, { backgroundColor: colors.purple }]}><Icon name="image-search-outline" size={22} color="#FFFFFF" /></View>
+          <View style={[styles.visualReviewIcon, { backgroundColor: colors.purple }]}><Icon name="image-search-outline" size={22} color={colors.neon ? colors.primaryText : '#FFFFFF'} /></View>
           <View style={{ flex: 1 }}>
             <Text style={[styles.visualReviewTitle, { color: colors.text }]}>{activeVisualReviewCount ? 'Visuals to review' : 'Review skipped visuals'}</Text>
             <Text style={[styles.visualReviewText, { color: colors.textSecondary }]}>{activeVisualReviewCount ? `${activeVisualReviewCount} visual${activeVisualReviewCount === 1 ? '' : 's'} may contain extra lecture detail. Review them when you’re ready.` : `${skippedVisualReviewCount} skipped visual${skippedVisualReviewCount === 1 ? '' : 's'} remain available if you change your mind.`}</Text>
@@ -1537,7 +1537,7 @@ function StudyCoach({ deck, onTool, onStartStudy, initialQuestion = '' }: { deck
             {deck.notes.map((item, index) => <Pressable accessibilityRole="button" key={item.id} onPress={() => setNoteIndex(index)} style={[styles.topicChip, { backgroundColor: index === noteIndex ? colors.purple : colors.card, borderColor: index === noteIndex ? colors.purple : colors.border }]}><Text style={[styles.topicChipText, { color: index === noteIndex ? colors.primaryText : colors.textSecondary }]}>{item.title}</Text></Pressable>)}
           </ScrollView>
           <View style={styles.mapWrap}>
-            <View style={[styles.mapNode, styles.mapNodeCenter, { backgroundColor: colors.primary, shadowColor: colors.shadow }]}><Icon name="hexagon-multiple-outline" color={colors.primaryText} /><Text style={styles.mapCenterTitle}>{note.title}</Text></View>
+            <View style={[styles.mapNode, styles.mapNodeCenter, { backgroundColor: colors.primary, shadowColor: colors.shadow }]}><Icon name="hexagon-multiple-outline" color={colors.primaryText} /><Text style={[styles.mapCenterTitle, colors.neon && { color: colors.primaryText }]}>{note.title}</Text></View>
             <View style={[styles.mapLine, { backgroundColor: colors.border }]} />
             <View style={styles.connectionList}>
               {(note.connections?.length ? note.connections : [note.keyIdea ?? note.summary ?? note.bullets[0]]).slice(0, 4).map((connection, index) => (
@@ -2240,22 +2240,30 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
           );
         })}
       </View>
-      <Card style={[styles.player, { borderColor: colors.mode === 'dark' ? '#344A56' : '#D9E7F8' }]}>
-        <LinearGradient colors={colors.mode === 'dark' ? ['#1A2B42', '#192934', '#272F32'] : ['#EFF6FF', '#F7FCFC', '#FFFCF2']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.playerWash} />
+      <Card style={[styles.player, { borderColor: colors.neon?.edge ?? (colors.mode === 'dark' ? '#344A56' : '#D9E7F8') }]}>
+        <LinearGradient
+          colors={colors.neon
+            ? [colors.primarySoft, colors.neon.secondarySoft, colors.card]
+            : colors.mode === 'dark' ? ['#1A2B42', '#192934', '#272F32'] : ['#EFF6FF', '#F7FCFC', '#FFFCF2']}
+          start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.playerWash}
+        />
         <StudyCastArtwork playing={playing} colors={colors} visible={!driveModeVisible} />
         <View style={[styles.nowPlayingBadge, { backgroundColor: colors.primarySoft }]}><Icon name="headphones" size={12} color={colors.primary} /><Text style={[styles.nowPlaying, { color: colors.primary }]}>{mode === 'original' ? 'ORIGINAL STUDYCAST' : mode === 'flashcards' ? 'FLASHCARD LISTENING' : 'QUICK REVIEW'}</Text></View>
         <Text style={[styles.audioTitle, { color: colors.text }]}>{deck.title}</Text>
         <Text style={[styles.audioCourse, { color: colors.textSecondary }]}>{deck.courseName} · About {remainingMinutes || '< 1'} min remaining</Text>
-        <View style={[styles.currentSection, { backgroundColor: colors.mode === 'dark' ? '#213441' : '#FFFFFFB3', borderColor: colors.mode === 'dark' ? '#344B57' : '#E5EDF3' }]}><Text style={[styles.currentSectionLabel, { color: colors.textSecondary }]}>CURRENT SECTION</Text><Text numberOfLines={2} style={[styles.currentSectionTitle, { color: colors.text }]}>{tutorContext.currentChunk.title}</Text></View>
+        <View style={[styles.currentSection, {
+          backgroundColor: colors.neon ? colors.cardStrong : colors.mode === 'dark' ? '#213441' : '#FFFFFFB3',
+          borderColor: colors.neon ? colors.border : colors.mode === 'dark' ? '#344B57' : '#E5EDF3',
+        }]}><Text style={[styles.currentSectionLabel, { color: colors.textSecondary }]}>CURRENT SECTION</Text><Text numberOfLines={2} style={[styles.currentSectionTitle, { color: colors.text }]}>{tutorContext.currentChunk.title}</Text></View>
         <View style={styles.audioProgress}><SeekProgress progress={progress} color={colors.primary} onSeek={seekToProgress} currentPosition={position} total={words.length} /></View>
         <View style={styles.timeRow}>
           <Text style={[styles.timeText, { color: colors.textSecondary }]}>{Math.floor(position / (2.25 * rate) / 60)}:{Math.floor((position / (2.25 * rate)) % 60).toString().padStart(2, '0')}</Text>
           <Text style={[styles.timeText, { color: colors.textSecondary }]}>−{Math.floor((words.length - position) / (2.25 * rate) / 60)}:{Math.floor(((words.length - position) / (2.25 * rate)) % 60).toString().padStart(2, '0')}</Text>
         </View>
         <View style={styles.controls}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Skip back 15 seconds" onPress={() => void skip(-15)} style={[styles.smallControl, { backgroundColor: colors.mode === 'dark' ? '#253A49' : '#FFFFFFB3' }]}><Icon name="rewind-15" color={colors.textSecondary} size={25} /></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Skip back 15 seconds" onPress={() => void skip(-15)} style={[styles.smallControl, { backgroundColor: colors.neon ? colors.cardStrong : colors.mode === 'dark' ? '#253A49' : '#FFFFFFB3' }]}><Icon name="rewind-15" color={colors.textSecondary} size={25} /></Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel={playing ? 'Pause audio' : 'Play audio'} onPress={() => void togglePlay()} style={({ pressed }) => [styles.playButton, { backgroundColor: colors.primary, opacity: pressed ? 0.88 : 1 }]}><Icon name={playing ? 'pause' : 'play'} color={colors.primaryText} size={25} /><Text numberOfLines={1} style={[styles.playButtonLabel, { color: colors.primaryText }]}>{playing ? 'Pause' : words.length > 0 && position >= words.length ? 'Listen again' : position > 0 ? 'Continue' : 'Listen now'}</Text></Pressable>
-          <Pressable accessibilityRole="button" accessibilityLabel="Skip forward 15 seconds" onPress={() => void skip(15)} style={[styles.smallControl, { backgroundColor: colors.mode === 'dark' ? '#253A49' : '#FFFFFFB3' }]}><Icon name="fast-forward-15" color={colors.textSecondary} size={25} /></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Skip forward 15 seconds" onPress={() => void skip(15)} style={[styles.smallControl, { backgroundColor: colors.neon ? colors.cardStrong : colors.mode === 'dark' ? '#253A49' : '#FFFFFFB3' }]}><Icon name="fast-forward-15" color={colors.textSecondary} size={25} /></Pressable>
         </View>
         <Pressable accessibilityRole="button" onPress={() => void openAsk()} style={[styles.askStudyBoltButton, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={[styles.askStudyBoltIcon, { backgroundColor: colors.mintSoft }]}><Icon name="creation" size={20} color={colors.mint} /></View>

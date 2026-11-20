@@ -2,6 +2,7 @@ import 'react-native-url-polyfill/auto';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Linking, Platform } from 'react-native';
+import { requireOptionalNativeModule } from 'expo-modules-core';
 import { createClient } from '@supabase/supabase-js';
 import type { Session, User } from '@supabase/supabase-js';
 
@@ -10,7 +11,11 @@ import { resolveBackendUrl } from '../config/backend';
 import { prepareRevenueCatAccountDeletion, releaseRevenueCatDeletionHold } from './subscriptions';
 import { submitAccountDeletion } from './accountDeletionClient';
 
-const AUTH_REDIRECT_URL = 'studybolt://auth/callback';
+import { NATIVE_AUTH_REDIRECT, readAuthCallback } from './authCallback';
+
+const nativeAuth = Platform.OS === 'ios' ? requireOptionalNativeModule<{
+  open(url: string): Promise<{ type: 'success'; url: string } | { type: 'cancel' | 'error' }>;
+}>('StudyBoltAuthSession') : null;
 const OAUTH_STARTED_AT_KEY = '@studybolt/auth/oauth-started-at';
 const OAUTH_NEW_USER_GRACE_MS = 60_000;
 
@@ -41,6 +46,7 @@ export interface AuthResult {
   recovery?: boolean;
   deletionPending?: boolean;
   sessionCleanupFailed?: boolean;
+  awaitingCallback?: boolean;
 }
 
 const supabaseUrl = resolveBackendUrl(process.env.EXPO_PUBLIC_SUPABASE_URL);
@@ -120,6 +126,7 @@ export async function clearAuthSession(): Promise<void> {
   } catch {
     // The local client may already be empty; there is nothing else to clear.
   }
+  latestExchange = undefined;
   if (authStorageKey) await AsyncStorage.multiRemove([authStorageKey, authStorageKey + '-code-verifier', authStorageKey + '-user']);
 }
 
@@ -165,7 +172,7 @@ export async function createAccount(email: string, password: string, displayName
       email,
       password,
       options: {
-        emailRedirectTo: AUTH_REDIRECT_URL,
+        emailRedirectTo: authRedirectUrl(),
         data: {
           display_name: displayName.trim().slice(0, 80),
           onboarding_completed: false,
@@ -206,7 +213,7 @@ export async function resendSignupConfirmation(email: string): Promise<AuthResul
     const { error } = await supabase.auth.resend({
       type: 'signup',
       email,
-      options: { emailRedirectTo: AUTH_REDIRECT_URL },
+      options: { emailRedirectTo: authRedirectUrl() },
     });
     if (error) return { error: errorMessage(error) };
     return { message: 'Confirmation email sent again. Check your inbox, spam, or junk folder.' };
@@ -216,13 +223,16 @@ export async function resendSignupConfirmation(email: string): Promise<AuthResul
 }
 
 export function authRedirectUrl(): string {
-  return AUTH_REDIRECT_URL;
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    return new URL('/?studybolt_auth=1', window.location.origin).href;
+  }
+  return NATIVE_AUTH_REDIRECT;
 }
 
 export async function requestPasswordReset(email: string): Promise<AuthResult> {
   if (!supabase) return configurationError();
   try {
-    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: AUTH_REDIRECT_URL });
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: authRedirectUrl() });
     if (error) return { error: errorMessage(error) };
     return { message: 'Password reset link sent. Check your inbox.' };
   } catch {
@@ -258,16 +268,27 @@ export async function openProviderSignIn(provider: AuthProviderName): Promise<Au
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider,
       options: {
-        redirectTo: AUTH_REDIRECT_URL,
+        redirectTo: authRedirectUrl(),
         skipBrowserRedirect: true,
       },
     });
     if (error) return { error: errorMessage(error) };
     if (!data.url) return { error: 'Could not open sign-in. Please try again.' };
     await AsyncStorage.setItem(OAUTH_STARTED_AT_KEY, String(Date.now()));
+    if (nativeAuth) {
+      const result = await nativeAuth.open(data.url);
+      if (result.type === 'cancel') {
+        await AsyncStorage.removeItem(OAUTH_STARTED_AT_KEY);
+        return {};
+      }
+      if (result.type === 'success') {
+        return await consumeAuthCallback(result.url) ?? { error: 'StudyBolt did not receive a valid sign-in response. Please try again.' };
+      }
+      return { error: 'Could not open the secure sign-in window. Please try again.' };
+    }
     if (Platform.OS === 'web' && typeof window !== 'undefined') window.location.assign(data.url);
     else await Linking.openURL(data.url);
-    return {};
+    return { awaitingCallback: true };
   } catch {
     return { error: `Could not open ${provider === 'google' ? 'Google' : 'Apple'} sign-in.` };
   }
@@ -283,6 +304,7 @@ async function markNewProviderUser(session: AuthSession): Promise<AuthSession> {
   } catch {
     return session;
   }
+  if (!startedAt) return session;
   const createdAt = Date.parse(session.user.created_at);
   if (!Number.isFinite(startedAt) || !Number.isFinite(createdAt)) return session;
   if (createdAt < startedAt - OAUTH_NEW_USER_GRACE_MS || createdAt > Date.now() + OAUTH_NEW_USER_GRACE_MS) return session;
@@ -306,56 +328,69 @@ async function markNewProviderUser(session: AuthSession): Promise<AuthSession> {
   }
 }
 
-function callbackParams(url: string): Map<string, string> {
-  const query = url.includes('?') ? url.slice(url.indexOf('?') + 1).split('#')[0] : '';
-  const hash = url.includes('#') ? url.slice(url.indexOf('#') + 1) : '';
-  const values = new Map<string, string>();
-  for (const item of [query, hash].filter(Boolean).join('&').split('&')) {
-    const separator = item.indexOf('=');
-    if (separator < 0) continue;
-    try {
-      const key = decodeURIComponent(item.slice(0, separator));
-      const value = decodeURIComponent(item.slice(separator + 1).replace(/\+/g, ' '));
-      values.set(key, value);
-    } catch {
-      // Ignore malformed parameters and let the normal auth flow continue.
-    }
-  }
-  return values;
-}
+let latestExchange: { code: string; pending?: Promise<AuthResult> } | undefined;
 
 export async function consumeAuthCallback(url: string): Promise<AuthResult | null> {
-  if (!supabase || !url.includes('/auth/callback')) return null;
-  const params = callbackParams(url);
-  const error = params.get('error_description') ?? params.get('error');
-  if (error) return { error };
-
-  const code = params.get('code');
-  if (code) {
-    try {
-      const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
-      if (exchangeError) return { error: errorMessage(exchangeError) };
-      const isRecovery = params.get('type') === 'recovery';
-      const session = data.session && !isRecovery ? await markNewProviderUser(data.session) : data.session ?? undefined;
-      return { session, user: session?.user, recovery: isRecovery };
-    } catch {
-      return { error: 'Could not finish authentication. Please try again.' };
-    }
+  const callback = readAuthCallback(url, Platform.OS === 'web' ? authRedirectUrl() : undefined);
+  if (!callback || !supabase) return null;
+  if (callback.rejected || !callback.code) {
+    return { error: 'Sign-in could not be completed. Try again or use email.' };
   }
-
-  // Keep compatibility with implicit-flow callbacks already issued by older builds.
-  const accessToken = params.get('access_token');
-  const refreshToken = params.get('refresh_token');
-  if (!accessToken || !refreshToken) return null;
+  if (latestExchange?.code === callback.code) return latestExchange.pending ?? {};
+  const pending = finishCodeExchange(supabase, callback.code);
+  const exchange: NonNullable<typeof latestExchange> = { code: callback.code, pending };
+  latestExchange = exchange;
   try {
-    const { data, error: sessionError } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
-    if (sessionError) return { error: errorMessage(sessionError) };
-    const isRecovery = params.get('type') === 'recovery';
-    const session = data.session && !isRecovery ? await markNewProviderUser(data.session) : data.session ?? undefined;
-    return { session, user: session?.user, recovery: isRecovery };
-  } catch {
-    return { error: 'Could not finish authentication. Please try again.' };
+    return await pending;
+  } finally {
+    exchange.pending = undefined;
   }
+}
+
+async function finishCodeExchange(client: NonNullable<typeof supabase>, code: string): Promise<AuthResult> {
+  try {
+    const { data, error } = await client.auth.exchangeCodeForSession(code);
+    if (error || !data.session) return { error: 'This sign-in link could not be verified. Start sign-in again in StudyBolt.' };
+    const recovery = 'redirectType' in data && data.redirectType === 'recovery';
+    const session = recovery ? data.session : await markNewProviderUser(data.session);
+    return { session, user: session.user, recovery };
+  } catch {
+    return { error: 'Could not finish authentication. Check your connection and try again.' };
+  }
+}
+
+// Keep document-only guest credentials separate from the account session and its PKCE verifier.
+const guestAuth = isAuthConfigured ? createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    storage: AsyncStorage,
+    storageKey: authStorageKey + '-studybolt-guest',
+    autoRefreshToken: false,
+    persistSession: true,
+    detectSessionInUrl: false,
+  },
+}).auth : null;
+let guestTokenRequest: Promise<string> | null = null;
+
+export function getGuestDocumentToken(): Promise<string> {
+  if (guestTokenRequest) return guestTokenRequest;
+  guestTokenRequest = (async () => {
+    if (!guestAuth) throw new Error('Secure document processing is unavailable in this build.');
+    const current = await guestAuth.getSession();
+    if (current.data.session?.user.is_anonymous) return current.data.session.access_token;
+    if (current.error && current.error.code !== 'refresh_token_not_found'
+      && current.error.code !== 'refresh_token_already_used' && current.error.code !== 'session_not_found'
+      && current.error.name !== 'AuthSessionMissingError') {
+      throw new Error('Could not reconnect your guest study session. Check your connection and try again.');
+    }
+    const { data, error } = await guestAuth.signInAnonymously();
+    if (error?.code === 'over_request_rate_limit') throw new Error('Guest study is busy. Wait a moment and try again.');
+    if (error?.code === 'anonymous_provider_disabled') throw new Error('Guest processing is temporarily unavailable. You can retry or sign in to build this pack.');
+    if (error || !data.session?.user.is_anonymous) {
+      throw new Error('Could not start a guest study session. Check your connection and try again.');
+    }
+    return data.session.access_token;
+  })().finally(() => { guestTokenRequest = null; });
+  return guestTokenRequest;
 }
 
 export async function signOutAccount(session: AuthSession | null): Promise<void> {

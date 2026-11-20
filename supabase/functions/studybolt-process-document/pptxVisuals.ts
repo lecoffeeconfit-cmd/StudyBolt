@@ -88,7 +88,7 @@ const MAX_INLINE_VISUAL_TOTAL_BYTES = 6_000_000;
 const SUPPORTED_RASTER_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp']);
 const EMU_PER_INCH = 914_400;
 
-export async function extractPptxLocally(bytes: Uint8Array): Promise<PptxLocalExtraction> {
+export async function extractPptxLocally(bytes: Uint8Array, inlineVisualLimit = MAX_INLINE_VISUAL_TOTAL_BYTES): Promise<PptxLocalExtraction> {
   const zip = await JSZip.loadAsync(bytes);
   const slideNames = Object.keys(zip.files)
     .filter((name) => /^ppt\/slides\/slide\d+\.xml$/i.test(name))
@@ -153,7 +153,7 @@ export async function extractPptxLocally(bytes: Uint8Array): Promise<PptxLocalEx
       const canInline = isStudyVisual
         && SUPPORTED_RASTER_EXTENSIONS.has(image.extension)
         && image.data.byteLength <= MAX_INLINE_VISUAL_BYTES
-        && inlineVisualBytes + image.data.byteLength <= MAX_INLINE_VISUAL_TOTAL_BYTES;
+        && inlineVisualBytes + image.data.byteLength <= inlineVisualLimit;
       if (canInline) inlineVisualBytes += image.data.byteLength;
 
       const visual: LocalVisualKnowledge = {

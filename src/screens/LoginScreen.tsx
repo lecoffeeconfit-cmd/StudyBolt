@@ -3,6 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
+  AppState,
   Easing,
   KeyboardAvoidingView,
   Platform,
@@ -29,9 +30,9 @@ export function LoginScreen({
 }: {
   onContinueAsGuest: () => void;
 }) {
-  const { colors } = useStudyBolt();
+  const { colors, state } = useStudyBolt();
   const reducedMotion = useReducedMotion();
-  const { configured, signIn, signUp, signInWithProvider, forgotPassword, resendConfirmationEmail } = useAuth();
+  const { configured, signIn, signUp, signInWithProvider, forgotPassword, resendConfirmationEmail, callbackError, clearCallbackError } = useAuth();
   const insets = useSafeAreaInsets();
   const [mode, setMode] = useState<AuthMode>('signin');
   const [displayName, setDisplayName] = useState('');
@@ -43,6 +44,7 @@ export function LoginScreen({
   const [providerBusy, setProviderBusy] = useState<'google' | 'apple' | null>(null);
   const [notice, setNotice] = useState<{ tone: 'error' | 'success'; text: string } | null>(null);
   const [confirmationEmail, setConfirmationEmail] = useState<string | null>(null);
+  const hasGuestPacks = state.decks.some(pack => pack.fileType !== 'demo');
   const [fieldErrors, setFieldErrors] = useState<{ displayName?: string; email?: string; password?: string; confirmPassword?: string }>({});
   const entrance = useRef(new Animated.Value(0)).current;
   const heroEntrance = useRef(new Animated.Value(0)).current;
@@ -90,6 +92,7 @@ export function LoginScreen({
   }, [bob, reducedMotion]);
 
   const changeMode = (next: AuthMode) => {
+    clearCallbackError();
     setMode(next);
     setNotice(null);
     setConfirmationEmail(null);
@@ -159,20 +162,55 @@ export function LoginScreen({
     else if (result.message) setNotice({ tone: 'success', text: result.message });
   };
 
+  const [awaitingProvider, setAwaitingProvider] = useState(false);
+  const providerPending = useRef(false);
+  useEffect(() => {
+    if (!awaitingProvider || Platform.OS === 'web') return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const subscription = AppState.addEventListener('change', state => {
+      if (timer) clearTimeout(timer);
+      if (state === 'active') timer = setTimeout(() => {
+        setAwaitingProvider(false);
+        setProviderBusy(null);
+        providerPending.current = false;
+        setNotice({ tone: 'error', text: 'Sign-in didn’t finish. Try again or use email.' });
+      }, 1600);
+    });
+    return () => {
+      if (timer) clearTimeout(timer);
+      subscription.remove();
+    };
+  }, [awaitingProvider]);
+
+  useEffect(() => {
+    if (!callbackError) return;
+    providerPending.current = false;
+    setAwaitingProvider(false);
+    setProviderBusy(null);
+    setNotice({ tone: 'error', text: callbackError });
+  }, [callbackError]);
+
   const useProvider = async (provider: 'google' | 'apple') => {
+    if (providerPending.current || busy) return;
+    providerPending.current = true;
     setProviderBusy(provider);
     setNotice(null);
     const result = await signInWithProvider(provider);
-    setProviderBusy(null);
-    if (result.error) setNotice({ tone: 'error', text: result.error });
+    if (result.awaitingCallback) {
+      setAwaitingProvider(true);
+    } else {
+      providerPending.current = false;
+      setProviderBusy(null);
+      if (result.error) setNotice({ tone: 'error', text: result.error });
+    }
   };
 
   const title = mode === 'forgot' ? 'Reset your password' : mode === 'signup' ? 'Create your account' : 'Welcome back';
   const subtitle = mode === 'forgot'
     ? 'We’ll send a secure reset link to your inbox.'
     : mode === 'signup'
-      ? 'Make your study space yours.'
-      : 'Pick up exactly where you left off.';
+      ? 'Keep your Study Packs in sync across devices.'
+      : 'Open your saved Study Packs on this device.';
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -246,9 +284,14 @@ export function LoginScreen({
         >
           <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
           <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{subtitle}</Text>
+          {hasGuestPacks && mode !== 'forgot' ? <View style={[styles.guestInfo, { backgroundColor: colors.primarySoft }]}>
+            <Icon name="cloud-sync-outline" color={colors.primary} size={20} />
+            <Text style={[styles.guestInfoText, { color: colors.textSecondary }]}>After signing in, open Settings and choose Save guest packs to sync your work.</Text>
+          </View> : null}
 
           {notice ? (
             <View
+              accessibilityLiveRegion="polite"
               style={[styles.notice, { backgroundColor: notice.tone === 'error' ? `${colors.danger}14` : colors.mintSoft }]}
             >
               <Icon name={notice.tone === 'error' ? 'alert-circle-outline' : 'email-check-outline'} size={19} color={notice.tone === 'error' ? colors.danger : colors.mint} />
@@ -326,7 +369,7 @@ export function LoginScreen({
           </View>
 
           <Pressable accessibilityRole="button" onPress={onContinueAsGuest} style={styles.guestButton}>
-            <Text style={[styles.guestText, { color: colors.textMuted }]}>Continue without an account</Text>
+            <Text style={[styles.guestText, { color: colors.textMuted }]}>Continue as a guest</Text>
             <Icon name="arrow-right" size={16} color={colors.textMuted} />
           </Pressable>
         </Animated.View>
@@ -351,6 +394,8 @@ function ProviderButton({ label, icon, onPress, loading }: { label: string; icon
 }
 
 const styles = StyleSheet.create({
+  guestInfo: { marginTop: 14, padding: 12, borderRadius: 13, flexDirection: 'row', alignItems: 'center', gap: 9 },
+  guestInfoText: { flex: 1, fontSize: 13, lineHeight: 19 },
   screen: { flexGrow: 1, width: '100%', maxWidth: 480, alignSelf: 'center', paddingHorizontal: 20 },
   topBar: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   closeButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },

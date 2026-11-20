@@ -20,7 +20,8 @@ import { buildAnalytics } from '../services/analytics';
 import { personalStatisticsState } from '../services/personalStatistics';
 import { buildLearningMastery } from '../services/learningMastery';
 import type { LearningMasteryGroup, LearningPracticeAction } from '../services/learningMastery';
-import type { StudyPack, StudyTool } from '../models';
+import type { ImportAsset, StudyPack, StudyTool } from '../models';
+import { useStudyMaterialPicker, type ImportClass } from '../hooks/useStudyMaterialPicker';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import type { AnalyticsSnapshot, BreakdownValue, ConceptInsight, DistributionValue } from '../services/analytics';
 
@@ -44,9 +45,10 @@ function useStatDetail() {
 
 export function StatsScreen({ onOpenDeck, onAddMaterial }: {
   onOpenDeck: (deck: StudyPack, tool?: StudyTool, cardIds?: string[]) => void;
-  onAddMaterial: () => void;
+  onAddMaterial: (assets: ImportAsset[], course?: ImportClass) => void;
 }) {
   const { colors, state, hydrated } = useStudyBolt();
+  const { error: importError, chooseFiles } = useStudyMaterialPicker(onAddMaterial);
   const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<StatsTab>('overview');
   const [selectedDetail, setSelectedDetail] = useState<StatsDetail | null>(null);
@@ -65,6 +67,12 @@ export function StatsScreen({ onOpenDeck, onAddMaterial }: {
   const allClassesEmpty = allClasses && analytics.packs.length === 0;
   const topicEvidence = useMemo(() => new Set((allClasses ? courseGroups : [selectedClass]).flatMap(group => group.practicedTopicIds)), [allClasses, courseGroups, selectedClass]);
   const selectClass = (id: string) => { setSelectedClassId(id); setAllClasses(false); setIncludeSamples(false); };
+  const addMaterial = (group?: LearningMasteryGroup) => {
+    const course = group?.kind === 'class'
+      ? state.classes.find(item => group.id === `class:${item.id}`)
+      : undefined;
+    void chooseFiles(course ? { id: course.id, name: course.name } : undefined);
+  };
 
 
   useEffect(() => {
@@ -119,6 +127,7 @@ export function StatsScreen({ onOpenDeck, onAddMaterial }: {
                 <Icon name="information-outline" color={colors.primary} size={21} />
               </Pressable>
             </View>
+            {importError ? <Text accessibilityRole="alert" style={[styles.subtitle, styles.importError, { color: colors.danger }]}>{importError}</Text> : null}
             {includeSamples ? <Pressable accessibilityRole="button" onPress={showAbout} style={styles.scopeRow}>
               <Icon name="layers-outline" size={16} color={colors.warning} />
               <Text style={[styles.scopeLabel, { color: colors.warning }]}>Includes sample and older totals</Text>
@@ -145,12 +154,12 @@ export function StatsScreen({ onOpenDeck, onAddMaterial }: {
                 <StatsTabs tab={tab} onChange={setTab} />
                 <View style={styles.overviewStart}>
                   {!allClasses ? (
-                    <LearningMasteryHero groups={courseGroups} selectedId={selectedClass.id} onSelect={selectClass} onExplore={setSelectedDetail} onAddMaterial={onAddMaterial} compact={tab !== 'overview'} />
+                    <LearningMasteryHero groups={courseGroups} selectedId={selectedClass.id} onSelect={selectClass} onExplore={setSelectedDetail} onAddMaterial={() => addMaterial(selectedClass)} compact={tab !== 'overview'} />
                   ) : (
                     <>
                       <Text accessibilityRole="header" style={[styles.allClassesLabel, { color: colors.text }]}>All classes</Text>
                       {tab !== 'overview' ? <StatsDisclosure title="Knowledge by class" subtitle="Browse course evidence and saved material">
-                        <LearningMasteryHero groups={courseGroups} selectedId={selectedClass.id} onSelect={selectClass} onExplore={setSelectedDetail} onAddMaterial={onAddMaterial} compact />
+                        <LearningMasteryHero groups={courseGroups} selectedId={selectedClass.id} onSelect={selectClass} onExplore={setSelectedDetail} onAddMaterial={() => addMaterial(selectedClass)} compact />
                       </StatsDisclosure> : null}
                     </>
                   )}
@@ -160,7 +169,7 @@ export function StatsScreen({ onOpenDeck, onAddMaterial }: {
                     {allClassesEmpty ? <Card style={styles.nextStep}>
                       <Text accessibilityRole="header" style={[styles.nextStepTitle, { color: colors.text }]}>Start with one Study Pack</Text>
                       <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Add study material and practice to build your progress across classes.</Text>
-                      <PrimaryButton label="Add study material" icon="plus" onPress={onAddMaterial} style={styles.addMaterial} />
+                      <PrimaryButton label="Add study material" icon="plus" onPress={() => addMaterial()} style={styles.addMaterial} />
                     </Card> : null}
                     <PageEntrance key={allClasses ? 'all' : selectedClass.id} style={styles.overviewStart}>
                       <OverviewMetrics analytics={analytics} group={allClasses ? undefined : selectedClass}
@@ -174,9 +183,9 @@ export function StatsScreen({ onOpenDeck, onAddMaterial }: {
                     {allClasses ? (
                       <>
                         <StatsDisclosure title="Knowledge by class" subtitle="Browse course evidence and saved material">
-                          <LearningMasteryHero groups={courseGroups} selectedId={selectedClass.id} onSelect={selectClass} onExplore={setSelectedDetail} onAddMaterial={onAddMaterial} />
+                          <LearningMasteryHero groups={courseGroups} selectedId={selectedClass.id} onSelect={selectClass} onExplore={setSelectedDetail} onAddMaterial={() => addMaterial(selectedClass)} />
                         </StatsDisclosure>
-                        <Overview analytics={analytics} groups={courseGroups} onPractice={openPractice} onAddMaterial={onAddMaterial} />
+                        <Overview analytics={analytics} groups={courseGroups} onPractice={openPractice} onAddMaterial={() => addMaterial()} />
                       </>
                     ) : (
                       <>
@@ -184,7 +193,7 @@ export function StatsScreen({ onOpenDeck, onAddMaterial }: {
                           <StatsLearningDashboard key={selectedClass.id} state={classState} group={selectedClass} analytics={analytics} onDetail={setSelectedDetail} onPractice={openPractice} />
                         </StatsDisclosure>
                         <StatsDisclosure title="More study activity" subtitle="Study time, coverage, and session details">
-                          <Overview analytics={analytics} groups={displayGroups} onPractice={openPractice} onAddMaterial={onAddMaterial} />
+                          <Overview analytics={analytics} groups={displayGroups} onPractice={openPractice} onAddMaterial={() => addMaterial()} />
                         </StatsDisclosure>
                       </>
                     )}
@@ -1096,9 +1105,9 @@ function PackRow({ pack }: { pack: AnalyticsSnapshot['packs'][number] }) {
     >
       <View style={styles.progressHeading}>
         <View style={{ flex: 1 }}><Text style={[styles.progressTitle, { color: colors.text }]}>{pack.title}</Text><Text style={[styles.rowMeta, { color: colors.textMuted }]}>{pack.courseName}</Text></View>
-        <Text style={[styles.progressValue, { color: pack.color }]}>{pack.completion}%</Text>
+        <Text style={[styles.progressValue, { color: colors.neon?.progressFill ?? pack.color }]}>{pack.completion}%</Text>
       </View>
-      <ProgressBar progress={pack.completion} color={pack.color} />
+      <ProgressBar progress={pack.completion} color={colors.neon?.progressFill ?? pack.color} />
       <View style={styles.packMetaRow}><Text style={[styles.progressMeta, { color: colors.textMuted }]}>{pack.remaining}% of this pack remains</Text><Icon name="information-outline" size={15} color={colors.textMuted} /></View>
     </Card>
   );
@@ -1330,6 +1339,7 @@ const styles = StyleSheet.create({
   screenShell: { flex: 1 },
   title: { fontSize: 25, lineHeight: 32, fontWeight: '800', letterSpacing: -0.45 },
   subtitle: { fontSize: 14, lineHeight: 21, marginTop: 5, marginBottom: 2, maxWidth: 510 },
+  importError: { marginTop: spacing.sm },
   modalRoot: { flex: 1, justifyContent: 'flex-end', alignItems: 'center' },
   modalBackdrop: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: 'rgba(4, 9, 20, 0.56)' },
   detailSheet: { width: '100%', maxWidth: 620, maxHeight: '88%', borderTopLeftRadius: 28, borderTopRightRadius: 28, borderWidth: StyleSheet.hairlineWidth, paddingTop: 9, shadowColor: '#000000', shadowOffset: { width: 0, height: -8 }, shadowOpacity: 0.18, shadowRadius: 24, elevation: 18 },

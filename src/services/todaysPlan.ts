@@ -88,6 +88,6 @@ export function getTodaysPlanStatus(dashboard: HomeDashboard) {
   return {
     complete: false, hasActivity,
     title: hasActivity ? 'A useful step forward today' : dashboard.decks.length ? 'A good place to begin' : 'Built around your material',
-    detail: hasActivity ? 'Your recorded work appears in Learning progress below.' : dashboard.decks.length ? 'Start small. Your answers will guide what comes next.' : 'Add one lecture to turn your material into practice.',
+    detail: hasActivity ? 'See your recorded study activity in Stats.' : dashboard.decks.length ? 'Start small. Your answers will guide what comes next.' : 'Add one lecture to turn your material into practice.',
   };
 }

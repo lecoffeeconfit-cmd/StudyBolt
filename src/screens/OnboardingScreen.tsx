@@ -4,7 +4,7 @@ import { AccessibilityInfo, Animated, Platform, Pressable, ScrollView, StyleShee
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '../AuthContext';
-import { BoltLogo, Icon, PrimaryButton } from '../components/ui';
+import { BoltLogo, Icon, PrimaryButton, ThemeToggle } from '../components/ui';
 import type { IconName } from '../components/ui';
 import { initialState } from '../data/mockStudyPacks';
 import { useReducedMotion } from '../hooks/useReducedMotion';
@@ -20,7 +20,7 @@ export function OnboardingScreen({ onComplete, onTrySample, onImport, onSignIn }
   onImport: (assets: ImportAsset[]) => void;
   onSignIn: () => void;
 }) {
-  const { colors, state, setTheme } = useStudyBolt();
+  const { colors, state } = useStudyBolt();
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
   const { width, height, fontScale } = useWindowDimensions();
@@ -37,8 +37,6 @@ export function OnboardingScreen({ onComplete, onTrySample, onImport, onSignIn }
   const practice = step === 'practice' && Boolean(card);
   const primaryLabel = colors.mode === 'dark' ? colors.primary : '#075BC6';
   const purpleLabel = colors.mode === 'dark' ? colors.purple : '#6341CB';
-  // Web OAuth reloads the page, so sign in before selecting browser File objects.
-  const signInBeforeFiles = Platform.OS === 'web' && !user;
 
   useEffect(() => {
     scroll.current?.scrollTo({ y: 0, animated: false });
@@ -61,8 +59,8 @@ export function OnboardingScreen({ onComplete, onTrySample, onImport, onSignIn }
     if (Platform.OS !== 'web' && card) AccessibilityInfo.announceForAccessibility(`Sample practice. Try answering before you reveal. ${card.front}`);
   };
 
-  const fileActionLabel = opening ? 'Opening your files…' : signInBeforeFiles ? 'Sign in to add my material' : 'Choose my files';
-  const chooseMaterial = () => { if (signInBeforeFiles) onSignIn(); else void chooseFiles(); };
+  const fileActionLabel = opening ? 'Opening your files…' : 'Choose my files';
+  const chooseMaterial = () => { void chooseFiles(); };
 
   const actionPanel = (
     <View style={[styles.actions, wide && styles.actionsWide]}>
@@ -74,13 +72,13 @@ export function OnboardingScreen({ onComplete, onTrySample, onImport, onSignIn }
         onPress={practice ? onTrySample : chooseMaterial}
         style={{ backgroundColor: primaryLabel }}
       />
-      {!practice ? <Text style={[styles.formats, { color: colors.textSecondary }]}>PDF · PowerPoint · Word · text notes</Text> : null}
+      {!practice ? <Text style={[styles.formats, { color: colors.textSecondary }]}>Study guides, slides, notes, and screenshots</Text> : null}
       <Pressable accessibilityRole="button" accessibilityLabel={practice ? fileActionLabel : 'Try a quick interactive sample'} disabled={opening} onPress={practice ? chooseMaterial : startPractice} style={({ pressed }) => [styles.sampleButton, { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed || opening ? 0.65 : 1 }]}>
         <Icon name={practice ? 'cloud-upload-outline' : 'play-circle-outline'} size={22} color={colors.purple} />
         <Text style={[styles.sampleText, { color: colors.text }]}>{practice ? fileActionLabel : 'Try a quick sample'}</Text>
         <Icon name="arrow-right" size={18} color={colors.textSecondary} />
       </Pressable>
-      <Text style={[styles.reassurance, { color: colors.textSecondary }]}>{practice ? 'Keep practicing with the sample without an account, or add your own material when you’re ready.' : user ? 'You’ll name your class before online processing. File and plan limits apply.' : 'Processing your files requires sign-in and an internet connection. File and plan limits apply. Try the sample without an account.'}</Text>
+      <Text style={[styles.reassurance, { color: colors.textSecondary }]}>{practice ? 'Keep practicing with the sample without an account, or add your own material when you’re ready.' : user ? 'You’ll name your class before online processing. File and plan limits apply.' : 'Build a Study Pack as a guest. Your work stays on this device until you choose to sync it.'}</Text>
       <Pressable accessibilityRole="button" onPress={onComplete} disabled={opening} style={[styles.exploreButton, { marginBottom: practice || wide ? Math.max(insets.bottom, 16) : 0 }]}><Text style={[styles.exploreText, { color: colors.textSecondary }]}>{user ? 'Back to my study space' : 'Explore on my own'}</Text></Pressable>
     </View>
   );
@@ -90,9 +88,7 @@ export function OnboardingScreen({ onComplete, onTrySample, onImport, onSignIn }
       <View style={[styles.topBar, wide && styles.topBarWide]}>
         <BoltLogo compact />
         <View style={styles.topActions}>
-          <Pressable accessibilityRole="button" accessibilityLabel={`Switch to ${colors.mode === 'dark' ? 'light' : 'dark'} mode`} onPress={() => setTheme(colors.mode === 'dark' ? 'light' : 'dark')} style={[styles.themeButton, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Icon name={colors.mode === 'dark' ? 'weather-sunny' : 'weather-night'} size={20} color={colors.primary} />
-          </Pressable>
+          <ThemeToggle style={styles.themeButton} size={20} reducedMotion={reducedMotion} />
           {!user ? <Pressable accessibilityRole="button" onPress={onSignIn} disabled={opening} style={styles.textButton}><Text style={[styles.link, { color: primaryLabel }]}>Sign in</Text></Pressable> : null}
         </View>
       </View>

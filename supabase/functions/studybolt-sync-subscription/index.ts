@@ -31,6 +31,7 @@ Deno.serve(async (request: Request) => {
   const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
   const { data: { user }, error: authError } = await admin.auth.getUser(token);
   if (authError || !user) return json({ error: 'Your session expired. Sign in again.' }, 401);
+  if (user.is_anonymous) return json({ error: 'Sign in to sync your subscription.' }, 403);
 
   try {
     if (!await studyBoltSubscriptionAccountExists(admin, user.id)) return json({ error: 'Account deletion is in progress.' }, 409);

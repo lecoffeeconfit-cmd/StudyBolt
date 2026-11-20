@@ -37,6 +37,7 @@ export function createAccountDeletionHandler(config: AccountDeletionConfig, crea
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
     const hash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
     const { data: { user }, error: userError } = await admin.auth.getUser(token);
+    if (user?.is_anonymous) return json({ error: 'Sign in to manage account deletion.' }, 403);
     let userId = user?.id;
     if (userError || !user) {
       // A response may have been lost after Auth deletion. Only the exact token

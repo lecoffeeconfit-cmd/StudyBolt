@@ -48,7 +48,7 @@ import type { Route } from './routes';
 
 export function StudyBoltNavigator() {
   const { colors, state, addDeck, completeOnboarding, hydrated, startStudyPackGeneration } = useStudyBolt();
-  const { loading: authLoading, recoveryMode, user, needsStudyOnboarding, updateProfile } = useAuth();
+  const { loading: authLoading, recoveryMode, user, needsStudyOnboarding, updateProfile, callbackError, clearCallbackError } = useAuth();
   const [tab, setTab] = useState<MainTab>('home');
   const [route, setRoute] = useState<Route>({ type: 'main' });
   const [plannerFocusDeckId, setPlannerFocusDeckId] = useState<string>();
@@ -133,6 +133,10 @@ export function StudyBoltNavigator() {
   }, [recoveryMode]);
 
   useEffect(() => {
+    if (callbackError && !user && route.type === 'main') setRoute({ type: 'auth' });
+  }, [callbackError, route.type, user]);
+
+  useEffect(() => {
     let mounted = true;
     const handleUrl = (url: string) => {
       const token = parseShareToken(url);
@@ -185,7 +189,7 @@ export function StudyBoltNavigator() {
         />
       );
     }
-    if (tab === 'stats') return <StatsScreen onOpenDeck={openDeck} onAddMaterial={() => setTab('home')} />;
+    if (tab === 'stats') return <StatsScreen onOpenDeck={openDeck} onAddMaterial={(assets, course) => setRoute({ type: 'processing', assets, courseId: course?.id, courseName: course?.name })} />;
     if (tab === 'profile') {
       return (
         <ProfileScreen
@@ -229,7 +233,7 @@ export function StudyBoltNavigator() {
   }
 
   const showAccountOnboarding = !recoveryMode && Boolean(user && needsStudyOnboarding);
-  const showOnboarding = !recoveryMode && !showAccountOnboarding && (route.type === 'onboarding' || (!user && route.type !== 'shared' && !state.hasCompletedOnboarding));
+  const showOnboarding = !recoveryMode && !showAccountOnboarding && (route.type === 'onboarding' || (!user && route.type === 'main' && !callbackError && !state.hasCompletedOnboarding));
 
   return (
     <View style={[styles.app, showOnboarding && styles.onboardingApp, { backgroundColor: colors.background }]}>
@@ -238,6 +242,8 @@ export function StudyBoltNavigator() {
       {!showOnboarding && !showAccountOnboarding && route.type === 'auth' ? (
         <LoginScreen
           onContinueAsGuest={() => {
+            clearCallbackError();
+            completeOnboarding();
             setRoute(pendingRoute?.type === 'processing' ? { type: 'main' } : postAuthRoute());
             setPendingSharedToken(null);
             setPendingRoute(null);
@@ -363,10 +369,6 @@ export function StudyBoltNavigator() {
           onCancel={() => setRoute({ type: 'main' })}
           onSuccess={completeProcessing}
           onTrySample={openSample}
-          onRequireAuth={(enteredClassName) => {
-            setPendingRoute({ ...route, courseName: enteredClassName || route.courseName });
-            setRoute({ type: 'auth' });
-          }}
         />
       ) : null}
       {!showOnboarding && !showAccountOnboarding && route.type !== 'processing' && route.type !== 'auth' && route.type !== 'widgets' ? <StudyPackGenerationProgress aboveNavigation={route.type === 'main'} /> : null}

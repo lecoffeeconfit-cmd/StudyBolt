@@ -342,7 +342,7 @@ export function SmartStudyScreen({ initialMode = 'smart', focusDeckId, focusSect
               return (
                 <Pressable accessibilityRole="button" key={`${option}-${optionIndex}`} disabled={revealed} onPress={() => chooseOption(optionIndex)} style={[styles.option, { backgroundColor: isCorrect ? colors.mintSoft : isWrong ? `${colors.danger}12` : colors.card, borderColor: isCorrect ? colors.mint : isWrong ? colors.danger : colors.border }]}>
                   <View style={[styles.optionLetter, { backgroundColor: isCorrect ? colors.mint : isWrong ? colors.danger : colors.cardStrong }]}>
-                    {isCorrect || isWrong ? <Icon name={isCorrect ? 'check' : 'close'} size={14} color="#FFFFFF" /> : <Text style={[styles.optionLetterText, { color: colors.textSecondary }]}>{String.fromCharCode(65 + optionIndex)}</Text>}
+                    {isCorrect || isWrong ? <Icon name={isCorrect ? 'check' : 'close'} size={14} color={colors.neon ? colors.primaryText : '#FFFFFF'} /> : <Text style={[styles.optionLetterText, { color: colors.textSecondary }]}>{String.fromCharCode(65 + optionIndex)}</Text>}
                   </View>
                   <Text style={[styles.optionText, { color: colors.text }]}>{option}</Text>
                 </Pressable>

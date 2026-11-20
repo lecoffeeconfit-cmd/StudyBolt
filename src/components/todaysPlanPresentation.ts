@@ -68,7 +68,10 @@ export function todaysPlanCourse(state: StudyBoltState, group: LearningMasteryGr
       if (tool) return step({ kind: 'deck', deck, tool }, next.title, next.why);
     }
     if (!group.practicedPacks && next.kind !== 'exam') {
-      const first = toolSteps[0];
+      const firstTool = toolSteps[0];
+      const noteDeck = firstTool?.action.tool === 'notes' ? firstTool.action.deck : null;
+      const hasReviewedNotes = noteDeck?.notes.some(note => noteDeck.reviewedNoteIds?.includes(note.id));
+      const first = (hasReviewedNotes ? toolSteps.find(task => task.action.tool !== 'notes') : undefined) ?? firstTool;
       if (first) return step(first.action, first.title, FIRST_STEP_REASON[first.action.tool]);
     }
     if (masteryPractice && masteryDeck && planToolReady(masteryDeck, masteryPractice.tool)) {

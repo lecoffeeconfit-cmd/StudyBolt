@@ -12,6 +12,12 @@ const scalar = async (text, args) => Object.values((await sql(text, args)).rows[
 const check = (actual, expected, label) => { assert.deepEqual(actual, expected, label); checks++; };
 const rejects = async (text, pattern, label) => { await assert.rejects(() => db.exec(text), pattern, label); checks++; };
 const A = '11111111-1111-4111-8111-111111111111', B = '22222222-2222-4222-8222-222222222222', C = '33333333-3333-4333-8333-333333333333';
+async function asAccount(id, work, guest = false) {
+  await db.exec(`begin; set local role authenticated; set local request.jwt.claim.sub='${id}'; set local request.jwt.claims='{"is_anonymous":${guest}}';`);
+  try { await work(); await db.exec('commit'); }
+  catch (error) { await db.exec('rollback'); throw error; }
+}
+const writePack = (date, title) => scalar('select save_studybolt_library_item($1,$2,$3,$4)', ['pack', 'same-key', date, JSON.stringify({ id: 'same-key', title })]);
 try {
   await db.exec(await readFile(new URL('supabase/tests/account-deletion-fixture.sql', root), 'utf8'));
   const migrations = (await readdir(new URL('supabase/migrations/', root))).filter((name) => name.endsWith('.sql')).sort();
@@ -36,11 +42,27 @@ try {
   await sql("insert into shared_study_packs(study_pack_id,owner_user_id,shared_content) values('pack-a',$1,'{}'),('pack-b',$2,'{}')", [A,B]);
   await sql('insert into auth.sessions(user_id) values($1),($2)', [A,B]);
   await sql("insert into studybolt_feedback(user_id,category,subject,message) values($1,'bug','Test','sandbox feedback'),($2,'bug','Test','other feedback')", [A,B]);
-  await sql('insert into studybolt_accounts(user_id) values($1),($2)', [A,B]);
+  await asAccount(A, async () => {
+    check(await writePack('2025-11-18', 'My original'), true, 'account can create a private pack');
+    check(await writePack('2025-11-19', 'My newest edit'), true, 'account can sync a newer edit');
+    check(await writePack('2025-11-18', 'Stale device'), false, 'older device cannot overwrite a newer edit');
+    check(await scalar("select content->>'title' from studybolt_library_items"), 'My newest edit', 'newer content retained');
+  });
+  await asAccount(B, async () => {
+    check(await scalar('select count(*)::int from studybolt_library_items'), 0, 'account cannot read another library');
+    check(await writePack('2025-11-18', 'Second account'), true, 'separate accounts can use the same pack id');
+  });
+  await asAccount(A, async () => {
+    check(await scalar('select count(*)::int from studybolt_library_items'), 0, 'anonymous JWT cannot read a library');
+  }, true);
+  const guestId = '55555555-5555-4555-8555-555555555555';
+  await sql('insert into auth.users(id,is_anonymous) values($1,true)', [guestId]);
+  await assert.rejects(() => asAccount(guestId, () => writePack('2025-11-19', 'Guest'), true), /studybolt_account_required/);
   await sql("insert into studybolt_admin_audit(admin_user_id,target_user_id,action,details) values($2,$1,'test','{\"email\":\"a@sandbox.invalid\"}'),($1,$2,'test','{}'),($2,$2,'keep','{}')", [A,B]);
   // Paid status is never a reason to refuse erasure.
   await sql("update auth.users set raw_app_meta_data='{" + '"studybolt_subscription_tier":"premium","studybolt_subscription_expires_at":"2099-01-01T00:00:00Z"' + "}' where id=$1", [A]);
   await sql("select request_studybolt_account_deletion($1,repeat('a',64))", [A]);
+  await assert.rejects(() => asAccount(A, () => writePack('2025-11-20', 'Pending deletion')), /studybolt_account_deletion_pending/);
   await sql("select request_studybolt_account_deletion($1,repeat('a',64))", [A]);
   check(await scalar('select count(*)::int from studybolt_account_deletions'), 1, 'repeated requests idempotent');
   await rejects(`insert into storage.objects(bucket_id,name) values('studybolt-visuals','${A}/late.png');`, /studybolt_account_deletion_pending/, 'late prefix upload blocked');
@@ -61,6 +83,8 @@ try {
   check(await scalar('select count(*)::int from auth.users where id=$1', [A]), 0, 'Auth removed');
   check(await scalar('select count(*)::int from auth.sessions where user_id=$1', [A]), 0, 'sessions cascade');
   check(await scalar('select count(*)::int from shared_study_packs where owner_user_id=$1', [A]), 0, 'owned share snapshots cascade');
+  check(await scalar('select count(*)::int from studybolt_library_items where user_id=$1', [A]), 0, 'private library cascades');
+  check(await scalar('select count(*)::int from studybolt_library_items where user_id=$1', [B]), 1, 'other private library preserved');
   check(await scalar('select count(*)::int from studybolt_feedback where user_id=$1', [A]), 0, 'feedback cascade');
   check(await scalar('select count(*)::int from studybolt_admin_audit'), 1, 'audit email/actor/target records erased');
   check(await scalar('select count(*)::int from studybolt_account_deletions where user_id=$1', [A]), 1, 'private retry journal survives Auth deletion');

@@ -2,7 +2,7 @@ import { LoadingArtwork } from './StudyBoltLoading';
 import { SubjectIcon } from './SubjectIcon';
 import React, { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Animated, FlatList, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import Svg, { Circle } from 'react-native-svg';
+import Svg, { Circle, type CircleProps } from 'react-native-svg';
 
 import { Card, Icon, PrimaryButton } from './ui';
 import { useStudyBolt } from '../StudyBoltContext';
@@ -94,7 +94,7 @@ export function LearningMasteryHero({ groups, selectedId, onSelect, onExplore, o
         <View aria-hidden style={[styles.emptyIcon, { backgroundColor: colors.goldSoft }]}><Icon name="school-outline" size={23} color={colors.goldText} /></View>
         <View style={styles.heading}>
           <Text accessibilityRole="header" style={[styles.statusTitle, { color: colors.text }]}>Ready when you are</Text>
-          <Text style={[styles.copy, { color: colors.textSecondary }]}>Add notes, a PDF, or a presentation, then practice to start building recall evidence.</Text>
+          <Text style={[styles.copy, { color: colors.textSecondary }]}>Add a study guide, notes, or slides and start practicing.</Text>
         </View>
         <PrimaryButton label="Add study material" icon="plus" onPress={onAddMaterial} style={styles.primaryAction} />
       </View>
@@ -160,10 +160,19 @@ function RecallRing({ value }: { value: number }) {
     previous.current = value;
     return () => progress.stopAnimation();
   }, [progress, reducedMotion, value]);
+  const arc = {
+    cx: 60, cy: 60, r: radius, fill: 'none',
+    stroke: colors.neon?.progressFill ?? colors.primary, strokeWidth: 8,
+    strokeLinecap: 'round', strokeDasharray: circumference + ' ' + circumference, transform: 'rotate(-90 60 60)',
+  } satisfies CircleProps;
+  const drawArc = (props: CircleProps) => Platform.OS === 'web'
+    ? <Circle {...props} strokeDashoffset={circumference * (1 - value / 100)} />
+    : <AnimatedCircle {...props} strokeDashoffset={progress.interpolate({ inputRange: [0, 100], outputRange: [circumference, 0] })} />;
   return <View accessible accessibilityRole="image" accessibilityLabel={value + ' percent of identified topics show consistent spaced recall.'} style={{ width: size, height: size }}>
     <Svg width={size} height={size} viewBox="0 0 120 120" {...(Platform.OS === 'web' ? { 'aria-hidden': true, focusable: false } : { accessible: false })}>
-      <Circle cx={60} cy={60} r={radius} stroke={colors.border} strokeWidth={8} fill="none" />
-      {value > 0 ? Platform.OS === 'web' ? <Circle cx={60} cy={60} r={radius} stroke={colors.primary} strokeWidth={8} strokeLinecap="round" fill="none" strokeDasharray={circumference + ' ' + circumference} strokeDashoffset={circumference * (1 - value / 100)} transform="rotate(-90 60 60)" /> : <AnimatedCircle cx={60} cy={60} r={radius} stroke={colors.primary} strokeWidth={8} strokeLinecap="round" fill="none" strokeDasharray={circumference + ' ' + circumference} strokeDashoffset={progress.interpolate({ inputRange: [0, 100], outputRange: [circumference, 0] })} transform="rotate(-90 60 60)" /> : null}
+      <Circle cx={60} cy={60} r={radius} stroke={colors.neon?.progressTrack ?? colors.border} strokeWidth={8} fill="none" />
+      {colors.neon && value > 0 ? drawArc({ ...arc, stroke: colors.neon.glow, strokeWidth: 13, strokeOpacity: 0.22 }) : null}
+      {value > 0 ? drawArc(arc) : null}
     </Svg>
     <View aria-hidden style={styles.ringCenter}><Text style={[styles.ringValue, { color: colors.text }]}>{value}%</Text></View>
   </View>;

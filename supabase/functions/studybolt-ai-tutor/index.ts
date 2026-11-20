@@ -64,6 +64,7 @@ Deno.serve(async (request) => {
   const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
   const { data: { user }, error: userError } = await admin.auth.getUser(token);
   if (userError || !user) return json({ error: 'Your session expired. Please sign in again.' }, 401);
+  if (user.is_anonymous) return json({ error: 'Sign in to use AI Tutor.' }, 403);
   const { data: configRow, error: configError } = await admin.from('ai_cloud_config').select('*').eq('config_id', true).single();
   if (configError || !configRow) return json({ error: 'StudyBolt AI configuration is unavailable.' }, 503);
   const config = normalizeConfig(configRow as Record<string, unknown>);

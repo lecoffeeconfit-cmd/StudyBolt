@@ -1,12 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, AppState, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { AccessibilityInfo, Alert, AppState, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useStudyBolt } from '../StudyBoltContext';
 import type { ImportAsset, StudyPack, StudyTool } from '../models';
 import type { SmartStudyMode } from '../services/adaptiveStudy';
-import { pageLabel } from '../services/documentTypes';
 import { AUTOMATIC_STUDY_PACK_MATERIALS } from '../services/documentProcessor';
 import { getHomeUploadStatus } from '../services/homeUpload';
 import {
@@ -16,8 +16,8 @@ import {
   subscribeToStudyTimerSettings,
   type StudyTimerSettings,
 } from '../services/studyTimer';
-import { Card, Header, Icon, Pill, Screen } from '../components/ui';
-import { SubjectIcon } from '../components/SubjectIcon';
+import { Header, Icon, ThemeToggle } from '../components/ui';
+import { bottomTabBarTop } from '../components/BottomTabs';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import { findHomeAudioResume } from '../services/homeStudy';
 import { buildHomeDashboard } from '../services/homeDashboard';
@@ -27,6 +27,7 @@ import { HomePrioritySheet } from '../components/HomeLearningCards';
 import type { HomePriority } from '../components/TodaysPlanCard';
 import { TodaysPlanCard } from '../components/TodaysPlanCard';
 import { AddStudyMaterialCard } from '../components/AddStudyMaterialCard';
+import { HomeImportSheet } from '../components/HomeImportSheet';
 import { useAuth } from '../AuthContext';
 import { useStudyMaterialPicker, type ImportClass } from '../hooks/useStudyMaterialPicker';
 
@@ -99,7 +100,6 @@ export function HomeScreen({
   onOpenPlanner,
   onPracticeTest,
   onOpenLibrary,
-  onOpenStats,
   onOpenProfile,
   planClassId,
   onSelectPlanClass,
@@ -117,8 +117,15 @@ export function HomeScreen({
   planClassId: string | undefined;
   onSelectPlanClass: (id: string) => void;
 }) {
-  const { colors, state, setTheme } = useStudyBolt();
+  const { colors, state } = useStudyBolt();
   const { user, profile } = useAuth();
+  const insets = useSafeAreaInsets();
+  const reducedMotion = useReducedMotion();
+  const scroll = useRef<ScrollView>(null);
+  const uploadOffset = useRef(0);
+  const uploadButton = useRef<View>(null);
+  const [uploadCourse, setUploadCourse] = useState<ImportClass>();
+  const [importSheetOpen, setImportSheetOpen] = useState(false);
   const avatarInitial = (profile?.displayName || user?.email)?.[0]?.toUpperCase();
   const [profileFocused, setProfileFocused] = useState(false);
   const [now, setNow] = useState(() => new Date());
@@ -136,7 +143,6 @@ export function HomeScreen({
     scheduleCard: (deckId, cardId) => getRetentionCardSchedule(academicState, deckId, cardId, state.retentionMode === 'standard' ? 'sm2' : state.retentionMode, now),
   }), [state, academicState, now, resumeDeck?.id]);
   const today = now.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
-  const recentMaterials = dashboard.decks.length ? dashboard.recent.slice(0, 2) : [];
   const firstName = profile?.displayName?.trim().split(/\s+/)[0];
   const greeting = now.getHours() < 12 ? 'Good morning' : now.getHours() < 18 ? 'Good afternoon' : 'Good evening';
   const uploadStatus = useMemo(() => getHomeUploadStatus(state.decks, AUTOMATIC_STUDY_PACK_MATERIALS), [state.decks]);
@@ -146,36 +152,41 @@ export function HomeScreen({
     ? onStartStudy('smart', { deckId: topic.deck.id, sectionIds: [topic.sectionId] })
     : onOpenDeck(topic.deck, 'notes');
   const practice = () => dashboard.decks.length ? onPracticeTest(dashboard.decks.find((deck) => deck.quiz.length || deck.flashcards.length)?.id) : void pickDocument();
-  const startRecommended = () => {
-    const next = dashboard.recommendation;
-    const deck = dashboard.decks.find((item) => item.id === next.deckId);
-    if (next.kind === 'materials') return pickDocument();
-    if (next.kind === 'mistakes') return onOpenMistakes(dashboard.mistakeIds);
-    if (!deck) return onOpenLibrary();
-    if (next.kind === 'pack') return onOpenDeck(deck);
-    if (next.kind === 'resume') return onOpenDeck(deck, 'audio');
-    if (next.kind === 'due') return onOpenDeck(deck, 'flashcards', next.cardIds);
-    if (next.kind === 'weak' && next.sectionId) {
-      if (!next.cardIds?.length) return onOpenDeck(deck, 'notes');
-      return onStartStudy('smart', { deckId: deck.id, sectionIds: [next.sectionId] });
-    }
-    return deck.flashcards.length ? onStartStudy('smart', { deckId: deck.id }) : onOpenDeck(deck, 'notes');
+  const showUpload = (course?: ImportClass) => {
+    setUploadCourse(course);
+    const reveal = (screenReader: boolean) => {
+      const y = Math.max(0, uploadOffset.current - insets.top - 8);
+      scroll.current?.scrollTo({ y, animated: !reducedMotion && !screenReader });
+      const button = uploadButton.current;
+      if (Platform.OS === 'web') {
+        (button as unknown as HTMLElement | null)?.focus({ preventScroll: true });
+      } else if (screenReader && button) {
+        AccessibilityInfo.sendAccessibilityEvent(button, 'focus');
+      }
+    };
+    if (Platform.OS === 'web') reveal(false);
+    else void AccessibilityInfo.isScreenReaderEnabled().then(reveal, () => reveal(false));
   };
 
   return (
-    <Screen>
+    <ScrollView
+      ref={scroll}
+      style={{ backgroundColor: colors.background }}
+      contentContainerStyle={{
+        paddingTop: insets.top + 8,
+        paddingBottom: Math.max(120, bottomTabBarTop(insets.bottom) + 24),
+        paddingLeft: Math.max(20, insets.left),
+        paddingRight: Math.max(20, insets.right),
+      }}
+      contentInsetAdjustmentBehavior="never"
+      showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
+    >
       <Header
         title="Study Bolt"
         right={
           <View style={styles.headerActions}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`Switch to ${colors.mode === 'dark' ? 'light' : 'dark'} mode`}
-              onPress={() => setTheme(colors.mode === 'dark' ? 'light' : 'dark')}
-              style={[styles.roundButton, { backgroundColor: colors.card, borderColor: colors.border }]}
-            >
-              <Icon name={colors.mode === 'dark' ? 'weather-sunny' : 'weather-night'} size={19} color={colors.mode === 'dark' ? colors.warning : colors.primary} />
-            </Pressable>
+            <ThemeToggle style={styles.roundButton} size={19} darkIconColor={colors.warning} reducedMotion={reducedMotion} />
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Open profile and settings"
@@ -202,28 +213,23 @@ export function HomeScreen({
         <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{!dashboard.decks.length ? 'Start with one class. Build a routine that works for you.' : dashboard.exam ? 'One focused step toward your next exam.' : 'A clear next step, built from your learning.'}</Text>
       </View>
 
-      <TodaysPlanCard dashboard={dashboard} now={now} colors={colors} selectedId={planClassId} onSelectClass={onSelectPlanClass} onOpenPriority={setPriority} onOpenPlan={onOpenPlanner} onOpenDeck={onOpenDeck} onStartStudy={onStartStudy} onOpenMistakes={onOpenMistakes} onAddMaterial={pickDocument} />
+      <TodaysPlanCard dashboard={dashboard} now={now} colors={colors} selectedId={planClassId} onSelectClass={onSelectPlanClass} onOpenPriority={setPriority} onOpenPlan={onOpenPlanner} onOpenDeck={onOpenDeck} onStartStudy={onStartStudy} onOpenMistakes={onOpenMistakes} onShowUpload={showUpload} />
 
-      <AddStudyMaterialCard
-        colors={colors}
-        onPress={() => { void pickDocument(); }}
-        onDropAssets={(assets) => !isOpening() && acceptImportAssets(assets)}
-        opening={choosingFiles}
-        primaryAction={!dashboard.decks.length}
-        error={importError}
-        status={uploadStatus}
-        onOpenPack={(deck) => onOpenDeck(deck)}
-      />
-
-      {dashboard.decks.length ? <>
-        <View style={styles.sectionHeading}><Text accessibilityRole="header" style={[styles.sectionHeadingText, { color: colors.text }]}>Continue studying</Text><Pressable accessibilityRole="button" accessibilityLabel="Open study library" onPress={onOpenLibrary} style={styles.libraryLink}><Text style={[styles.libraryLinkText, { color: colors.mode === 'dark' ? colors.primary : '#075BC6' }]}>Library</Text><Icon name="chevron-right" size={18} color={colors.primary} /></Pressable></View>
-        <View style={styles.deckList}>
-          {!recentMaterials.length ? <Text style={[styles.emptyMaterials, { color: colors.textSecondary }]}>Your Study Packs will appear here after you import materials.</Text> : null}
-          {recentMaterials.map(({ deck, lastStudiedAt }) => <RecentDeck key={deck.id} deck={deck} lastStudiedAt={lastStudiedAt} onPress={() => onOpenDeck(deck)} />)}
-        </View>
-      </> : null}
-
-      {resumeDeck && dashboard.recommendation.kind !== 'resume' ? <Card onPress={() => onOpenDeck(resumeDeck, 'audio')} accessibilityLabel={`Resume StudyCast, ${resumeDeck.title}, from your saved position`} style={styles.resumeCard}><View style={[styles.resumeIcon, { backgroundColor: colors.primarySoft }]}><Icon name="headphones" color={colors.primary} /></View><View style={styles.resumeCopy}><Text style={[styles.resumeTitle, { color: colors.text }]}>Continue listening</Text><Text style={[styles.resumeSubtitle, { color: colors.textSecondary }]}>{resumeDeck.title} · Saved position</Text></View><Icon name="play-circle-outline" color={colors.primary} /></Card> : null}
+      <View onLayout={event => { uploadOffset.current = event.nativeEvent.layout.y; }}>
+        <AddStudyMaterialCard
+          colors={colors}
+          actionRef={uploadButton}
+          courseName={uploadCourse?.name}
+          onClearCourse={() => setUploadCourse(undefined)}
+          onPress={() => setImportSheetOpen(true)}
+          onDropAssets={(assets) => !isOpening() && acceptImportAssets(assets, uploadCourse)}
+          opening={choosingFiles}
+          primaryAction={!dashboard.decks.length}
+          error={importError}
+          status={uploadStatus}
+          onOpenPack={(deck) => onOpenDeck(deck)}
+        />
+      </View>
 
       <Text accessibilityRole="header" style={[styles.sectionLabel, { color: colors.text }]}>Study tools</Text>
       <View style={styles.quickActions}>
@@ -239,8 +245,20 @@ export function HomeScreen({
       <Text accessibilityRole="header" style={[styles.sectionLabel, { color: colors.text }]}>Make room to focus</Text>
       <PomodoroTimerCard />
       <Text style={[styles.localNote, { color: colors.textSecondary }]}>Study Packs and learning activity are stored on this device. Saved material is available offline; cloud AI needs a connection.</Text>
+      {importSheetOpen ? <HomeImportSheet
+        colors={colors}
+        reducedMotion={reducedMotion}
+        choosingFiles={choosingFiles}
+        onClose={() => setImportSheetOpen(false)}
+        onChooseFiles={() => {
+          if (!isOpening()) void pickDocument(uploadCourse).finally(() => setImportSheetOpen(false));
+        }}
+        onContinue={(text) => {
+          if (acceptImportAssets([{ name: 'Study notes.txt', uri: '', mimeType: 'text/plain', text }], uploadCourse)) setImportSheetOpen(false);
+        }}
+      /> : null}
       <HomePrioritySheet kind={priority} dashboard={dashboard} onClose={() => setPriority(null)} onDue={reviewDue} onWeak={studyWeak} onMistakes={() => onOpenMistakes(dashboard.mistakeIds)} onFlashcards={(deck) => onOpenDeck(deck, 'flashcards')} onPractice={practice} />
-    </Screen>
+    </ScrollView>
   );
 }
 
@@ -474,28 +492,6 @@ function QuickAction({ icon, label, detail, color, background, onPress }: { icon
   );
 }
 
-function RecentDeck({ deck, lastStudiedAt, onPress }: { deck: StudyPack; lastStudiedAt: string | null; onPress: () => void }) {
-  const { colors } = useStudyBolt();
-  return (
-    <Card onPress={onPress} accessibilityLabel={`${deck.fileType === 'demo' ? 'Open sample' : 'Resume'} ${deck.title}, ${deck.courseName}`} style={[styles.deckCard, styles.flatCard]}>
-      <SubjectIcon subject={deck.courseName} emoji={deck.emoji} size={52} />
-      <View style={styles.deckCopy}>
-        <View style={styles.deckTitleRow}>
-          <Text numberOfLines={2} style={[styles.deckTitle, { color: colors.text }]}>{deck.title}</Text>
-          {deck.fileType === 'demo' ? <Pill label="Sample" tone="neutral" /> : null}
-        </View>
-        <Text numberOfLines={2} style={[styles.deckSubtitle, { color: colors.textSecondary }]}>{deck.courseName}</Text>
-        <View style={styles.deckMetaRow}>
-          <Text style={[styles.deckMeta, { color: colors.textSecondary }]}>{deck.pageCount} {pageLabel(deck.fileType)}</Text>
-          <View style={[styles.dot, { backgroundColor: colors.textMuted }]} />
-          <Text style={[styles.deckMeta, { color: colors.textSecondary }]}>{lastStudiedAt ? `Last studied ${new Date(lastStudiedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : deck.fileType === 'demo' ? 'Explore the tools' : 'Ready to open'}</Text>
-        </View>
-      </View>
-      <Icon name="chevron-right" size={24} color={colors.textMuted} />
-    </Card>
-  );
-}
-
 const styles = StyleSheet.create({
   moreTools: { flexDirection: 'row', flexWrap: 'wrap', gap: 16, marginTop: 6 },
   moreTool: { flexDirection: 'row', alignItems: 'center', minHeight: 44, gap: 6 },
@@ -506,8 +502,8 @@ const styles = StyleSheet.create({
   avatarButton: { width: 44, height: 44, borderRadius: 22, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   avatar: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
   avatarText: { fontSize: 14, fontWeight: '800', color: '#12775E' },
-  heroCopy: { marginTop: 6, marginBottom: 18 },
-  dateRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginBottom: 7 },
+  heroCopy: { marginTop: 5, marginBottom: 16 },
+  dateRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginBottom: 6 },
   date: { fontSize: 12, lineHeight: 18, fontWeight: '600', letterSpacing: 0.4 },
   eyebrow: { fontSize: 10, fontWeight: '900', letterSpacing: 1.2, marginBottom: 8 },
   title: { fontSize: 27, lineHeight: 35, fontWeight: '800', letterSpacing: -0.65 },
@@ -516,12 +512,6 @@ const styles = StyleSheet.create({
   examIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   examTitle: { fontSize: 11, fontWeight: '900' },
   examText: { fontSize: 9, lineHeight: 13, marginTop: 3 },
-  resumeCard: { marginTop: 14, flexDirection: 'row', alignItems: 'center', padding: 15, gap: 11, shadowOpacity: 0, elevation: 0 },
-  resumeIcon: { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  resumeCopy: { flex: 1, minWidth: 0 },
-  resumeTitle: { fontSize: 15, lineHeight: 21, fontWeight: '800' },
-  resumeSubtitle: { fontSize: 12, lineHeight: 18, marginTop: 2 },
-  resumeDeck: { fontSize: 11, lineHeight: 17, marginTop: 4 },
   pomodoroCardStacked: { flexDirection: 'column', alignItems: 'stretch' },
   pomodoroHeading: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 9 },
   pomodoroControls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 8, flexShrink: 1 },
@@ -535,10 +525,6 @@ const styles = StyleSheet.create({
   pomodoroStop: { width: 44, height: 44, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   pomodoroAction: { width: 44, height: 44, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   sectionLabel: { fontSize: 17, fontWeight: '800', letterSpacing: -0.2, marginTop: 22 },
-  sectionHeading: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 20, marginBottom: 8 },
-  sectionHeadingText: { flex: 1, fontSize: 18, lineHeight: 25, fontWeight: '700' },
-  libraryLink: { minHeight: 44, paddingLeft: 6, flexDirection: 'row', alignItems: 'center', gap: 1 },
-  libraryLinkText: { fontSize: 14, lineHeight: 21, fontWeight: '600' },
   quickActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
   quickAction: { flexBasis: '48%', flexGrow: 1, minHeight: 74, borderRadius: 15, borderWidth: StyleSheet.hairlineWidth, padding: 10, paddingLeft: 50, justifyContent: 'center' },
   quickActionIcon: { position: 'absolute', left: 10, width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
@@ -548,17 +534,6 @@ const styles = StyleSheet.create({
   promise: { marginTop: 14, minHeight: 58, borderRadius: 16, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, gap: 11 },
   promiseIcon: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   promiseText: { flex: 1, fontSize: 12, lineHeight: 17, fontWeight: '600' },
-  deckList: { gap: 10 },
-  deckCard: { flexDirection: 'row', alignItems: 'center', padding: 12, gap: 12 },
-  flatCard: { shadowOpacity: 0, elevation: 0 },
-  deckCopy: { flex: 1, minWidth: 0 },
-  deckTitleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
-  deckTitle: { flex: 1, fontSize: 16, lineHeight: 23, fontWeight: '700' },
-  deckSubtitle: { fontSize: 14, lineHeight: 21, marginTop: 2 },
-  deckMetaRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 5 },
-  deckMeta: { fontSize: 12, lineHeight: 19 },
-  emptyMaterials: { fontSize: 13, lineHeight: 20, paddingVertical: 8 },
-  dot: { width: 3, height: 3, borderRadius: 2 },
   miniProgress: { marginTop: 7 },
   tipCard: { marginTop: 22 },
   tipRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },

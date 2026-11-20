@@ -39,10 +39,10 @@ export function PlanReadinessRing({ value, colors, accent, still }: { value: num
     previous.current = value;
     return () => progress.stopAnimation();
   }, [progress, still, value]);
-  const circleProps = { cx: 28, cy: 28, r: 22, fill: 'none', stroke: accent, strokeWidth: 4, strokeLinecap: 'round' as const, strokeDasharray: circumference + ' ' + circumference, transform: 'rotate(-90 28 28)' };
+  const circleProps = { cx: 28, cy: 28, r: 22, fill: 'none', stroke: colors.neon?.progressFill ?? accent, strokeWidth: 4, strokeLinecap: 'round' as const, strokeDasharray: circumference + ' ' + circumference, transform: 'rotate(-90 28 28)' };
   return <View accessible accessibilityRole="image" accessibilityLabel={value === null ? 'Knowledge: not assessed yet' : 'Knowledge: ' + value + '% of topics with consistent spaced recall. A practice estimate, not an exam prediction.'} style={[styles.ring, { width: size, height: size }]}>
     <Svg width={size} height={size} viewBox="0 0 56 56" {...(Platform.OS === 'web' ? { 'aria-hidden': true, focusable: false } : { accessible: false })}>
-      <Circle cx={28} cy={28} r={22} fill="none" stroke={colors.border} strokeWidth={4} />
+      <Circle cx={28} cy={28} r={22} fill="none" stroke={colors.neon?.progressTrack ?? colors.border} strokeWidth={4} />
       {value !== null ? Platform.OS === 'web' ? <Circle {...circleProps} strokeDashoffset={circumference * (1 - value / 100)} /> : <AnimatedCircle {...circleProps} strokeDashoffset={progress.interpolate({ inputRange: [0, 100], outputRange: [circumference, 0] })} /> : null}
     </Svg>
     <View style={styles.ringCenter}><Text maxFontSizeMultiplier={1.6} style={[styles.ringValue, { color: value === null ? colors.textMuted : colors.text }]}>{value === null ? '—' : value + '%'}</Text></View>

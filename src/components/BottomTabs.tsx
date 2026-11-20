@@ -36,6 +36,7 @@ const USE_NATIVE_DRIVER = Platform.OS !== 'web';
 
 export function BottomTabs({ active, onChange }: { active: MainTab; onChange: (tab: MainTab) => void }) {
   const { colors } = useStudyBolt();
+  const neon = colors.neon;
   const insets = useSafeAreaInsets();
   const reducedMotion = useReducedMotion();
   const activeIndex = TABS.findIndex((tab) => tab.id === active);
@@ -93,7 +94,7 @@ export function BottomTabs({ active, onChange }: { active: MainTab; onChange: (t
           styles.bar,
           {
             backgroundColor: colors.tabBar,
-            borderColor: colors.mode === 'dark' ? `${colors.primary}26` : colors.border,
+            borderColor: neon?.edge ?? (colors.mode === 'dark' ? `${colors.primary}26` : colors.border),
             shadowColor: colors.shadow,
             shadowOpacity: colors.mode === 'dark' ? 0.3 : 0.12,
           },
@@ -110,10 +111,10 @@ export function BottomTabs({ active, onChange }: { active: MainTab; onChange: (t
               style={[styles.selection, { width: tabWidth - 4, transform: [{ translateX }] }]}
             >
               <LinearGradient
-                colors={[colors.primarySoft, `${colors.primary}12`]}
+                colors={[colors.primarySoft, neon?.secondarySoft ?? `${colors.primary}12`]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
-                style={[styles.selectionFill, { borderColor: `${colors.primary}16` }]}
+                style={[styles.selectionFill, { borderColor: neon?.edge ?? `${colors.primary}16` }, neon && { boxShadow: `0px 0px 8px ${neon.glow}24` }]}
               />
             </Animated.View>
           ) : null}

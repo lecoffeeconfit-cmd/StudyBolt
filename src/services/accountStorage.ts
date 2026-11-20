@@ -21,6 +21,7 @@ export function createAccountStateStorage(storage: AccountStorage) {
     return result;
   }
   return {
+    readGuest: () => enqueue(() => storage.getItem(studyStateKey())),
     read: (userId?: string | null) => enqueue(async () => {
       const key = studyStateKey(userId);
       const saved = await storage.getItem(key);

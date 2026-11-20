@@ -29,7 +29,7 @@ export type DocumentUsageReservation = {
 
 export async function authenticateDocumentRequest(request: Request): Promise<{ context: DocumentUsageContext } | { response: Response }> {
   const token = request.headers.get('Authorization')?.match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
-  if (!token) return { response: json({ error: 'Sign in to process study materials.', code: 'authentication_required' }, 401) };
+  if (!token) return { response: json({ error: 'Start a secure StudyBolt session to process study materials.', code: 'authentication_required' }, 401) };
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -37,7 +37,7 @@ export async function authenticateDocumentRequest(request: Request): Promise<{ c
 
   const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
   const { data: { user }, error } = await admin.auth.getUser(token);
-  if (error || !user) return { response: json({ error: 'Your session expired. Sign in again to process this material.', code: 'authentication_required' }, 401) };
+  if (error || !user) return { response: json({ error: 'Your study session expired. Reopen StudyBolt and try again.', code: 'authentication_required' }, 401) };
 
   if (!studyBoltPrivacyPolicyUrl() || !studyBoltLegalDocumentsApproved()) {
     return { response: json({ error: 'Secure AI processing is paused until the StudyBolt privacy policy is complete and approved.', code: 'privacy_policy_required' }, 503) };
@@ -56,7 +56,8 @@ export async function authenticateDocumentRequest(request: Request): Promise<{ c
     premiumLimit: Math.max(1, Math.round(numberValue(row.premium_interaction_limit, 250))),
     softWarningRatio: Math.min(0.98, Math.max(0.5, numberValue(row.soft_warning_ratio, 0.8))),
   };
-  return { context: { admin, user, plan: effectiveStudyBoltPlan(user.app_metadata), period: monthlyPeriod(user, now), config } };
+  const plan = user.is_anonymous ? 'free' : effectiveStudyBoltPlan(user.app_metadata);
+  return { context: { admin, user, plan, period: monthlyPeriod(user, now), config } };
 }
 
 export function estimateDocumentCost(context: DocumentUsageContext, inputTokens: number, outputTokens: number): number {

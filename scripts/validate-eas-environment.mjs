@@ -41,6 +41,13 @@ export function validateEasBuildEnvironment(environment) {
     errors.push('EXPO_PUBLIC_SUPABASE_ANON_KEY is not configured.');
   }
   requireHttpsUrl(environment.EXPO_PUBLIC_STUDYBOLT_PROCESSOR_URL, 'EXPO_PUBLIC_STUDYBOLT_PROCESSOR_URL', errors, rejectProductionHosts);
+  if (errors.length === 0) {
+    const auth = new URL(environment.EXPO_PUBLIC_SUPABASE_URL);
+    const processor = new URL(environment.EXPO_PUBLIC_STUDYBOLT_PROCESSOR_URL);
+    if (auth.origin !== processor.origin) {
+      errors.push('StudyBolt Auth and document processing must use the same Supabase API origin.');
+    }
+  }
 
   return errors;
 }

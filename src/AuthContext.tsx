@@ -6,6 +6,7 @@ import {
   consumeAuthCallback,
   createAccount,
   deleteRemoteAccount,
+  getGuestDocumentToken,
   isAuthConfigured,
   loadAuthSession,
   openProviderSignIn,
@@ -29,7 +30,10 @@ interface AuthContextValue {
   user: AuthUser | null;
   profile: AuthProfile | null;
   needsStudyOnboarding: boolean;
+  callbackError: string | null;
+  clearCallbackError: () => void;
   getAccessToken: () => Promise<string | null>;
+  getDocumentAccessToken: () => Promise<string>;
   signIn: (email: string, password: string) => Promise<AuthResult>;
   signUp: (email: string, password: string, displayName: string) => Promise<AuthResult>;
   signInWithProvider: (provider: AuthProviderName) => Promise<AuthResult>;
@@ -49,6 +53,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [recoveryMode, setRecoveryMode] = useState(false);
+  const [callbackError, setCallbackError] = useState<string | null>(null);
   const profile = useMemo(() => readAuthProfile(session?.user), [session?.user]);
 
   const activeSession = useCallback(async (): Promise<AuthSession | null> => {
@@ -65,10 +70,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const handleUrl = useCallback(async (url: string) => {
     const result = await consumeAuthCallback(url);
     if (!result) return;
+    setCallbackError(result.error ?? null);
     if (result.session) setSession(result.session);
     if (result.recovery) setRecoveryMode(true);
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      window.history.replaceState({}, document.title, window.location.pathname);
+      window.history.replaceState(window.history.state, document.title, window.location.pathname);
     }
   }, []);
 
@@ -77,13 +83,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const hydrate = async () => {
       const saved = await loadAuthSession();
       if (mounted) setSession(saved);
-      const initialUrl = Platform.OS === 'web' && typeof window !== 'undefined'
-        ? window.location.href
-        : await Linking.getInitialURL();
-      if (initialUrl) await handleUrl(initialUrl);
-      if (mounted) setLoading(false);
+      try {
+        const initialUrl = Platform.OS === 'web' && typeof window !== 'undefined'
+          ? window.location.href
+          : await Linking.getInitialURL();
+        if (initialUrl && mounted) await handleUrl(initialUrl);
+      } finally {
+        if (mounted) setLoading(false);
+      }
     };
-    void hydrate();
+    void hydrate().catch(() => undefined);
     const subscription = Linking.addEventListener('url', ({ url }) => void handleUrl(url));
     return () => {
       mounted = false;
@@ -118,10 +127,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     configured: isAuthConfigured,
     loading,
     recoveryMode,
-    user: session?.user ?? null,
+    callbackError,
+    clearCallbackError: () => setCallbackError(null),
+    user: session?.user.is_anonymous ? null : session?.user ?? null,
     profile,
     needsStudyOnboarding: Boolean(profile?.onboardingRequired && !profile.onboardingCompleted),
-    getAccessToken: async () => (await activeSession())?.access_token ?? null,
+    getAccessToken: async () => session?.user.is_anonymous ? null : (await activeSession())?.access_token ?? null,
+    getDocumentAccessToken: async () => {
+      if (!session || session.user.is_anonymous) return getGuestDocumentToken();
+      const current = await activeSession();
+      if (!current) throw new Error('Your account session expired. Sign in again, then retry your import.');
+      return current.access_token;
+    },
     signIn: async (email, password) => {
       const result = await signInWithEmail(email, password);
       if (result.session) setSession(result.session);
@@ -132,7 +149,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (result.session) setSession(result.session);
       return result;
     },
-    signInWithProvider: openProviderSignIn,
+    signInWithProvider: async (provider) => {
+      setCallbackError(null);
+      const result = await openProviderSignIn(provider);
+      if (result.session) setSession(result.session);
+      return result;
+    },
     forgotPassword: requestPasswordReset,
     resendConfirmationEmail: resendSignupConfirmation,
     changeEmail: async (email) => {
@@ -165,7 +187,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return result;
     },
     finishRecovery: () => setRecoveryMode(false),
-  }), [activeSession, loading, profile, recoveryMode, session]);
+  }), [activeSession, callbackError, loading, profile, recoveryMode, session]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

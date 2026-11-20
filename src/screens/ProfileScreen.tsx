@@ -48,9 +48,10 @@ function retentionLabel(mode: RetentionMode): string {
 }
 
 export function ProfileScreen({ onOpenOnboarding, onOpenAuth, onManageAccount, onOpenWidgets, onOpenLegal, onOpenAdmin, onOpenSupport, onOpenPremium, isAdmin = false }: { onOpenOnboarding: () => void; onOpenAuth: () => void; onManageAccount: () => void; onOpenWidgets: () => void; onOpenLegal: () => void; onOpenAdmin: () => void; onOpenSupport: () => void; onOpenPremium: () => void; isAdmin?: boolean }) {
-  const { colors, state, setRetentionMode, setTheme } = useStudyBolt();
+  const { colors, state, setRetentionMode, setTheme, librarySyncStatus, syncLibraryNow, guestPacksAvailable, saveGuestPacks } = useStudyBolt();
   const { user, profile, updateProfile } = useAuth();
   const { preferences: narrationPreferences, voices: narrationVoices, loading: narrationLoading, updatePreferences: saveNarrationPreferences } = useNarrationPreferences();
+  const [showSaveGuest, setShowSaveGuest] = useState(false);
   const [studyTypeBusy, setStudyTypeBusy] = useState(false);
   const [studyTypeNotice, setStudyTypeNotice] = useState<string | null>(null);
   const [timerSettings, setTimerSettings] = useState(DEFAULT_STUDY_TIMER_SETTINGS);
@@ -111,10 +112,33 @@ export function ProfileScreen({ onOpenOnboarding, onOpenAuth, onManageAccount, o
           <View style={[styles.syncIcon, { backgroundColor: colors.primary }]}><Icon name="cloud-sync" color={colors.primaryText} size={22} /></View>
           <View style={{ flex: 1 }}>
             <Text style={[styles.syncTitle, { color: colors.text }]}>{user ? 'Account & security' : 'Your study space'}</Text>
-            <Text style={[styles.syncText, { color: colors.textSecondary }]}>{user ? 'Change your email, reset your password, or manage your account.' : 'Study Packs stay on this device. Sign in for cloud tools and membership access.'}</Text>
+            <Text style={[styles.syncText, { color: colors.textSecondary }]}>{user ? 'Change your email, reset your password, or manage your account.' : 'Build and study on this device as a guest. Sign in to keep your Study Packs in sync across devices.'}</Text>
           </View>
         </View>
         <PrimaryButton label={user ? 'Manage account' : 'Sign in or create account'} icon={user ? 'shield-account-outline' : 'login'} onPress={user ? onManageAccount : onOpenAuth} style={styles.syncButton} />
+        {user ? <View style={[styles.librarySyncRow, { borderColor: colors.border }]}>
+          <Icon name={librarySyncStatus === 'synced' ? 'cloud-check-outline' : 'cloud-outline'} color={colors.primary} size={19} />
+          <Text accessibilityLiveRegion="polite" style={[styles.librarySyncText, { color: colors.textSecondary }]}>
+            {librarySyncStatus === 'syncing' ? 'Syncing Study Packs…'
+              : librarySyncStatus === 'synced' ? 'Study Packs are up to date'
+                : librarySyncStatus === 'waiting' ? 'Sync paused. You can keep studying on this device.'
+                  : 'Study Pack sync'}
+          </Text>
+          {librarySyncStatus === 'waiting' ? <Pressable accessibilityRole="button" onPress={syncLibraryNow} style={styles.libraryRetry}><Text style={[styles.libraryRetryText, { color: colors.primary }]}>Retry</Text></Pressable> : null}
+        </View> : null}
+        {user && guestPacksAvailable > 0 ? <View style={[styles.guestPacks, { backgroundColor: colors.card }]}>
+          <Icon name="folder-move-outline" color={colors.primary} size={21} />
+          <View style={styles.librarySyncText}>
+            <Text style={[styles.syncTitle, { color: colors.text }]}>{guestPacksAvailable} guest {guestPacksAvailable === 1 ? 'pack' : 'packs'} on this device</Text>
+            <Text style={[styles.syncText, { color: colors.textSecondary }]}>Copy your guest packs into this account to study them on your other devices.</Text>
+            {showSaveGuest ? <View style={styles.guestActions}>
+              <PrimaryButton label="Copy to my account" icon="check" onPress={() => { saveGuestPacks(); setShowSaveGuest(false); }} />
+              <Pressable accessibilityRole="button" onPress={() => setShowSaveGuest(false)} style={styles.libraryRetry}><Text style={[styles.libraryRetryText, { color: colors.textSecondary }]}>Cancel</Text></Pressable>
+            </View> : <Pressable accessibilityRole="button" onPress={() => setShowSaveGuest(true)} style={styles.libraryRetry}>
+              <Text style={[styles.libraryRetryText, { color: colors.primary }]}>Save guest packs</Text>
+            </Pressable>}
+          </View>
+        </View> : null}
       </Card>
 
       <SectionHeader title="Membership" />
@@ -481,6 +505,12 @@ const styles = StyleSheet.create({
   syncTitle: { fontSize: 14, fontWeight: '800' },
   syncText: { fontSize: 14, lineHeight: 21, marginTop: 3 },
   syncButton: { minHeight: 46, marginTop: 14 },
+  librarySyncRow: { borderTopWidth: StyleSheet.hairlineWidth, marginTop: 14, paddingTop: 8, minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  librarySyncText: { flex: 1, minWidth: 0, fontSize: 13, lineHeight: 19 },
+  libraryRetry: { minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start' },
+  libraryRetryText: { fontSize: 14, fontWeight: '700' },
+  guestPacks: { marginTop: 10, borderRadius: 15, padding: 13, flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  guestActions: { marginTop: 10, gap: 2 },
   studyTypeCard: { padding: 14 },
   studyTypeQuestion: { fontSize: 14, fontWeight: '900' },
   studyTypeHint: { fontSize: 14, lineHeight: 21, marginTop: 3 },

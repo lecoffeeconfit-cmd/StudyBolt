@@ -12,7 +12,8 @@ import { useReducedMotion } from '../hooks/useReducedMotion';
 import { useStudyBolt } from '../StudyBoltContext';
 import type { ImportAsset, LibrarySort, StudyClass, StudyEvent, StudyPack } from '../models';
 import { calculateCourseMastery, calculateMastery } from '../services/mastery';
-import { DOCUMENT_PICKER_TYPE, getImportDocumentType, pageLabel } from '../services/documentTypes';
+import { DOCUMENT_PICKER_TYPE, pageLabel } from '../services/documentTypes';
+import { StudyBoltProcessingError, validateImportBatch } from '../services/documentProcessor';
 import { getStudyEventMinutes } from '../services/studyActivity';
 import { radius , typography } from '../theme';
 
@@ -312,13 +313,10 @@ export function LibraryScreen({
       if (result.canceled) return;
       const assets = result.assets.map((asset) => ({ name: asset.name, uri: asset.uri, mimeType: asset.mimeType, size: asset.size, file: asset.file }));
       if (!assets.length) return;
-      if (assets.length > 1 && assets.some((asset) => getImportDocumentType(asset.name, asset.mimeType) !== 'powerpoint')) {
-        Alert.alert('Choose PowerPoints together', 'To create one integrated Study Pack, select only PowerPoint files. Other file types can be imported one at a time.');
-        return;
-      }
+      validateImportBatch(assets);
       onImport(assets, course);
-    } catch {
-      Alert.alert('Couldn’t open files', 'Check file permissions, then try again.');
+    } catch (error) {
+      Alert.alert('Couldn’t open files', error instanceof StudyBoltProcessingError ? error.userMessage : 'Check file permissions, then try again.');
     }
   };
 

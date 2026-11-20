@@ -1,4 +1,4 @@
-export type ThemePreference = 'system' | 'light' | 'dark';
+export type ThemePreference = 'system' | 'light' | 'dark' | 'neon';
 export type RetentionMode = 'standard' | 'fsrs' | 'sm2';
 export type StudyType = 'college' | 'graduate_school' | 'professional' | 'other';
 export type FlashcardConfidence = 'new' | 'learning' | 'known';
@@ -197,6 +197,7 @@ export interface StudyEvent {
 export type StudyEventInput = Omit<StudyEvent, 'id' | 'occurredAt'> & { id?: string; occurredAt?: string };
 
 export interface StudyPack {
+  libraryModifiedAt?: string;
   id: string;
   courseId: string;
   courseName: string;
@@ -535,6 +536,7 @@ export interface ConceptMasteryRecord {
 }
 
 export interface StudyClass {
+  libraryModifiedAt?: string;
   id: string;
   name: string;
   emoji: string;
@@ -595,4 +597,6 @@ export interface ImportAsset {
   mimeType?: string | null;
   size?: number | null;
   file?: unknown;
+  /** Draft text stays in memory until the user consents to processing. */
+  text?: string;
 }

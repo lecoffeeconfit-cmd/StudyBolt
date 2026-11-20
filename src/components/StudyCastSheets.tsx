@@ -301,7 +301,7 @@ export function AskStudyBoltSheet({
 
             {response?.kind === 'answer' ? (
               <View style={[styles.answerBox, { backgroundColor: colors.purpleSoft }]}>
-                <View style={styles.answerHeading}><View style={[styles.answerAvatar, { backgroundColor: colors.purple }]}><Icon name="lightning-bolt" size={17} color="#FFFFFF" /></View><Text style={[styles.answerLabel, { color: colors.purple }]}>STUDYBOLT</Text></View>
+                <View style={styles.answerHeading}><View style={[styles.answerAvatar, { backgroundColor: colors.purple }]}><Icon name="lightning-bolt" size={17} color={colors.neon ? colors.primaryText : '#FFFFFF'} /></View><Text style={[styles.answerLabel, { color: colors.purple }]}>STUDYBOLT</Text></View>
                 <Text selectable accessibilityLiveRegion="polite" style={[styles.answerText, { color: colors.text }]}>{response.answer}</Text>
                 <Pressable accessibilityRole="button" onPress={() => onSpeak(response.answer)} style={[styles.speakButton, { backgroundColor: colors.card }]}><Icon name="volume-high" size={18} color={colors.purple} /><Text style={[styles.speakText, { color: colors.purple }]}>Read answer aloud</Text></Pressable>
               </View>

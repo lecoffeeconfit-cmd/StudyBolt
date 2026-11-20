@@ -6,7 +6,7 @@ import { Icon, Pill, PrimaryButton } from '../components/ui';
 import { LoadingArtwork } from '../components/StudyBoltLoading';
 import { useStudyBolt } from '../StudyBoltContext';
 import type { ImportAsset, StudyPack } from '../models';
-import { documentIcon, documentTypeLabel, getImportDocumentType } from '../services/documentTypes';
+import { documentIcon, getImportDocumentLabel, getImportDocumentType } from '../services/documentTypes';
 import { processDocument, type DocumentProcessPhase, StudyBoltProcessingError, validateImport, validateImportBatch } from '../services/documentProcessor';
 import { combineImportedPowerPoints } from '../services/studyPack';
 import { fetchTutorQuota } from '../services/aiTutor';
@@ -14,18 +14,21 @@ import { canUseRevenueCat, syncRevenueCatEntitlement } from '../services/subscri
 import { useAuth } from '../AuthContext';
 import { LEGAL_URLS } from '../config/legal';
 
-export function ProcessingScreen({ assets, courseId, courseName, onCancel, onSuccess, onTrySample, onRequireAuth }: { assets: ImportAsset[]; courseId?: string; courseName?: string; onCancel: () => void; onSuccess: (deck: StudyPack) => void; onTrySample: () => void; onRequireAuth: (className: string) => void }) {
+export function ProcessingScreen({ assets, courseId, courseName, onCancel, onSuccess, onTrySample }: { assets: ImportAsset[]; courseId?: string; courseName?: string; onCancel: () => void; onSuccess: (deck: StudyPack) => void; onTrySample: () => void }) {
   const { colors } = useStudyBolt();
-  const { getAccessToken } = useAuth();
+  const { getDocumentAccessToken, user } = useAuth();
+  const documentToken = useRef(getDocumentAccessToken);
+  documentToken.current = getDocumentAccessToken;
+  const signedIn = Boolean(user);
   const insets = useSafeAreaInsets();
   const [processedPacks, setProcessedPacks] = useState<StudyPack[]>([]);
   const processedPacksRef = useRef<StudyPack[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const asset: ImportAsset = assets[currentIndex] ?? assets[0] ?? { name: 'study material', uri: '' };
   const importDocumentType = getImportDocumentType(asset.name, asset.mimeType);
-  const importLabel = importDocumentType ? documentTypeLabel(importDocumentType) : 'document';
+  const fromNotes = asset.text !== undefined;
+  const importLabel = fromNotes ? 'notes' : getImportDocumentLabel(asset.name, asset.mimeType);
   const [error, setError] = useState<string | null>(null);
-  const [authRequired, setAuthRequired] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
   const [className, setClassName] = useState(courseName ?? '');
   const [cloudConsent, setCloudConsent] = useState(false);
@@ -40,7 +43,6 @@ export function ProcessingScreen({ assets, courseId, courseName, onCancel, onSuc
     setStarted(false);
     setCloudConsent(false);
     setError(null);
-    setAuthRequired(false);
     setNameError(null);
     setAttempt(0);
     startedAt.current = courseName ? Date.now() : null;
@@ -67,17 +69,17 @@ export function ProcessingScreen({ assets, courseId, courseName, onCancel, onSuc
     try {
       validateImportBatch(assets);
       validateImport(asset);
-      void getAccessToken()
+      if (!signedIn && assets.length > 1) {
+        setError('Guest study supports one PowerPoint per import. Choose one PowerPoint to continue.');
+        return;
+      }
+      void documentToken.current()
+        .catch((reason: unknown) => {
+          throw new StudyBoltProcessingError('Could not open document session', reason instanceof Error ? reason.message : 'Could not connect to secure processing. Please try again.');
+        })
         .then(async (accessToken) => {
           if (!mounted) return undefined;
-          if (!accessToken) {
-            if (mounted) {
-              setAuthRequired(true);
-              setError('Sign in to securely process and save this study material.');
-            }
-            return undefined;
-          }
-          if (getImportDocumentType(asset.name, asset.mimeType) === 'powerpoint' && canUseRevenueCat()) {
+          if (signedIn && getImportDocumentType(asset.name, asset.mimeType) === 'powerpoint' && canUseRevenueCat()) {
             const subscriptionStatus = await syncRevenueCatEntitlement(accessToken);
             if (!mounted) return undefined;
             if (subscriptionStatus.error && subscriptionStatus.status !== 'throttled') {
@@ -131,17 +133,16 @@ export function ProcessingScreen({ assets, courseId, courseName, onCancel, onSuc
           setError(message);
         });
     } catch (reason) {
-      const message = reason instanceof StudyBoltProcessingError ? reason.userMessage : 'Choose a PDF, PowerPoint, or notes file and try again.';
+      const message = reason instanceof StudyBoltProcessingError ? reason.userMessage : 'Choose a study material file and try again.';
       setError(message);
     }
     return () => {
       mounted = false;
     };
-  }, [assets, asset, attempt, className, courseId, courseName, currentIndex, getAccessToken, onRequireAuth, onSuccess, started]);
+  }, [assets, asset, attempt, className, courseId, courseName, currentIndex, onSuccess, signedIn, started]);
 
   const retryProcessing = () => {
     setError(null);
-    setAuthRequired(false);
     startedAt.current = Date.now();
     setElapsedSeconds(0);
     setPhase('validating');
@@ -209,14 +210,12 @@ export function ProcessingScreen({ assets, courseId, courseName, onCancel, onSuc
               ? <PrimaryButton label="Choose fewer presentations" icon="layers-triple-outline" onPress={onCancel} style={styles.action} />
               : mustChooseSinglePowerPoint
                 ? <PrimaryButton label="Choose one PowerPoint" icon="file-presentation-box" onPress={onCancel} style={styles.action} />
-              : authRequired
-                ? <PrimaryButton label="Sign in to continue" icon="account-outline" onPress={() => onRequireAuth(className.trim())} style={styles.action} />
-                : <PrimaryButton label={assets.length > 1 ? 'Retry this PowerPoint' : 'Try again'} icon="refresh" onPress={retryProcessing} style={styles.action} />}
+              : <PrimaryButton label={assets.length > 1 ? 'Retry this PowerPoint' : 'Try again'} icon="refresh" onPress={retryProcessing} style={styles.action} />}
             <Pressable accessibilityRole="button" onPress={onTrySample} style={styles.secondaryAction}>
               <Text style={[styles.secondaryText, { color: colors.primary }]}>Explore the sample Study Pack</Text>
             </Pressable>
             <Pressable accessibilityRole="button" accessibilityLabel="Cancel import" onPress={onCancel} style={styles.secondaryAction}>
-              <Text style={[styles.secondaryText, { color: colors.textSecondary }]}>Choose another file</Text>
+              <Text style={[styles.secondaryText, { color: colors.textSecondary }]}>{fromNotes ? 'Cancel' : 'Choose another file'}</Text>
             </Pressable>
           </>
         ) : !started ? (
@@ -242,7 +241,7 @@ export function ProcessingScreen({ assets, courseId, courseName, onCancel, onSuc
               </View>
             )}
             <View style={[styles.disclosureCard, { backgroundColor: colors.primarySoft, borderColor: colors.border }]}>
-              <Text style={[styles.disclosure, { color: colors.textSecondary }]}>To build this Study Pack, StudyBolt sends the selected file and class name to its secure server and OpenAI for processing. Don’t upload sensitive or confidential information unless you’re allowed to share it.</Text>
+              <Text style={[styles.disclosure, { color: colors.textSecondary }]}>To build this Study Pack, StudyBolt sends {fromNotes ? 'your notes' : 'the selected file'} and class name to its secure server and OpenAI for processing. Don’t upload sensitive or confidential information unless you’re allowed to share it.</Text>
               <Pressable aria-checked={cloudConsent}
                 accessibilityRole="checkbox"
                 accessibilityLabel="I agree to send this study material to StudyBolt and OpenAI for processing"
@@ -276,8 +275,14 @@ export function ProcessingScreen({ assets, courseId, courseName, onCancel, onSuc
             </View>
             {nameError ? <Text style={[styles.nameError, { color: colors.danger }]}>{nameError}</Text> : null}
             <PrimaryButton label={assets.length > 1 ? 'Build integrated Study Pack' : 'Build my Study Pack'} icon="creation" onPress={startProcessing} disabled={!cloudConsent} style={styles.action} />
+            <View style={styles.storageNote}>
+              <Icon name={signedIn ? 'cloud-sync-outline' : 'cellphone'} size={17} color={colors.primary} />
+              <Text style={[styles.storageNoteCopy, { color: colors.textSecondary }]}>{signedIn
+                ? 'Your Study Pack syncs to your account when it’s ready.'
+                : 'Guest packs stay on this device. You can sign in later to sync them.'}</Text>
+            </View>
             <Pressable accessibilityRole="button" accessibilityLabel="Cancel import" onPress={onCancel} style={styles.secondaryAction}>
-              <Text style={[styles.secondaryText, { color: colors.textSecondary }]}>Choose another file</Text>
+              <Text style={[styles.secondaryText, { color: colors.textSecondary }]}>{fromNotes ? 'Cancel' : 'Choose another file'}</Text>
             </Pressable>
           </>
         ) : (
@@ -326,6 +331,8 @@ export function ProcessingScreen({ assets, courseId, courseName, onCancel, onSuc
 }
 
 const styles = StyleSheet.create({
+  storageNote: { marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 7 },
+  storageNoteCopy: { flexShrink: 1, fontSize: 13, lineHeight: 19 },
   page: { flex: 1, paddingHorizontal: 22 },
   topBar: { height: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   closeButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },

@@ -80,7 +80,14 @@ function withPlanDates(plan: StudyPlan): StudyPlan {
 export async function loadStudyBoltState(userId?: string): Promise<StudyBoltState> {
   // A storage failure must not become an empty library that autosave can write
   // over the student's existing data. Let the provider offer a safe retry.
-  const raw = await accountStateStorage.read(userId);
+  return parseStudyBoltState(await accountStateStorage.read(userId));
+}
+
+export async function loadGuestStudyLibrary(): Promise<StudyBoltState> {
+  return parseStudyBoltState(await accountStateStorage.readGuest());
+}
+
+function parseStudyBoltState(raw: string | null): StudyBoltState {
   try {
     if (raw === null) return initialState;
     const parsed = JSON.parse(raw) as Partial<StudyBoltState>;
@@ -96,6 +103,9 @@ export async function loadStudyBoltState(userId?: string): Promise<StudyBoltStat
     return {
       ...initialState,
       ...parsed,
+      theme: parsed.theme === 'system' || parsed.theme === 'light' || parsed.theme === 'dark' || parsed.theme === 'neon'
+        ? parsed.theme
+        : initialState.theme,
       classes,
       decks,
       flaggedItems: Array.isArray(parsed.flaggedItems) ? parsed.flaggedItems.filter(isFlaggedItem) : [],
