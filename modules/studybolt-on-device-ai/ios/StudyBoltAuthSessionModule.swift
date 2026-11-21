@@ -2,9 +2,9 @@ import AuthenticationServices
 import ExpoModulesCore
 import UIKit
 
-public final class StudyBoltAuthSessionModule: Module, ASWebAuthenticationPresentationContextProviding {
+public final class StudyBoltAuthSessionModule: Module {
   private var session: ASWebAuthenticationSession?
-  private weak var anchor: UIWindow?
+  private var presentationProvider: AuthSessionPresentationProvider?
 
   public func definition() -> ModuleDefinition {
     Name("StudyBoltAuthSession")
@@ -19,11 +19,12 @@ public final class StudyBoltAuthSessionModule: Module, ASWebAuthenticationPresen
         return
       }
 
-      self.anchor = window
+      let presentationProvider = AuthSessionPresentationProvider(window: window)
+      self.presentationProvider = presentationProvider
       let session = ASWebAuthenticationSession(url: url, callbackURLScheme: "studybolt") { [weak self] url, error in
         DispatchQueue.main.async {
           self?.session = nil
-          self?.anchor = nil
+          self?.presentationProvider = nil
           if let url {
             promise.resolve(["type": "success", "url": url.absoluteString])
           } else if (error as? ASWebAuthenticationSessionError)?.code == .canceledLogin {
@@ -33,17 +34,26 @@ public final class StudyBoltAuthSessionModule: Module, ASWebAuthenticationPresen
           }
         }
       }
-      session.presentationContextProvider = self
+      session.presentationContextProvider = presentationProvider
       self.session = session
       if !session.start() {
         self.session = nil
-        self.anchor = nil
+        self.presentationProvider = nil
         promise.resolve(["type": "error"])
       }
     }.runOnQueue(.main)
   }
+}
+
+private final class AuthSessionPresentationProvider: NSObject, ASWebAuthenticationPresentationContextProviding {
+  private weak var window: UIWindow?
+
+  init(window: UIWindow) {
+    self.window = window
+    super.init()
+  }
 
   public func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-    anchor ?? ASPresentationAnchor()
+    window ?? ASPresentationAnchor()
   }
 }

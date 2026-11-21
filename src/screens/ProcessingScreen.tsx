@@ -27,6 +27,7 @@ export function ProcessingScreen({ assets, courseId, courseName, onCancel, onSuc
   const asset: ImportAsset = assets[currentIndex] ?? assets[0] ?? { name: 'study material', uri: '' };
   const importDocumentType = getImportDocumentType(asset.name, asset.mimeType);
   const fromNotes = asset.text !== undefined;
+  const sourceName = fromNotes ? 'Study notes' : asset.name;
   const importLabel = fromNotes ? 'notes' : getImportDocumentLabel(asset.name, asset.mimeType);
   const [error, setError] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
@@ -203,7 +204,7 @@ export function ProcessingScreen({ assets, courseId, courseName, onCancel, onSuc
             <Text style={[styles.description, { color: colors.textSecondary }]}>{assets.length > 1 && processedPacks.length > 0 && !allSourcesProcessed ? `${error} ${processedPacks.length} of ${assets.length} PowerPoints are ready; retry continues with this presentation.` : error}</Text>
             <View style={[styles.fileCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <Icon name={importDocumentType ? documentIcon(importDocumentType) : 'file-document-outline'} color={colors.primary} />
-              <Text numberOfLines={1} style={[styles.fileName, { color: colors.text }]}>{asset.name}</Text>
+              <Text numberOfLines={1} style={[styles.fileName, { color: colors.text }]}>{sourceName}</Text>
               <Icon name="shield-check-outline" color={colors.mint} />
             </View>
             {allSourcesProcessed
@@ -236,12 +237,12 @@ export function ProcessingScreen({ assets, courseId, courseName, onCancel, onSuc
             ) : (
               <View style={[styles.fileCard, { backgroundColor: colors.card, borderColor: colors.border }] }>
                 <Icon name={importDocumentType ? documentIcon(importDocumentType) : 'file-document-outline'} color={colors.primary} />
-                <Text numberOfLines={1} style={[styles.fileName, { color: colors.text }]}>{asset.name}</Text>
+                <Text numberOfLines={1} style={[styles.fileName, { color: colors.text }]}>{sourceName}</Text>
                 <Icon name="shield-check-outline" color={colors.mint} />
               </View>
             )}
             <View style={[styles.disclosureCard, { backgroundColor: colors.primarySoft, borderColor: colors.border }]}>
-              <Text style={[styles.disclosure, { color: colors.textSecondary }]}>To build this Study Pack, StudyBolt sends {fromNotes ? 'your notes' : 'the selected file'} and class name to its secure server and OpenAI for processing. Don’t upload sensitive or confidential information unless you’re allowed to share it.</Text>
+              <Text style={[styles.disclosure, { color: colors.textSecondary }]}>To build this Study Pack, StudyBolt sends {fromNotes ? 'your notes' : 'the selected file'} and the class name to its secure server and OpenAI for processing. Don’t upload sensitive or confidential information unless you’re allowed to share it.</Text>
               <Pressable aria-checked={cloudConsent}
                 accessibilityRole="checkbox"
                 accessibilityLabel="I agree to send this study material to StudyBolt and OpenAI for processing"
@@ -299,7 +300,7 @@ export function ProcessingScreen({ assets, courseId, courseName, onCancel, onSuc
                 <Text style={[styles.working, { color: colors.goldText }]}>Private</Text>
               </View>
               <View style={styles.activityRows}>
-                <ProcessingStepRow label={assets.length > 1 ? 'Selected study set' : 'Selected source'} detail={assets.length > 1 ? `${assets.length} presentations selected · ${processedPacks.length} ready` : asset.name} state="done" colors={colors} />
+                <ProcessingStepRow label={assets.length > 1 ? 'Selected study set' : 'Selected source'} detail={assets.length > 1 ? `${assets.length} presentations selected · ${processedPacks.length} ready` : sourceName} state="done" colors={colors} />
                 <ProcessingStepRow label={processingMessage} detail={phase === 'finalizing' ? 'Response received · finishing up' : 'Secure request in progress'} state="active" colors={colors} />
                 <ProcessingStepRow label="Build study materials" detail="Notes, cards, quiz, and audio follow next" state="queued" colors={colors} />
               </View>
