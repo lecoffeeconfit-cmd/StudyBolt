@@ -234,9 +234,10 @@ export function StudyBoltNavigator() {
 
   const showAccountOnboarding = !recoveryMode && Boolean(user && needsStudyOnboarding);
   const showOnboarding = !recoveryMode && !showAccountOnboarding && (route.type === 'onboarding' || (!user && route.type === 'main' && !callbackError && !state.hasCompletedOnboarding));
+  const showWideHome = Platform.OS === 'web' && route.type === 'main' && tab === 'home' && !showAccountOnboarding;
 
   return (
-    <View style={[styles.app, showOnboarding && styles.onboardingApp, { backgroundColor: colors.background }]}>
+    <View style={[styles.app, (showOnboarding || showWideHome) && styles.fullWidthApp, { backgroundColor: colors.background }]}>
       <StatusBar style={colors.mode === 'dark' ? 'light' : 'dark'} />
       {showAccountOnboarding ? <AccountOnboardingScreen onComplete={finishAccountOnboarding} /> : null}
       {!showOnboarding && !showAccountOnboarding && route.type === 'auth' ? (
@@ -377,7 +378,7 @@ export function StudyBoltNavigator() {
 }
 
 const styles = StyleSheet.create({
-  onboardingApp: { maxWidth: '100%' },
+  fullWidthApp: { maxWidth: '100%' },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   app: {
     flex: 1,

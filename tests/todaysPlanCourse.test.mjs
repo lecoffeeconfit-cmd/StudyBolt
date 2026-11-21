@@ -111,3 +111,38 @@ test('existing readiness evidence unlocks the score only for the class that prod
   assert.equal(b.group.mastery, null);
   assert.equal(b.group.quizAccuracy, null);
 });
+
+test('an imminent exam uses a ready pack in its saved scope even when another class has review evidence', () => {
+  const biology = pack('Biology review', 'a');
+  const chemistry = pack('Chemistry review', 'b');
+  const source = state([course('a'), course('b')], [biology, chemistry], [
+    attempt('miss1', biology.id, 3, [['q1', false]]),
+    attempt('miss2', biology.id, 1, [['q1', false]]),
+  ]);
+  source.plan = { scope: { type: 'course', id: 'b' }, days: [], exam: { title: 'Chemistry midterm', date: '2026-11-14' } };
+  const localNow = new Date(2026, 10, 13, 12);
+  const groups = buildLearningMastery(source, localNow);
+  const plan = todaysPlanCourse(source, { packs: groups.flatMap(group => group.packs), practicedPacks: 1, nextPractice: null }, localNow);
+  assert.equal(plan.primary.action.deck.id, chemistry.id);
+  assert.equal(plan.primary.title, 'Prepare for Chemistry midterm');
+  assert.equal(plan.examLabel, 'Exam tomorrow');
+});
+
+test('today’s plan skips completed, unavailable, and out-of-scope tasks', () => {
+  const source = state([course('a'), course('b')], [pack('One', 'a'), pack('Two', 'b')]);
+  source.plan = { scope: { type: 'deck', id: 'Two' }, days: [{
+    date: now.toISOString(),
+    blocks: [
+      { modality: 'notes', label: 'Read key notes', complete: true },
+      { modality: 'audio', label: 'Listen to a summary', complete: false },
+      { modality: 'quiz', label: 'Practice chapter quiz', complete: false },
+    ],
+  }] };
+  // Generation still gates an audio tab, even if cards are already ready.
+  source.decks[1].generation = { materials: { audio: { status: 'queued' }, quiz: { status: 'ready' }, flashcards: { status: 'ready' } } };
+  const [a, b] = plans(source);
+  assert.equal(a.primary.action.tool, 'notes');
+  assert.equal(b.primary.action.deck.id, 'Two');
+  assert.equal(b.primary.action.tool, 'quiz');
+  assert.equal(b.primary.title, 'Practice chapter quiz');
+});

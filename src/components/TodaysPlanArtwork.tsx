@@ -1,59 +1,59 @@
-import React, { useEffect, useRef } from 'react';
-import { Animated, Easing, Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Circle, Path } from 'react-native-svg';
-import type { AppColors } from '../theme';
+import React, { useEffect, useRef } from 'react';
+import { Animated, Easing, Platform, StyleSheet, View } from 'react-native';
 
-const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+import { Icon } from './ui';
 
-export function PlanBook({ colors, still, compact = false }: { colors: AppColors; still: boolean; compact?: boolean }) {
+/** A small stack of study cards, with a single lift as the plan appears. */
+export function TodaysPlanArtwork({ still, size }: { still: boolean; size: 'small' | 'medium' | 'large' }) {
   const lift = useRef(new Animated.Value(1)).current;
   useEffect(() => {
     lift.setValue(still ? 1 : 0);
-    const motion = Animated.timing(lift, { toValue: 1, duration: 740, easing: Easing.out(Easing.cubic), useNativeDriver: Platform.OS !== 'web', isInteraction: false });
-    if (!still) motion.start();
-    return () => motion.stop();
+    if (still) return;
+    const animation = Animated.timing(lift, {
+      toValue: 1, duration: 460, easing: Easing.out(Easing.cubic),
+      useNativeDriver: Platform.OS !== 'web', isInteraction: false,
+    });
+    animation.start();
+    return () => animation.stop();
   }, [lift, still]);
-  return <View aria-hidden accessible={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[styles.book, compact && { width: 34, height: 36 }]}>
-    <LinearGradient colors={[colors.primarySoft, colors.card]} style={styles.bookSurface} />
-    <Animated.View style={{ transform: still ? [] : [{ rotate: lift.interpolate({ inputRange: [0, 0.45, 1], outputRange: ['-6deg', '2deg', '0deg'] }) }] }}><Svg width={30} height={29} viewBox="0 0 36 34" {...(Platform.OS === 'web' ? { 'aria-hidden': true, focusable: false } : { accessible: false })}>
-      <Path d="M3 7Q10 4 18 9Q26 4 33 7V29Q25 26 18 31Q11 26 3 29Z" fill={colors.primary} />
-      <Path d="M6 5Q12 4 18 8Q24 4 30 5V25Q24 24 18 28Q12 24 6 25Z" fill={colors.mode === 'dark' ? '#DCE9FA' : '#FFFFFF'} />
-      <Path d="M18 8V27M9 10L14 12M9 15L14 17M22 12L27 10M22 17L27 15" fill="none" stroke={colors.mode === 'dark' ? '#7497C0' : '#ADC8EC'} strokeWidth={1.5} strokeLinecap="round" />
-    </Svg></Animated.View>
-    <View style={[styles.bolt, { backgroundColor: colors.goldBright }]}><MaterialCommunityIcons name="lightning-bolt" color={colors.onGold} size={12} /></View>
-  </View>;
-}
 
-export function PlanReadinessRing({ value, colors, accent, still }: { value: number | null; colors: AppColors; accent: string; still: boolean }) {
-  const { fontScale } = useWindowDimensions();
-  const size = 56 * Math.min(1.35, Math.max(1, fontScale));
-  const circumference = 2 * Math.PI * 22;
-  const progress = useRef(new Animated.Value(value ?? 0)).current;
-  const previous = useRef(value);
-  useEffect(() => {
-    progress.stopAnimation();
-    if (still || value === null || previous.current === null || Platform.OS === 'web') progress.setValue(value ?? 0);
-    else if (previous.current !== value) Animated.timing(progress, { toValue: value, duration: 320, easing: Easing.out(Easing.cubic), useNativeDriver: false, isInteraction: false }).start();
-    previous.current = value;
-    return () => progress.stopAnimation();
-  }, [progress, still, value]);
-  const circleProps = { cx: 28, cy: 28, r: 22, fill: 'none', stroke: colors.neon?.progressFill ?? accent, strokeWidth: 4, strokeLinecap: 'round' as const, strokeDasharray: circumference + ' ' + circumference, transform: 'rotate(-90 28 28)' };
-  return <View accessible accessibilityRole="image" accessibilityLabel={value === null ? 'Knowledge: not assessed yet' : 'Knowledge: ' + value + '% of topics with consistent spaced recall. A practice estimate, not an exam prediction.'} style={[styles.ring, { width: size, height: size }]}>
-    <Svg width={size} height={size} viewBox="0 0 56 56" {...(Platform.OS === 'web' ? { 'aria-hidden': true, focusable: false } : { accessible: false })}>
-      <Circle cx={28} cy={28} r={22} fill="none" stroke={colors.neon?.progressTrack ?? colors.border} strokeWidth={4} />
-      {value !== null ? Platform.OS === 'web' ? <Circle {...circleProps} strokeDashoffset={circumference * (1 - value / 100)} /> : <AnimatedCircle {...circleProps} strokeDashoffset={progress.interpolate({ inputRange: [0, 100], outputRange: [circumference, 0] })} /> : null}
-    </Svg>
-    <View style={styles.ringCenter}><Text maxFontSizeMultiplier={1.6} style={[styles.ringValue, { color: value === null ? colors.textMuted : colors.text }]}>{value === null ? '—' : value + '%'}</Text></View>
-  </View>;
+  return (
+    <View pointerEvents="none" aria-hidden accessible={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[styles.viewport, styles[size]]}>
+      <Animated.View style={[styles.scene, { opacity: lift, transform: [
+        { scale: size === 'large' ? 1.35 : size === 'small' ? 0.55 : 0.86 },
+        { translateY: lift.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) },
+      ] }]}>
+        <View style={styles.orbit} />
+        <View style={styles.backCard} />
+        <LinearGradient colors={['#FFFFFF', '#C8DFFF']} style={styles.frontCard}>
+          <View style={styles.cardBolt}><Icon name="lightning-bolt" size={23} color="#16489C" /></View>
+          <View style={styles.line} />
+          <View style={[styles.line, styles.shortLine]} />
+        </LinearGradient>
+        <LinearGradient colors={['#FFF3B0', '#FFC641']} style={styles.check}>
+          <Icon name="check" color="#573400" size={19} />
+        </LinearGradient>
+        <View style={styles.spark}><Icon name="star-four-points" color="#FFE184" size={16} /></View>
+        <View style={styles.smallSpark}><Icon name="star-four-points" color="#ADCAFF" size={9} /></View>
+      </Animated.View>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
-  book: { pointerEvents: 'none', width: 42, height: 42, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  bookSurface: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, borderRadius: 14, borderWidth: 1, borderColor: '#8CAEE233' },
-  bolt: { position: 'absolute', right: -2, bottom: -1, width: 19, height: 19, borderRadius: 7, alignItems: 'center', justifyContent: 'center' },
-  ring: { width: 56, height: 56, flexShrink: 0 },
-  ringCenter: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, justifyContent: 'center', alignItems: 'center' },
-  ringValue: { fontSize: 12, lineHeight: 18, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  viewport: { alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  small: { width: 61, height: 67 },
+  medium: { width: 91, height: 98 },
+  large: { width: 172, height: 140 },
+  scene: { width: 112, height: 110 },
+  orbit: { position: 'absolute', left: 0, top: 1, width: 110, height: 106, borderRadius: 56, borderWidth: 1, borderColor: '#BCD5FF55', backgroundColor: '#7AAFFF24' },
+  backCard: { position: 'absolute', top: 16, left: 29, width: 62, height: 77, borderRadius: 13, borderWidth: 1, borderColor: '#A6C7FF', backgroundColor: '#6C9FF6', transform: [{ rotate: '16deg' }] },
+  frontCard: { position: 'absolute', top: 13, left: 16, width: 61, height: 76, borderRadius: 13, borderWidth: 1, borderColor: '#FFFFFFB3', padding: 9, justifyContent: 'center', gap: 5, transform: [{ rotate: '-11deg' }], boxShadow: '0px 8px 14px #071A574D' },
+  cardBolt: { width: 29, height: 27, borderRadius: 8, backgroundColor: '#C3DAFF', alignItems: 'center', justifyContent: 'center', marginBottom: 2 },
+  line: { height: 3, borderRadius: 2, backgroundColor: '#83A7DE' },
+  shortLine: { width: 23 },
+  check: { position: 'absolute', top: 66, left: 67, width: 31, height: 31, borderRadius: 12, alignItems: 'center', justifyContent: 'center', transform: [{ rotate: '11deg' }], boxShadow: '0px 4px 8px #071A5755' },
+  spark: { position: 'absolute', top: 6, right: 4 },
+  smallSpark: { position: 'absolute', bottom: 8, left: 8 },
 });

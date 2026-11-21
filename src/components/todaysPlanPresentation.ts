@@ -1,6 +1,7 @@
 import type { StudyBoltState, StudyPack } from '../models';
-import { buildHomeDashboard } from '../services/homeDashboard';
+import { buildHomeDashboard, examCalendarDays, type HomeDashboard } from '../services/homeDashboard';
 import { findHomeAudioResume } from '../services/homeStudy';
+import { isHomeToolReady } from '../services/homeTools';
 import type { LearningMasteryGroup } from '../services/learningMastery';
 import { getRetentionCardSchedule } from '../services/retentionScheduler';
 import { getTodaysPlanFocus } from '../services/todaysPlan';
@@ -9,8 +10,9 @@ type StudyTool = 'notes' | 'flashcards' | 'quiz';
 type PlanAction =
   | { kind: 'materials' }
   | { kind: 'mistakes'; itemIds: string[] }
+  | { kind: 'exam'; deck: StudyPack }
   | { kind: 'smart'; deck: StudyPack; sectionId?: string }
-  | { kind: 'deck'; deck: StudyPack; tool?: StudyTool | 'audio'; cardIds?: string[] };
+  | { kind: 'deck'; deck: StudyPack; tool?: StudyTool | 'audio'; cardIds?: string[]; resume?: boolean };
 
 const TOOL_LABELS = { notes: 'Review key notes', flashcards: 'Practice flashcards', quiz: 'Take a quiz' };
 const FIRST_STEP_REASON = {
@@ -25,11 +27,16 @@ export function planToolReady(deck: StudyPack, tool: StudyTool) {
 }
 
 /** Today's Plan reuses Stats evidence and Home priorities, with destinations limited to this page's packs. */
-export function todaysPlanCourse(state: StudyBoltState, group: LearningMasteryGroup, now: Date) {
+export function todaysPlanCourse(
+  state: StudyBoltState,
+  group: Pick<LearningMasteryGroup, 'packs' | 'practicedPacks' | 'nextPractice'>,
+  now: Date,
+  allClassesDashboard?: HomeDashboard,
+) {
   const ids = new Set(group.packs.map(pack => pack.id));
   const decks = state.decks.filter(deck => deck.fileType !== 'demo' && ids.has(deck.id));
   const scoped = { ...state, decks };
-  const dashboard = buildHomeDashboard(scoped, {
+  const dashboard = allClassesDashboard ?? buildHomeDashboard(scoped, {
     now,
     resumeDeckId: findHomeAudioResume(scoped)?.id,
     scheduleCard: (deckId, cardId) => getRetentionCardSchedule(state, deckId, cardId, state.retentionMode === 'standard' ? 'sm2' : state.retentionMode, now),
@@ -45,9 +52,43 @@ export function todaysPlanCourse(state: StudyBoltState, group: LearningMasteryGr
     return source ? [{ title: TOOL_LABELS[tool], action: { kind: 'deck' as const, deck: source, tool } }] : [];
   });
 
+  const exam = dashboard.exam;
+  const examDeck = exam && recent.find(pack => exam.deckIds.includes(pack.id)
+    && (['flashcards', 'quiz', 'notes'] as const).some(tool => planToolReady(pack, tool)));
   const step = (action: PlanAction, title = focus.title, reason = focus.reason) => ({ action, title, reason });
+  const prepareForExam = (pack: StudyPack, title: string) => {
+    const reason = 'Practice with material from your exam plan.';
+    const tool = (['quiz', 'flashcards', 'notes'] as const).find(item => planToolReady(pack, item));
+    return step({ kind: 'deck', deck: pack, tool }, title, reason);
+  };
+  const scheduledStep = () => {
+    const scope = state.plan.scope;
+    const plannedPacks = recent.filter(pack => scope.type === 'deck' ? pack.id === scope.id : pack.courseId === scope.id);
+    if (!plannedPacks.length) return;
+    for (const day of state.plan.days) {
+      if (!day.date) continue;
+      const onDate = /^\d{4}-\d{2}-\d{2}$/.test(day.date)
+        ? examCalendarDays(day.date, now) === 0
+        : new Date(day.date).toDateString() === now.toDateString();
+      if (!onDate) continue;
+      for (const block of day.blocks) {
+        if (block.complete) continue;
+        const tool = block.modality;
+        const pack = plannedPacks.find(item => tool === 'test'
+          ? planToolReady(item, 'quiz') || planToolReady(item, 'flashcards')
+          : tool === 'audio' ? isHomeToolReady(item, 'audio') : planToolReady(item, tool));
+        if (pack) return step(tool === 'test' ? { kind: 'exam', deck: pack } : { kind: 'deck', deck: pack, tool },
+          block.label, 'Scheduled in Planner today.');
+      }
+    }
+  };
   const recommend = () => {
     if (!decks.length) return step({ kind: 'materials' });
+    if (exam && examDeck && exam.daysRemaining <= 7) {
+      return prepareForExam(examDeck, `Prepare for ${exam.title}`);
+    }
+    const scheduled = scheduledStep();
+    if (scheduled) return scheduled;
     if (next.kind === 'mistakes') return step({ kind: 'mistakes', itemIds: dashboard.mistakeIds });
     if (next.kind === 'due' && deck && planToolReady(deck, 'flashcards')) {
       return step({ kind: 'deck', deck, tool: 'flashcards', cardIds: next.cardIds });
@@ -59,14 +100,10 @@ export function todaysPlanCourse(state: StudyBoltState, group: LearningMasteryGr
       const tool = (['quiz', 'notes'] as const).find(item => planToolReady(deck, item));
       if (tool) return step({ kind: 'deck', deck, tool }, TOOL_LABELS[tool], next.why);
     }
-    if (next.kind === 'resume' && deck && (!deck.generation || deck.generation.materials.audio?.status === 'ready')) {
-      return step({ kind: 'deck', deck, tool: 'audio' });
+    if (next.kind === 'resume' && deck && isHomeToolReady(deck, 'audio')) {
+      return step({ kind: 'deck', deck, tool: 'audio', resume: true });
     }
-    if (next.kind === 'exam' && deck) {
-      if (planToolReady(deck, 'flashcards')) return step({ kind: 'smart', deck });
-      const tool = (['quiz', 'notes'] as const).find(item => planToolReady(deck, item));
-      if (tool) return step({ kind: 'deck', deck, tool }, next.title, next.why);
-    }
+    if (next.kind === 'exam' && examDeck) return prepareForExam(examDeck, next.title);
     if (!group.practicedPacks && next.kind !== 'exam') {
       const firstTool = toolSteps[0];
       const noteDeck = firstTool?.action.tool === 'notes' ? firstTool.action.deck : null;
@@ -94,7 +131,9 @@ export function todaysPlanCourse(state: StudyBoltState, group: LearningMasteryGr
   return {
     primary, tasks: secondary.slice(0, 2), decks,
     materialCount: decks.reduce((total, pack) => total + (pack.sourceFileNames?.length ? new Set(pack.sourceFileNames).size : 1), 0),
-    examLabel: next.kind === 'exam' && 'deck' in primary.action && primary.action.deck.id === next.deckId ? focus.examLabel : null,
+    examLabel: exam && 'deck' in primary.action && exam.deckIds.includes(primary.action.deck.id)
+      ? exam.daysRemaining === 0 ? 'Exam today' : exam.daysRemaining === 1 ? 'Exam tomorrow' : `Exam in ${exam.daysRemaining} days`
+      : null,
   };
 }
 

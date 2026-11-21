@@ -2,14 +2,16 @@ import React, { useState } from 'react';
 import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { MAX_TYPED_SOURCE_CHARS } from '../services/documentProcessor';
+import { MAX_IMPORT_BYTES, MAX_TYPED_SOURCE_CHARS } from '../services/documentProcessor';
 import type { AppColors } from '../theme';
 import { Icon, PrimaryButton } from './ui';
 
-export function HomeImportSheet({ colors, reducedMotion, choosingFiles, onChooseFiles, onContinue, onClose }: {
+export function HomeImportSheet({ colors, reducedMotion, choosingFiles, courseName, error, onChooseFiles, onContinue, onClose }: {
   colors: AppColors;
   reducedMotion: boolean;
   choosingFiles: boolean;
+  courseName?: string;
+  error: string | null;
   onChooseFiles: () => void;
   onContinue: (notes: string) => void;
   onClose: () => void;
@@ -32,6 +34,7 @@ export function HomeImportSheet({ colors, reducedMotion, choosingFiles, onChoose
           </Pressable>
         </View>
         <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content} style={styles.scroll}>
+          {courseName ? <Text style={[styles.detail, { color: colors.primary }]}>Adding to {courseName}</Text> : null}
           {editing ? <>
             <TextInput
               autoFocus
@@ -46,12 +49,16 @@ export function HomeImportSheet({ colors, reducedMotion, choosingFiles, onChoose
             {tooLong ? <Text accessibilityRole="alert" style={{ color: colors.danger }}>These notes are too long for one Study Pack. Try a shorter section.</Text> : null}
             <PrimaryButton label="Continue" icon="arrow-right" disabled={!notes || tooLong} onPress={() => onContinue(notes)} />
           </> : <>
+            <Text style={[styles.detail, { color: colors.textSecondary }]}>
+              PDF, PowerPoint, Word, Pages, text, spreadsheets, and images. Up to {MAX_IMPORT_BYTES / 1024 / 1024} MB per file. Select multiple PowerPoints or one other file.
+            </Text>
             <PrimaryButton label="Choose Files" icon="folder-open-outline" loading={choosingFiles} onPress={onChooseFiles} />
             <Pressable accessibilityRole="button" disabled={choosingFiles} onPress={() => setEditing(true)} style={({ pressed }) => [styles.secondary, { opacity: choosingFiles || pressed ? 0.6 : 1 }]}>
               <Icon name="note-text-outline" size={18} color={colors.primary} />
               <Text style={[styles.secondaryText, { color: colors.primary }]}>Paste or type notes</Text>
             </Pressable>
           </>}
+          {error ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={[styles.detail, { color: colors.danger }]}>{error}</Text> : null}
         </ScrollView>
       </View>
     </KeyboardAvoidingView>
@@ -66,6 +73,7 @@ const styles = StyleSheet.create({
   close: { width: 44, height: 44, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   scroll: { flexGrow: 0, flexShrink: 1 },
   content: { gap: 8, paddingTop: 8 },
+  detail: { fontSize: 13, lineHeight: 20 },
   editor: { height: 150, borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, padding: 12, textAlignVertical: 'top', fontSize: 16, lineHeight: 23 },
   secondary: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 8 },
   secondaryText: { fontSize: 14, fontWeight: '600', flexShrink: 1 },
