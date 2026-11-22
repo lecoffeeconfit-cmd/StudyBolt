@@ -11,15 +11,15 @@ type Palette = ReturnType<typeof paletteFor>;
 function paletteFor(colors: AppColors) {
   const dark = colors.mode === 'dark';
   return {
-    blue: dark ? '#80B3F3' : '#326FC3',
-    cover: dark ? '#416FA9' : '#417FCD',
-    deep: dark ? '#28486D' : '#24569E',
-    mist: dark ? '#1C3049' : '#E7F1FF',
-    paper: dark ? '#25394F' : '#FFFFFF',
-    page: dark ? '#B7CEE9' : '#D9E8FA',
-    yellow: dark ? '#F1C85C' : '#F5C34D',
-    yellowSoft: dark ? '#493E25' : '#FFF0BD',
-    shadow: dark ? '#101C2C' : '#DDE8F6',
+    blue: dark ? colors.primary : '#326FC3',
+    cover: colors.night?.artwork.cover ?? (dark ? '#416FA9' : '#417FCD'),
+    deep: colors.night?.artwork.shade ?? (dark ? '#28486D' : '#24569E'),
+    mist: dark ? colors.primarySoft : '#E7F1FF',
+    paper: dark ? colors.cardStrong : '#FFFFFF',
+    page: dark ? colors.textSecondary : '#D9E8FA',
+    yellow: dark ? colors.gold : '#F5C34D',
+    yellowSoft: dark ? colors.goldSoft : '#FFF0BD',
+    shadow: dark ? colors.background : '#DDE8F6',
   };
 }
 

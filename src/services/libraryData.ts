@@ -17,7 +17,15 @@ export function markLibraryEdit<T extends LibraryEntity>(item: T, now = Date.now
 }
 
 function classCopy(course: StudyClass): StudyClass {
-  return { id: course.id, name: course.name, color: course.color, emoji: course.emoji, createdAt: course.createdAt };
+  const { id, name, color, emoji, createdAt, iconId } = course;
+  return { id, name, color, emoji, createdAt, ...(iconId === undefined ? {} : { iconId }) };
+}
+
+export function updateClassAppearance(classes: StudyClass[], original: StudyClass, appearance: Pick<StudyClass, 'iconId' | 'color'>): StudyClass[] {
+  const current = classes.find(course => course.id === original.id);
+  if (current?.color === appearance.color && current.iconId === appearance.iconId) return classes;
+  const updated = markLibraryEdit({ ...(current ?? original), ...appearance });
+  return current ? classes.map(course => course.id === updated.id ? updated : course) : [...classes, updated];
 }
 
 function portablePack(pack: StudyPack): StudyPack {
@@ -114,10 +122,13 @@ export function guestPacksToSave(guest: StudyBoltState, account: StudyBoltState)
 
 export function copyGuestLibrary(account: StudyBoltState, guest: StudyBoltState): StudyBoltState {
   const packs = guestPacksToSave(guest, account);
-  if (!packs.length) return account;
-  const courseIds = new Set(packs.map(pack => pack.courseId));
+  const personalCourseIds = new Set(guest.decks.filter(pack => pack.fileType !== 'demo').map(pack => pack.courseId));
+  const demoOnlyCourseIds = new Set(guest.decks.filter(pack => pack.fileType === 'demo' && !personalCourseIds.has(pack.courseId)).map(pack => pack.courseId));
   const accountCourseIds = new Set(account.classes.map(course => course.id));
-  const courses = guest.classes.filter(course => courseIds.has(course.id) && !accountCourseIds.has(course.id));
+  // Keep empty guest-created courses too, while excluding courses used only
+  // by the built-in sample packs.
+  const courses = guest.classes.filter(course => !demoOnlyCourseIds.has(course.id) && !accountCourseIds.has(course.id));
+  if (!packs.length && !courses.length) return account;
   return {
     ...account,
     classes: [...account.classes, ...courses.map(course => markLibraryEdit(course))],

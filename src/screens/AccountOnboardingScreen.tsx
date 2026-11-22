@@ -66,7 +66,7 @@ export function AccountOnboardingScreen({ onComplete }: { onComplete: (studyType
         </View>
 
         <LinearGradient
-          colors={colors.mode === 'dark' ? ['#1A2B42', '#29263A'] : ['#E9F2FF', '#EFEAFF']}
+          colors={colors.neon?.hero ?? colors.night?.hero ?? ['#E9F2FF', '#EFEAFF']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={[styles.intro, { borderColor: colors.border }]}

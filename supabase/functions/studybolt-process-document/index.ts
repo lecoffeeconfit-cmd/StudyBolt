@@ -124,7 +124,7 @@ Deno.serve(async (request) => {
   try {
     if (documentType === 'powerpoint') {
       try {
-        localPptx = await extractPptxLocally(bytes ?? new Uint8Array(), usageContext.user.is_anonymous ? 650_000 : undefined);
+        localPptx = await extractPptxLocally(bytes ?? new Uint8Array());
       } catch (error) {
         console.error('studybolt-process-document: local PPTX extraction failed', error);
       }
@@ -242,7 +242,7 @@ ${plainText}` });
       await releasePowerPointImport(usageContext, limitedPowerPointImport, powerPointImportPeriodStart, powerPointSourceHash);
       return json({ error: UNREADABLE_DOCUMENT_MESSAGE }, 422);
     }
-    if (!usageContext.user.is_anonymous && localPptx?.visuals.length) {
+    if (localPptx?.visuals.length) {
       await persistVisualSession({ userId: usageContext.user.id, admin: usageContext.admin }, documentId, fileName, localPptx.visuals);
     }
     const studyPack = extractionOnly

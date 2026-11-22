@@ -8,6 +8,7 @@ import type { HomeUploadStatus } from '../services/homeUpload';
 import { typography, type AppColors } from '../theme';
 import { HomeFileDropArea } from './HomeFileDropArea';
 import { Icon } from './ui';
+import { GuideAnchor, useGuidanceBlocker } from './StudyGuidance';
 
 type Props = {
   colors: AppColors;
@@ -22,12 +23,14 @@ type Props = {
 
 export function AddStudyMaterialCard({ colors, onPress, onDropAssets, opening, featuredInPlan, error, status, onOpenPack }: Props) {
   const reducedMotion = useReducedMotion();
+  useGuidanceBlocker(opening);
   if (featuredInPlan && Platform.OS !== 'web' && !error && !status) return null;
   return (
     <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
       {(!featuredInPlan || Platform.OS === 'web') ? (
         <HomeFileDropArea disabled={opening} onDropAssets={onDropAssets}>
           {dragging => (
+            <GuideAnchor id={opening || dragging ? undefined : 'home-import'} onActivate={onPress} actionLabel="Add material">
             <Pressable accessibilityRole="button" accessibilityLabel="Add course material" accessibilityState={{ disabled: opening, busy: opening }}
               disabled={opening} onPress={onPress} style={({ pressed }) => [styles.addRow, {
                 backgroundColor: dragging || pressed ? colors.primarySoft : 'transparent',
@@ -40,6 +43,7 @@ export function AddStudyMaterialCard({ colors, onPress, onDropAssets, opening, f
               </View>
               <Icon name="plus" color={colors.primary} size={21} />
             </Pressable>
+            </GuideAnchor>
           )}
         </HomeFileDropArea>
       ) : null}

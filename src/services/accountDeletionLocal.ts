@@ -8,6 +8,7 @@ import BackgroundPlayback from '../../modules/studybolt-background-playback';
 import { studyBoltLocalAccountKeys } from './accountDeletionClient';
 import { clearAdminActivityForDeletion } from './adminActivity';
 import { flushStudyBoltStateWrites } from './persistence';
+import { withGuideStorage } from './guideStorage';
 
 /** Remove only StudyBolt's namespace and this app's private cache, never other apps or source files. */
 export async function clearStudyBoltLocalAccountData(userId?: string): Promise<void> {
@@ -27,7 +28,9 @@ export async function clearStudyBoltLocalAccountData(userId?: string): Promise<v
     }
   }
   const legacyOwner = userId ? await AsyncStorage.getItem('@studybolt/state/legacy-owner') : undefined;
-  const keys = studyBoltLocalAccountKeys(await AsyncStorage.getAllKeys(), userId, legacyOwner);
-  if (keys.length) await AsyncStorage.multiRemove(keys);
+  await withGuideStorage(async () => {
+    const keys = studyBoltLocalAccountKeys(await AsyncStorage.getAllKeys(), userId, legacyOwner);
+    if (keys.length) await AsyncStorage.multiRemove(keys);
+  });
   if (errors.length) throw new Error('Some local files or reminders could not be cleared.');
 }

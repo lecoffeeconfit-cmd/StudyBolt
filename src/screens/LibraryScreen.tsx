@@ -2,13 +2,14 @@ import { PolishedScreen as Screen } from '../components/PagePresentation';
 import * as DocumentPicker from 'expo-document-picker';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Alert, Animated, Easing, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Animated, Easing, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Card, Header, Icon, type IconName, Pill, PrimaryButton } from '../components/ui';
-import { SubjectIcon } from '../components/SubjectIcon';
-import { getSubjectIcon, SUBJECT_ICONS } from '../data/subjectIcons';
+import { ClassIdentity } from '../components/ClassIdentity';
+import { ClassAppearanceEditor } from '../components/ClassAppearanceEditor';
 import { useReducedMotion } from '../hooks/useReducedMotion';
+import { GuideAnchor, useGuidanceBlocker } from '../components/StudyGuidance';
 import { useStudyBolt } from '../StudyBoltContext';
 import type { ImportAsset, LibrarySort, StudyClass, StudyEvent, StudyPack } from '../models';
 import { calculateCourseMastery, calculateMastery } from '../services/mastery';
@@ -16,15 +17,6 @@ import { DOCUMENT_PICKER_TYPE, pageLabel } from '../services/documentTypes';
 import { StudyBoltProcessingError, validateImportBatch } from '../services/documentProcessor';
 import { getStudyEventMinutes } from '../services/studyActivity';
 import { radius , typography } from '../theme';
-
-const CLASS_COLOR_FAMILIES = [
-  { name: 'Mint', shades: [{ name: 'Classic', color: '#39BFA3' }, { name: 'Deep', color: '#248E77' }, { name: 'Dark', color: '#176B5A' }] },
-  { name: 'Rose', shades: [{ name: 'Classic', color: '#F26D8B' }, { name: 'Deep', color: '#D64F72' }, { name: 'Dark', color: '#AD3758' }] },
-  { name: 'Blue', shades: [{ name: 'Classic', color: '#418DFF' }, { name: 'Deep', color: '#2863C7' }, { name: 'Dark', color: '#1F4A91' }] },
-  { name: 'Amber', shades: [{ name: 'Classic', color: '#F3A633' }, { name: 'Deep', color: '#C98419' }, { name: 'Dark', color: '#9B5B0C' }] },
-  { name: 'Violet', shades: [{ name: 'Classic', color: '#7D5CFF' }, { name: 'Deep', color: '#6142C7' }, { name: 'Dark', color: '#473094' }] },
-  { name: 'Teal', shades: [{ name: 'Classic', color: '#11A7A2' }, { name: 'Deep', color: '#0D7F7B' }, { name: 'Dark', color: '#075D5A' }] },
-];
 
 type CourseGroup = { course: StudyClass; decks: StudyPack[] };
 
@@ -216,15 +208,11 @@ export function LibraryScreen({
   const [selected, setSelected] = useState<string[]>([]);
   const [choosingSort, setChoosingSort] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchFocused, setSearchFocused] = useState(false);
   const [collapsedCourseIds, setCollapsedCourseIds] = useState<string[]>([]);
-  const [creatingClass, setCreatingClass] = useState(false);
-  const [newClassName, setNewClassName] = useState('');
-  const [selectedColor, setSelectedColor] = useState(CLASS_COLOR_FAMILIES[0]!.shades[0]!.color);
-  const [selectedEmoji, setSelectedEmoji] = useState<string | null>(null);
-  const [classError, setClassError] = useState<string | null>(null);
+  const [classEditor, setClassEditor] = useState<{ original?: StudyClass; packCount: number } | null>(null);
   const [inspectedCourseId, setInspectedCourseId] = useState<string | null>(null);
-  const suggestedIcon = getSubjectIcon(newClassName);
-  const classEmoji = selectedEmoji ?? suggestedIcon.emoji;
+  useGuidanceBlocker(Boolean(classEditor) || choosingSort || selecting || Boolean(inspectedCourseId));
 
   const courses = useMemo<CourseGroup[]>(() => {
     const deckMap = new Map<string, StudyPack[]>();
@@ -273,33 +261,6 @@ export function LibraryScreen({
     ? current.filter((courseId) => courseId !== id)
     : [...current, id]);
 
-  const closeClassModal = () => {
-    setCreatingClass(false);
-    setNewClassName('');
-    setSelectedEmoji(null);
-    setClassError(null);
-  };
-
-  const createClass = () => {
-    const name = newClassName.trim();
-    if (!name) {
-      setClassError('Add a name so you can find this class later.');
-      return;
-    }
-    if (state.classes.some((course) => course.name.trim().toLowerCase() === name.toLowerCase())) {
-      setClassError('You already have a class with that name.');
-      return;
-    }
-    addClass({
-      id: `class-${Date.now()}`,
-      name,
-      emoji: classEmoji,
-      color: selectedColor,
-      createdAt: new Date().toISOString(),
-    });
-    closeClassModal();
-  };
-
   const pickDocument = async (course: StudyClass) => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -327,17 +288,14 @@ export function LibraryScreen({
           title="Library"
           right={
             <View style={styles.headerActions}>
-              <Pressable
+              <GuideAnchor id="library-class"><Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Create a new class"
-                onPress={() => {
-                  setClassError(null);
-                  setCreatingClass(true);
-                }}
+                onPress={() => setClassEditor({ packCount: 0 })}
                 style={({ pressed }) => [styles.newClassButton, { backgroundColor: colors.primary, opacity: pressed ? 0.84 : 1 }]}
               >
                 <Icon name="plus" size={19} color={colors.primaryText} />
-              </Pressable>
+              </Pressable></GuideAnchor>
               <Pressable accessibilityRole="button" accessibilityLabel={selecting ? 'Finish selecting study packs' : 'Select study packs for an exam review'} accessibilityState={{ selected: selecting }} aria-pressed={selecting} onPress={() => { setSelecting((value) => !value); setSelected([]); }} style={({ pressed }) => [styles.selectButton, { backgroundColor: colors.primarySoft }, pressed && styles.deckRowPressed]}>
                 <Text style={[styles.selectText, { color: colors.primary }]}>{selecting ? 'Done' : 'Select'}</Text>
               </Pressable>
@@ -347,7 +305,7 @@ export function LibraryScreen({
         <Text style={[styles.title, { color: colors.text }]}>Library</Text>
         <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{courses.length} {courses.length === 1 ? 'class' : 'classes'} · {state.decks.length} study {state.decks.length === 1 ? 'pack' : 'packs'}</Text>
 
-        <View style={[styles.searchField, { backgroundColor: colors.cardStrong, borderColor: colors.border }]}>
+        <GuideAnchor id="library-search" style={[styles.searchField, { backgroundColor: colors.cardStrong, borderColor: (searchFocused ? colors.neon?.focus : undefined) ?? colors.border }]}>
           <Icon name="magnify" size={20} color={colors.textSecondary} />
           <TextInput
             accessibilityLabel="Search classes and study packs"
@@ -355,8 +313,11 @@ export function LibraryScreen({
             autoCorrect={false}
             value={searchQuery}
             onChangeText={setSearchQuery}
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => setSearchFocused(false)}
             placeholder="Search classes and study packs…"
             placeholderTextColor={colors.textSecondary}
+            selectionColor={colors.neon?.focus}
             returnKeyType="search"
             style={[styles.searchInput, { color: colors.text }]}
           />
@@ -365,7 +326,7 @@ export function LibraryScreen({
               <Icon name="close-circle" size={18} color={colors.textMuted} />
             </Pressable>
           ) : null}
-        </View>
+        </GuideAnchor>
 
         {studyHistory.latestDeck && !selecting && !normalizedSearch ? (
           <Pressable
@@ -432,7 +393,7 @@ export function LibraryScreen({
               const courseMastery = personalDecks.length ? calculateCourseMastery(personalDecks) : 0;
               const collapsed = normalizedSearch ? false : collapsedCourseIds.includes(course.id);
               const classCardColor = blendHexColor(course.color, colors.cardStrong, colors.mode === 'dark' ? 0.12 : 0.09);
-              const classBorderColor = blendHexColor(course.color, colors.border, colors.mode === 'dark' ? 0.2 : 0.18);
+              const classBorderColor = blendHexColor(course.color, colors.neon?.edge ?? colors.border, colors.mode === 'dark' ? 0.2 : 0.18);
               const deckDividerColor = colors.mode === 'dark' ? colors.border : '#DCE5EE';
               const lastStudied = studyHistory.latestByCourse.get(course.id);
               const courseMeta = `${decks.length} study ${decks.length === 1 ? 'pack' : 'packs'}${!personalDecks.length && decks.length ? ' · Samples' : lastStudied ? ` · Last studied ${formatLastStudied(lastStudied)}` : ''}`;
@@ -451,21 +412,20 @@ export function LibraryScreen({
                         onPress={() => toggleCourse(course.id)}
                         style={({ pressed }) => [styles.courseHeaderTapArea, pressed && !normalizedSearch && styles.courseHeaderPressed]}
                       >
-                        <SubjectIcon subject={course.name} emoji={course.emoji} size={48} animated={false} />
+                        <ClassIdentity course={course} size={44} hasAccent />
                         <View style={styles.courseHeaderCopy}>
-                          <Text numberOfLines={2} style={[styles.courseName, { color: colors.text }]}>{course.name}</Text>
+                          <Text style={[styles.courseName, { color: colors.text }]}>{course.name}</Text>
                           <Text numberOfLines={2} style={[styles.courseMeta, { color: colors.textSecondary }]}>{courseMeta}</Text>
                         </View>
                       </Pressable>
                       <View style={styles.courseHeaderControls}>
-                        {decks.length > 0 ? (
-                          <Pressable
-                            accessibilityRole="button"
-                            accessibilityLabel={`About ${course.name}${personalDecks.length ? ' and study progress' : ''}`}
-                            onPress={() => setInspectedCourseId(course.id)}
-                            style={({ pressed }) => [styles.classInfoButton, pressed && styles.deckRowPressed]}
-                          ><Icon name="information-outline" size={17} color={colors.textSecondary} /></Pressable>
-                        ) : null}
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel={`Class details for ${course.name}`}
+                          accessibilityHint="Edit class appearance or view study progress."
+                          onPress={() => setInspectedCourseId(course.id)}
+                          style={({ pressed }) => [styles.classInfoButton, pressed && styles.deckRowPressed]}
+                        ><Icon name="information-outline" size={17} color={colors.textSecondary} /></Pressable>
                         <Pressable
                           accessibilityRole="button"
                           accessibilityLabel={`${collapsed ? 'Expand' : 'Collapse'} ${course.name}`}
@@ -575,7 +535,7 @@ export function LibraryScreen({
             {normalizedSearch ? (
               <Pressable accessibilityRole="button" onPress={() => setSearchQuery('')} style={styles.emptyLibraryAction}><Text style={[styles.emptyLibraryActionText, { color: colors.primary }]}>Clear search</Text></Pressable>
             ) : (
-              <PrimaryButton label="Create your first class" icon="plus" onPress={() => setCreatingClass(true)} style={styles.emptyLibraryButton} />
+              <PrimaryButton label="Create your first class" icon="plus" onPress={() => setClassEditor({ packCount: 0 })} style={styles.emptyLibraryButton} />
             )}
           </View>
         )}
@@ -584,7 +544,7 @@ export function LibraryScreen({
       <Modal visible={choosingSort} transparent animationType={reducedMotion ? 'none' : 'slide'} onRequestClose={() => setChoosingSort(false)}>
         <View style={[styles.modalRoot, { backgroundColor: colors.mode === 'dark' ? 'rgba(0,0,0,0.68)' : 'rgba(17,28,78,0.32)' }]}>
           <Pressable accessibilityRole="button" accessibilityLabel="Close sort options" onPress={() => setChoosingSort(false)} style={StyleSheet.absoluteFill} />
-          <View role="dialog" aria-modal accessibilityViewIsModal accessibilityLabel="Sort your library" style={[styles.sortSheet, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow, paddingBottom: Math.max(insets.bottom, 18) }]}>
+          <View role="dialog" aria-modal accessibilityViewIsModal accessibilityLabel="Sort your library" style={[styles.sortSheet, { backgroundColor: colors.card, borderColor: colors.neon?.sheetEdge ?? colors.border, shadowColor: colors.shadow, paddingBottom: Math.max(insets.bottom, 18) }]}>
             <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
             <View style={styles.sheetHeadingRow}>
               <View style={[styles.sheetIcon, { backgroundColor: colors.primarySoft }]}><Icon name="sort-variant" size={24} color={colors.primary} /></View>
@@ -632,14 +592,14 @@ export function LibraryScreen({
         </View>
       </Modal>
 
-      {inspectedCourse ? (
-        <Modal visible transparent animationType={reducedMotion ? 'none' : 'slide'} onRequestClose={() => setInspectedCourseId(null)}>
+      <Modal visible={Boolean(inspectedCourse || classEditor)} transparent animationType={reducedMotion ? 'none' : 'slide'} onRequestClose={() => { setInspectedCourseId(null); setClassEditor(null); }}>
+        {classEditor ? <ClassAppearanceEditor {...classEditor} onClose={() => setClassEditor(null)} /> : inspectedCourse ? (
           <View style={[styles.modalRoot, { backgroundColor: colors.mode === 'dark' ? 'rgba(0,0,0,0.68)' : 'rgba(17,28,78,0.32)' }]}>
             <Pressable accessibilityRole="button" accessibilityLabel="Close class details" onPress={() => setInspectedCourseId(null)} style={StyleSheet.absoluteFill} />
-            <View role="dialog" aria-modal accessibilityViewIsModal accessibilityLabel={`${inspectedCourse.course.name} class details`} style={[styles.sortSheet, styles.detailsSheet, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow, paddingBottom: Math.max(insets.bottom, 18) }]}>
+            <View role="dialog" aria-modal accessibilityViewIsModal accessibilityLabel={`${inspectedCourse.course.name} class details`} style={[styles.sortSheet, styles.detailsSheet, { backgroundColor: colors.card, borderColor: colors.neon?.sheetEdge ?? colors.border, shadowColor: colors.shadow, paddingBottom: Math.max(insets.bottom, 18) }]}>
               <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
               <View style={styles.sheetHeadingRow}>
-                <SubjectIcon subject={inspectedCourse.course.name} emoji={inspectedCourse.course.emoji} size={44} animated={false} />
+                <ClassIdentity course={inspectedCourse.course} size={44} />
                 <View style={styles.sheetHeadingCopy}>
                   <Text style={[styles.sheetTitle, { color: colors.text }]}>{inspectedCourse.course.name}</Text>
                   <Text style={[styles.sheetSubtitle, { color: colors.textSecondary }]}>Class details</Text>
@@ -647,6 +607,10 @@ export function LibraryScreen({
                 <Pressable accessibilityRole="button" accessibilityLabel="Dismiss class details" onPress={() => setInspectedCourseId(null)} style={styles.classInfoButton}><Icon name="close" size={22} color={colors.textSecondary} /></Pressable>
               </View>
               <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.detailsContent}>
+                <PrimaryButton label="Edit class appearance" icon="palette-outline" onPress={() => {
+                  setClassEditor({ original: inspectedCourse.course, packCount: inspectedCourse.decks.length });
+                  setInspectedCourseId(null);
+                }} />
                 {formatClassAddedDate(inspectedCourse.course.createdAt) ? (
                   <View style={styles.detailsDateRow}>
                     <Icon name="calendar-outline" size={18} color={colors.textSecondary} />
@@ -661,101 +625,7 @@ export function LibraryScreen({
               </ScrollView>
             </View>
           </View>
-        </Modal>
-      ) : null}
-
-      <Modal visible={creatingClass} transparent animationType={reducedMotion ? 'none' : 'slide'} onRequestClose={closeClassModal}>
-        <KeyboardAvoidingView style={[styles.modalRoot, { backgroundColor: colors.mode === 'dark' ? 'rgba(0,0,0,0.68)' : 'rgba(17,28,78,0.32)' }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Close new class dialog" onPress={closeClassModal} style={StyleSheet.absoluteFill} />
-          <View role="dialog" aria-modal accessibilityViewIsModal accessibilityLabel="Create a class" style={[styles.sheet, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow, paddingBottom: Math.max(insets.bottom, 16) }]}>
-            <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
-            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} bounces={false}>
-              <View style={styles.sheetHeadingRow}>
-                <View style={[styles.sheetIcon, { backgroundColor: colors.primarySoft }]}><Icon name="school-outline" size={24} color={colors.primary} /></View>
-                <View style={styles.sheetHeadingCopy}>
-                  <Text style={[styles.sheetTitle, { color: colors.text }]}>Create a class</Text>
-                  <Text style={[styles.sheetSubtitle, { color: colors.textSecondary }]}>Give your next set of notes a home.</Text>
-                </View>
-                <Pressable accessibilityRole="button" accessibilityLabel="Close" onPress={closeClassModal} hitSlop={10}><Icon name="close" size={22} color={colors.textMuted} /></Pressable>
-              </View>
-
-              <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Class name</Text>
-              <View style={[styles.inputWrap, { backgroundColor: colors.backgroundRaised, borderColor: classError ? colors.danger : colors.border }]}>
-                <Icon name="pencil-outline" size={19} color={colors.textMuted} />
-                <TextInput
-                  accessibilityLabel="Class name"
-                  autoFocus
-                  value={newClassName}
-                  onChangeText={(value) => { setNewClassName(value); setClassError(null); }}
-                  onSubmitEditing={createClass}
-                  placeholder="e.g. Anatomy & Physiology"
-                  placeholderTextColor={colors.textMuted}
-                  returnKeyType="done"
-                  style={[styles.input, { color: colors.text }]}
-                />
-              </View>
-              {classError ? <Text style={[styles.errorText, { color: colors.danger }]}>{classError}</Text> : null}
-
-              <Text style={[styles.inputLabel, styles.optionLabel, { color: colors.textSecondary }]}>Choose a subject icon</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.iconOptions}>
-                <Pressable aria-pressed={selectedEmoji === null}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Automatically choose an icon from class name, currently ${suggestedIcon.label}`}
-                  accessibilityState={{ selected: selectedEmoji === null }}
-                  onPress={() => setSelectedEmoji(null)}
-                  style={[styles.iconOption, { backgroundColor: selectedEmoji === null ? colors.primarySoft : colors.backgroundRaised, borderColor: selectedEmoji === null ? colors.primary : colors.border }]}
-                >
-                  <SubjectIcon subject={newClassName} size={40} animated={false} />
-                  <Text style={[styles.iconOptionLabel, { color: selectedEmoji === null ? colors.primary : colors.textSecondary }]}>Auto</Text>
-                </Pressable>
-                {SUBJECT_ICONS.map((icon) => {
-                  const active = selectedEmoji === icon.emoji;
-                  return (
-                    <Pressable aria-pressed={active} key={icon.id} accessibilityRole="button" accessibilityLabel={`Use ${icon.label} icon`} accessibilityState={{ selected: active }} onPress={() => setSelectedEmoji(icon.emoji)} style={[styles.iconOption, { backgroundColor: active ? colors.primarySoft : colors.backgroundRaised, borderColor: active ? colors.primary : colors.border }]}>
-                      <SubjectIcon emoji={icon.emoji} size={40} animated={false} />
-                      <Text numberOfLines={1} style={[styles.iconOptionLabel, { color: active ? colors.primary : colors.textSecondary }]}>{icon.label}</Text>
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
-
-              <Text style={[styles.inputLabel, styles.optionLabel, { color: colors.textSecondary }]}>Choose a color</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.colorOptions}>
-                {CLASS_COLOR_FAMILIES.map((family) => (
-                  <View key={family.name} style={styles.colorFamilyOptions}>
-                    {family.shades.map((shade) => {
-                      const active = selectedColor === shade.color;
-                      return (
-                        <Pressable
-                          key={shade.color}
-                          accessibilityRole="button"
-                          accessibilityLabel={`Choose ${family.name} ${shade.name} shade`}
-                          accessibilityState={{ selected: active }}
-                          aria-pressed={active}
-                          onPress={() => setSelectedColor(shade.color)}
-                          style={[styles.colorOption, { backgroundColor: active ? colors.primarySoft : 'transparent', borderColor: active ? colors.text : 'transparent' }]}
-                        >
-                          <View style={[styles.colorSwatch, { backgroundColor: shade.color, borderColor: colors.border }]} />
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                ))}
-              </ScrollView>
-
-              <View style={[styles.previewCard, { backgroundColor: `${selectedColor}16`, borderColor: `${selectedColor}44` }]}>
-                <SubjectIcon subject={newClassName} emoji={classEmoji} size={44} />
-                <View style={{ flex: 1 }}>
-                  <Text numberOfLines={1} style={[styles.previewTitle, { color: colors.text }]}>{newClassName.trim() || 'Your new class'}</Text>
-                  <Text style={[styles.previewMeta, { color: colors.textSecondary }]}>0 study packs · Ready to learn</Text>
-                </View>
-              </View>
-
-              <PrimaryButton label="Create class" icon="plus" onPress={createClass} style={styles.createButton} />
-              <Pressable accessibilityRole="button" onPress={closeClassModal} style={styles.cancelButton}><Text style={[styles.cancelText, { color: colors.textSecondary }]}>Maybe later</Text></Pressable>
-            </ScrollView>
-          </View>
-        </KeyboardAvoidingView>
+        ) : null}
       </Modal>
     </>
   );
@@ -860,22 +730,4 @@ const styles = StyleSheet.create({
   sheetHeadingCopy: { flex: 1 },
   sheetTitle: { fontSize: 24, fontWeight: '700', letterSpacing: -0.5, lineHeight: 31 },
   sheetSubtitle: { fontSize: 14, lineHeight: 21, marginTop: 3 },
-  inputLabel: { fontSize: 15, lineHeight: 22, fontWeight: '700', marginTop: 20, marginBottom: 7, marginLeft: 2 },
-  inputWrap: { minHeight: 54, borderRadius: radius.md, borderWidth: 1, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  input: { flex: 1, minWidth: 0, fontSize: 16, minHeight: 52, lineHeight: 24 },
-  errorText: { fontSize: 14, lineHeight: 21, marginTop: 6, marginLeft: 2 },
-  optionLabel: { marginTop: 16 },
-  iconOptions: { gap: 8, paddingVertical: 3 },
-  iconOption: { width: 70, minHeight: 72, borderRadius: 15, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', gap: 4, padding: 5 },
-  iconOptionLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700' },
-  colorOptions: { alignItems: 'center', gap: 9, paddingHorizontal: 2, paddingVertical: 2 },
-  colorFamilyOptions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
-  colorOption: { width: 44, height: 44, borderRadius: 22, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
-  colorSwatch: { width: 28, height: 28, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth },
-  previewCard: { minHeight: 65, borderRadius: 16, borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 12, marginTop: 19 },
-  previewTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
-  previewMeta: { fontSize: 12, lineHeight: 18, marginTop: 3 },
-  createButton: { minHeight: 52, marginTop: 15 },
-  cancelButton: { alignItems: 'center', paddingVertical: 12 },
-  cancelText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
 });

@@ -1,11 +1,13 @@
 import type { ImportAsset, StudyTool } from '../models';
 import type { SmartStudyMode } from '../services/adaptiveStudy';
+import type { RegistrationReason } from '../screens/RegistrationPromptScreen';
 
 export type Route =
   | { type: 'main' }
   | { type: 'onboarding' }
   | { type: 'account-onboarding' }
   | { type: 'auth' }
+  | { type: 'registration-prompt'; reason: RegistrationReason }
   | { type: 'account' }
   | { type: 'admin' }
   | { type: 'feedback' }

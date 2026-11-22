@@ -7,9 +7,11 @@ import { Card, Icon, Pill, PrimaryButton, ProgressBar } from '../components/ui';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { bottomTabBarTop } from '../components/BottomTabs';
 import { PageEntrance } from '../components/PagePresentation';
-import { SubjectIcon } from '../components/SubjectIcon';
+import { ClassIdentity } from '../components/ClassIdentity';
 import { classKnowledgeDetail, LearningMasteryHero } from '../components/LearningMasteryHero';
 import { StatsLearningDashboard } from '../components/StatsLearningDashboard';
+import { StatsCategories, StatsProgressHeader, type StatsTab } from '../components/StatsNavigationHeader';
+import { GuideAnchor, GuideTip, useGuidanceBlocker, useGuidanceScroll } from '../components/StudyGuidance';
 import { statsClassState } from '../components/statsLearningPresentation';
 import type { IconName } from '../components/ui';
 import { learningEvidence } from '../data/learningScience';
@@ -25,17 +27,6 @@ import { useStudyMaterialPicker, type ImportClass } from '../hooks/useStudyMater
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import type { AnalyticsSnapshot, BreakdownValue, ConceptInsight, DistributionValue } from '../services/analytics';
 
-type StatsTab = 'overview' | 'insights' | 'mastery' | 'quizzes' | 'activity' | 'methods';
-
-const TABS: Array<{ id: StatsTab; label: string; icon: IconName }> = [
-  { id: 'overview', label: 'Overview', icon: 'view-dashboard-outline' },
-  { id: 'insights', label: 'Insights', icon: 'chart-box-plus-outline' },
-  { id: 'mastery', label: 'Mastery', icon: 'brain' },
-  { id: 'quizzes', label: 'Quizzes', icon: 'clipboard-check-outline' },
-  { id: 'activity', label: 'Activity', icon: 'chart-timeline-variant' },
-  { id: 'methods', label: 'Methods', icon: 'shape-outline' },
-];
-
 type StatsDetail = StatDetail & { action?: { label: string; onPress: () => void } };
 const StatDetailContext = React.createContext<(detail: StatsDetail) => void>(() => undefined);
 
@@ -48,10 +39,12 @@ export function StatsScreen({ onOpenDeck, onAddMaterial }: {
   onAddMaterial: (assets: ImportAsset[], course?: ImportClass) => void;
 }) {
   const { colors, state, hydrated } = useStudyBolt();
-  const { error: importError, chooseFiles } = useStudyMaterialPicker(onAddMaterial);
+  const { error: importError, chooseFiles, opening } = useStudyMaterialPicker(onAddMaterial);
   const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<StatsTab>('overview');
   const [selectedDetail, setSelectedDetail] = useState<StatsDetail | null>(null);
+  useGuidanceBlocker(Boolean(selectedDetail) || opening);
+  const guideScroll = useGuidanceScroll();
   const [includeSamples, setIncludeSamples] = useState(false);
   const [allClasses, setAllClasses] = useState(false);
   const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
@@ -105,6 +98,7 @@ export function StatsScreen({ onOpenDeck, onAddMaterial }: {
         paddingBottom: bottomTabBarTop(insets.bottom) + 22,
       }]}>
         <ScrollView
+          {...guideScroll}
           style={styles.screenShell}
           contentInsetAdjustmentBehavior="never"
           contentContainerStyle={[styles.scrollContent, {
@@ -118,15 +112,17 @@ export function StatsScreen({ onOpenDeck, onAddMaterial }: {
             importantForAccessibility={selectedDetail ? 'no-hide-descendants' : 'auto'}
             style={styles.contentWidth}
           >
-            <View style={styles.header}>
-              <View style={styles.flexCopy}>
-                <Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>Your progress</Text>
-                <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Review what you know and what to practice next.</Text>
-              </View>
-              <Pressable accessibilityRole="button" accessibilityLabel="About your statistics and data scope" onPress={showAbout} style={({ pressed }) => [styles.aboutButton, { backgroundColor: colors.primarySoft, opacity: pressed ? 0.65 : 1 }]}>
-                <Icon name="information-outline" color={colors.primary} size={21} />
-              </Pressable>
-            </View>
+            <StatsProgressHeader
+              onAbout={showAbout}
+              scope={hydrated ? {
+                allClasses,
+                className: selectedClass.kind === 'overview' ? undefined : selectedClass.name,
+                onChange: (showAllClasses) => {
+                  setAllClasses(showAllClasses);
+                  if (!showAllClasses) setIncludeSamples(false);
+                },
+              } : undefined}
+            />
             {importError ? <Text accessibilityRole="alert" style={[styles.subtitle, styles.importError, { color: colors.danger }]}>{importError}</Text> : null}
             {includeSamples ? <Pressable accessibilityRole="button" onPress={showAbout} style={styles.scopeRow}>
               <Icon name="layers-outline" size={16} color={colors.warning} />
@@ -140,21 +136,13 @@ export function StatsScreen({ onOpenDeck, onAddMaterial }: {
               </View>
             ) : (
               <>
-                <View style={[styles.classScope, { backgroundColor: colors.cardStrong }]} accessibilityRole="tablist" accessibilityLabel="Statistics scope">
-                  {[{ all: false, label: 'Selected class' }, { all: true, label: 'All classes' }].map(option => {
-                    const active = allClasses === option.all;
-                    return <Pressable key={option.label} accessibilityRole="tab" accessibilityState={{ selected: active }} aria-selected={active}
-                      onPress={() => { setAllClasses(option.all); if (!option.all) setIncludeSamples(false); }}
-                      style={({ pressed }) => [styles.classScopeButton, active && { backgroundColor: colors.card }, { opacity: pressed ? 0.65 : 1 }]}
-                    >
-                      <Text style={[styles.classScopeText, { color: active ? colors.primary : colors.textSecondary }]}>{option.label}</Text>
-                    </Pressable>;
-                  })}
-                </View>
-                <StatsTabs tab={tab} onChange={setTab} />
+                <GuideAnchor id="stats-categories"><StatsCategories selected={tab} onChange={setTab} /></GuideAnchor>
                 <View style={styles.overviewStart}>
                   {!allClasses ? (
-                    <LearningMasteryHero groups={courseGroups} selectedId={selectedClass.id} onSelect={selectClass} onExplore={setSelectedDetail} onAddMaterial={() => addMaterial(selectedClass)} compact={tab !== 'overview'} />
+                    <>
+                      <GuideAnchor id="stats-knowledge"><LearningMasteryHero groups={courseGroups} selectedId={selectedClass.id} onSelect={selectClass} onExplore={setSelectedDetail} onAddMaterial={() => addMaterial(selectedClass)} compact={tab !== 'overview'} /></GuideAnchor>
+                      <GuideTip id="knowledge-assessed" eligible={selectedClass.mastery !== null} />
+                    </>
                   ) : (
                     <>
                       <Text accessibilityRole="header" style={[styles.allClassesLabel, { color: colors.text }]}>All classes</Text>
@@ -270,21 +258,10 @@ function NextClassPractice({ group, onPractice }: { group: LearningMasteryGroup;
       <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{action?.reason ?? group.explanation}</Text>
       {topic ? <Text style={[styles.rowMeta, { color: colors.textMuted }]}>{topic.packTitle} · Based on recorded recall</Text> : null}
       {action ? <Pressable accessibilityRole="button" onPress={() => onPractice(action)} style={({ pressed }) => [styles.nextStepLink, { opacity: pressed ? 0.65 : 1 }]}>
-        <Text style={[styles.classScopeText, { color: colors.primary }]}>{action.label}</Text><Icon name="arrow-right" color={colors.primary} size={18} />
+        <Text style={[styles.nextStepLinkText, { color: colors.primary }]}>{action.label}</Text><Icon name="arrow-right" color={colors.primary} size={18} />
       </Pressable> : null}
     </Card>
   );
-}
-
-function StatsTabs({ tab, onChange }: { tab: StatsTab; onChange: (value: StatsTab) => void }) {
-  const { colors } = useStudyBolt();
-  const { width, fontScale } = useWindowDimensions();
-  return <View role="tablist" accessibilityLabel="Statistics sections" style={styles.tabGrid}>{TABS.map(item => {
-    const active = tab === item.id;
-    return <Pressable key={item.id} accessibilityRole="tab" aria-selected={active} accessibilityState={{ selected: active }} onPress={() => onChange(item.id)} style={({ pressed }) => [styles.sectionTab, fontScale > 1.35 && styles.tabHalf, fontScale > 1.9 && styles.tabFull, width > 740 && fontScale <= 1.35 && styles.tabSixth, { backgroundColor: active ? colors.primarySoft : 'transparent', opacity: pressed ? 0.7 : 1 }]}>
-      <Icon name={item.icon} size={16} color={active ? colors.primary : colors.textSecondary} /><Text style={[styles.sectionTabText, { color: active ? colors.primary : colors.textSecondary }]}>{item.label}</Text>
-    </Pressable>;
-  })}</View>;
 }
 
 function StatDetailSheet({ detail, onClose }: { detail: StatsDetail | null; onClose: () => void }) {
@@ -296,7 +273,7 @@ function StatDetailSheet({ detail, onClose }: { detail: StatsDetail | null; onCl
       <View style={[styles.modalRoot, { paddingTop: insets.top }]}>
         <Pressable accessibilityRole="button" accessibilityLabel="Close stat details" style={styles.modalBackdrop} onPress={onClose} />
         {detail ? (
-          <View accessibilityViewIsModal aria-modal role="dialog" accessibilityLabel="Statistic details" style={[styles.detailSheet, { backgroundColor: colors.backgroundRaised, borderColor: colors.border, paddingBottom: Math.max(insets.bottom, spacing.sm) }]}>
+          <View accessibilityViewIsModal aria-modal role="dialog" accessibilityLabel="Statistic details" style={[styles.detailSheet, { backgroundColor: colors.backgroundRaised, borderColor: colors.neon?.sheetEdge ?? colors.border, paddingBottom: Math.max(insets.bottom, spacing.sm) }]}>
             <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
             <View style={styles.detailHeader}>
               <View style={{ flex: 1 }}>
@@ -351,7 +328,7 @@ function Overview({ analytics, groups, onPractice, onAddMaterial }: {
   analytics: AnalyticsSnapshot; groups: LearningMasteryGroup[];
   onPractice: (action: LearningPracticeAction) => void; onAddMaterial: () => void;
 }) {
-  const { colors } = useStudyBolt();
+  const { colors, state } = useStudyBolt();
   const showStatDetail = useStatDetail();
   const hasPacks = analytics.packs.length > 0;
   const nextGroups = groups.filter(group => group.nextPractice).sort((a, b) => b.focusTopics.length - a.focusTopics.length).slice(0, 2);
@@ -404,7 +381,7 @@ function Overview({ analytics, groups, onPractice, onAddMaterial }: {
             calculation: 'Each pack combines notes, card confidence, and its latest quiz score, plus a cumulative-test score when present. Pack composites are averaged equally across the class.',
             whyItMatters: 'Use this to understand activity progress. The course card above separately assesses repeated recall; neither percentage predicts an exam grade.',
           }))} style={styles.progressCard}>
-            <SubjectIcon subject={course.name} emoji={course.emoji} size={40} />
+            <ClassIdentity course={state.classes.find(item => item.id === course.id) ?? course} size={40} />
             <View style={styles.flexCopy}><View style={styles.progressHeading}><Text style={[styles.progressTitle, styles.flexCopy, { color: colors.text }]}>{course.name}</Text><Text style={[styles.progressValue, { color: colors.primary }]}>{course.mastery}%</Text></View><ProgressBar accessibilityLabel={course.name + ' study progress'} progress={course.mastery} color={colors.primary} /><Text style={[styles.progressMeta, { color: colors.textMuted }]}>{course.studyMinutes ? formatMinutes(course.studyMinutes) + ' tracked study' : 'No tracked study time yet'}</Text></View>
           </Card>)}
           {!analytics.classes.length ? <EmptyInsight icon="school-outline" title="No class data yet" detail="Your class progress will appear after you add material." /> : null}
@@ -722,7 +699,15 @@ function ActivityAnalytics({ analytics, goalMinutes }: { analytics: AnalyticsSna
   const activity = analytics.activity;
   return (
     <>
-      <SectionHeader title="Study activity" action={`${activity.activeDays} active days this month`} />
+      <View style={styles.activityHeading}>
+        <Text accessibilityRole="header" style={[styles.sectionHeadingTitle, { color: colors.text }]}>Study activity</Text>
+        <View style={[styles.activeDays, { backgroundColor: colors.cardStrong }]}>
+          <Icon name="calendar-clock" size={15} color={colors.primary} />
+          <Text style={[styles.activeDaysText, { color: colors.textSecondary }]}>
+            {activity.activeDays} active {activity.activeDays === 1 ? 'day' : 'days'} this month
+          </Text>
+        </View>
+      </View>
       <Card
         accessibilityLabel={`Today's study goal, ${formatMinutes(activity.today)} of ${formatMinutes(goalMinutes)}. Tap for details`}
         onPress={() => showStatDetail(makeStatDetail('Today’s study goal', `${formatMinutes(activity.today)} / ${formatMinutes(goalMinutes)}`, `${Math.round((activity.today / Math.max(1, goalMinutes)) * 100)}% complete today`, {
@@ -732,15 +717,15 @@ function ActivityAnalytics({ analytics, goalMinutes }: { analytics: AnalyticsSna
         }))}
         style={styles.goalCard}
       >
-        <View style={[styles.goalIcon, { backgroundColor: colors.primary }]}><Icon name="flag-checkered" color={colors.primaryText} /></View>
-        <View style={{ flex: 1 }}>
-          <View style={styles.progressHeading}>
-            <Text style={[styles.progressTitle, { color: colors.text }]}>Today’s study goal</Text>
-            <Text style={[styles.progressValue, { color: colors.primary }]}>{formatMinutes(activity.today)} / {formatMinutes(goalMinutes)}</Text>
+        <View style={styles.goalHeading}>
+          <View style={[styles.goalIcon, { backgroundColor: colors.goldSoft }]}><Icon name="flag-checkered" color={colors.goldText} size={19} /></View>
+          <View style={styles.goalSummary}>
+            <Text style={[styles.goalTitle, { color: colors.text }]}>Today’s study goal</Text>
+            <Text style={[styles.goalValue, { color: colors.primary }]}>{formatMinutes(activity.today)} / {formatMinutes(goalMinutes)}</Text>
           </View>
-          <ProgressBar progress={(activity.today / Math.max(1, goalMinutes)) * 100} color={colors.primary} />
+          <Icon name="information-outline" size={18} color={colors.primary} />
         </View>
-        <Icon name="information-outline" size={18} color={colors.primary} />
+        <ProgressBar progress={(activity.today / Math.max(1, goalMinutes)) * 100} color={colors.primary} />
       </Card>
       <View style={styles.metricGrid}>
         <MetricCard icon="calendar-today" label="Study time today" value={formatMinutes(activity.today)} detail="Tracked activity" tone="blue" />
@@ -1163,7 +1148,9 @@ function BarChart({ values, labels, minutes = false, compact = false }: { values
       <View style={styles.progressHeading}><Text style={[styles.rowTitle, { color: colors.text }]}>{labels[index]}</Text><Text style={[styles.rowMeta, { color: colors.textSecondary }]}>{formatted(value)}</Text></View><ProgressBar accessibilityLabel={labels[index] + ' ' + formatted(value)} progress={(value / max) * 100} />
     </View> : <View key={labels[index] + '-' + index} style={styles.chartColumn}>
       <Text style={[styles.chartValue, { color: colors.textSecondary }]}>{formatted(value)}</Text>
-      <View style={[styles.barTrack, compact && styles.barTrackCompact, { backgroundColor: colors.cardStrong }]}><View style={[styles.bar, { height: `${(value / max) * 100}%`, backgroundColor: index === values.length - 1 ? colors.goldBright : colors.primary }]} /></View>
+      <View style={[styles.barTrack, compact && styles.barTrackCompact, { backgroundColor: colors.neon?.progressTrack ?? colors.cardStrong }]}>
+        <View style={[styles.bar, { height: `${(value / max) * 100}%`, backgroundColor: index === values.length - 1 ? colors.neon?.season.highlight ?? colors.goldBright : colors.neon?.chart ?? colors.primary }]} />
+      </View>
       <Text style={[styles.dayLabel, { color: colors.textMuted }]}>{labels[index]}</Text>
     </View>)}
   </Pressable>;
@@ -1294,10 +1281,7 @@ function getNextStudyAdjustment(analytics: AnalyticsSnapshot): StatDetail {
 }
 
 const styles = StyleSheet.create({
-  classScope: { flexDirection: 'row', gap: spacing.xs, padding: spacing.xs, borderRadius: radius.md, marginTop: spacing.lg },
-  classScopeButton: { flex: 1, minHeight: 44, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center', padding: spacing.sm },
-  classScopeText: { fontSize: 13, lineHeight: 20, fontWeight: '700', textAlign: 'center', flexShrink: 1 },
-  header: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
+  nextStepLinkText: { fontSize: 13, lineHeight: 20, fontWeight: '700', textAlign: 'center', flexShrink: 1 },
   scrollContent: { paddingVertical: spacing.lg },
   overviewStart: { marginTop: spacing.lg },
   allClassesLabel: { ...typography.sectionTitle },
@@ -1312,15 +1296,8 @@ const styles = StyleSheet.create({
   sectionHeadingMeta: { ...typography.caption, maxWidth: '100%' },
   methodHeading: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'baseline', gap: 6 },
   flexCopy: { flex: 1, minWidth: 0 },
-  aboutButton: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   scopeRow: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 7, alignSelf: 'flex-start', paddingVertical: 8 },
   scopeLabel: { fontSize: 12, lineHeight: 18, flexShrink: 1 },
-  tabGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
-  sectionTab: { width: '31%', flexGrow: 1, minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 7, paddingVertical: 10, borderRadius: radius.sm },
-  sectionTabText: { fontSize: 13, lineHeight: 20, fontWeight: '600', flexShrink: 1 },
-  tabHalf: { width: '47%' },
-  tabFull: { width: '100%' },
-  tabSixth: { width: '15%' },
   loadingState: { minHeight: 260, alignItems: 'center', justifyContent: 'center', gap: 12 },
   detailAction: { minHeight: 50, borderRadius: 15, paddingHorizontal: 16, paddingVertical: 13, marginHorizontal: 20, marginBottom: 24, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 10 },
   detailActionText: { fontSize: 15, lineHeight: 22, fontWeight: '600', flexShrink: 1 },
@@ -1337,7 +1314,6 @@ const styles = StyleSheet.create({
   chartListRow: { width: '100%' },
   barTrackCompact: { height: 88 },
   screenShell: { flex: 1 },
-  title: { fontSize: 25, lineHeight: 32, fontWeight: '800', letterSpacing: -0.45 },
   subtitle: { fontSize: 14, lineHeight: 21, marginTop: 5, marginBottom: 2, maxWidth: 510 },
   importError: { marginTop: spacing.sm },
   modalRoot: { flex: 1, justifyContent: 'flex-end', alignItems: 'center' },
@@ -1443,8 +1419,15 @@ const styles = StyleSheet.create({
   compactTopRow: { position: 'absolute', right: 10, top: 10 },
   compactValue: { fontSize: 16, lineHeight: 21, fontWeight: '900' },
   compactLabel: { fontSize: 12, lineHeight: 18, marginTop: 4 },
-  goalCard: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 },
-  goalIcon: { width: 43, height: 43, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  activityHeading: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, marginTop: spacing.xl, marginBottom: spacing.sm },
+  activeDays: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: radius.sm, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, maxWidth: '100%' },
+  activeDaysText: { ...typography.caption, flexShrink: 1, fontVariant: ['tabular-nums'] },
+  goalCard: { gap: spacing.md, marginBottom: 10 },
+  goalHeading: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  goalSummary: { flex: 1, minWidth: 0, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline', justifyContent: 'space-between', columnGap: spacing.sm, rowGap: 2 },
+  goalIcon: { width: 35, height: 35, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  goalTitle: { ...typography.secondary, fontWeight: '700', flexShrink: 1 },
+  goalValue: { ...typography.secondary, fontWeight: '800', fontVariant: ['tabular-nums'], flexShrink: 1 },
   heatmap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   heatCell: { width: '8.3%', aspectRatio: 1, borderRadius: 5 },
   heatLegend: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 5, marginTop: 10 },

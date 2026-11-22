@@ -27,14 +27,16 @@ export type AuthMode = 'signin' | 'signup' | 'forgot';
 
 export function LoginScreen({
   onContinueAsGuest,
+  initialMode = 'signin',
 }: {
   onContinueAsGuest: () => void;
+  initialMode?: AuthMode;
 }) {
   const { colors, state } = useStudyBolt();
   const reducedMotion = useReducedMotion();
   const { configured, signIn, signUp, signInWithProvider, forgotPassword, resendConfirmationEmail, callbackError, clearCallbackError } = useAuth();
   const insets = useSafeAreaInsets();
-  const [mode, setMode] = useState<AuthMode>('signin');
+  const [mode, setMode] = useState<AuthMode>(initialMode);
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -228,7 +230,7 @@ export function LoginScreen({
         </View>
 
         <LinearGradient
-          colors={colors.mode === 'dark' ? ['#172536', '#10161D', '#302713'] : ['#E8F2FF', '#F6FAFF', '#FFF4D2']}
+          colors={colors.neon?.hero ?? colors.night?.hero ?? ['#E8F2FF', '#F6FAFF', '#FFF4D2']}
           locations={[0, 0.72, 1]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
@@ -286,7 +288,7 @@ export function LoginScreen({
           <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{subtitle}</Text>
           {hasGuestPacks && mode !== 'forgot' ? <View style={[styles.guestInfo, { backgroundColor: colors.primarySoft }]}>
             <Icon name="cloud-sync-outline" color={colors.primary} size={20} />
-            <Text style={[styles.guestInfoText, { color: colors.textSecondary }]}>After signing in, open Settings and choose Save guest packs to sync your work.</Text>
+            <Text style={[styles.guestInfoText, { color: colors.textSecondary }]}>Your guest-created Study Packs and courses are added to your account automatically.</Text>
           </View> : null}
 
           {notice ? (

@@ -5,7 +5,7 @@ import { useStudyBolt } from '../StudyBoltContext';
 import { typography } from '../theme';
 import type { StudyPack, StudyTool } from '../models';
 import type { HomeRecentMaterial } from '../services/homeDashboard';
-import { SubjectIcon } from './SubjectIcon';
+import { PackClassIcon } from './ClassIdentity';
 import { Icon, type IconName } from './ui';
 
 import type { HomeTool } from '../services/homeTools';
@@ -54,7 +54,7 @@ export function ContinueStudying({ recent, resume, onOpenDeck, onOpenLibrary, on
               <Pressable key={deck.id} accessibilityRole="button" accessibilityLabel={`Open Study Pack ${deck.title}`}
                 onPress={() => onOpenDeck(deck)}
                 style={({ pressed }) => [styles.packRow, index > 0 && styles.divider, { borderColor: colors.border, backgroundColor: pressed ? colors.primarySoft : 'transparent' }]}>
-                <SubjectIcon subject={deck.courseName} emoji={deck.emoji} size={39} animated={false} />
+                <PackClassIcon pack={deck} size={39} />
                 <View style={styles.fill}>
                   <Text style={[typography.cardTitle, { color: colors.text }]}>{deck.title}</Text>
                   <Text style={[typography.caption, { color: colors.textSecondary }]}>

@@ -6,7 +6,6 @@ import {
   consumeAuthCallback,
   createAccount,
   deleteRemoteAccount,
-  getGuestDocumentToken,
   isAuthConfigured,
   loadAuthSession,
   openProviderSignIn,
@@ -134,7 +133,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     needsStudyOnboarding: Boolean(profile?.onboardingRequired && !profile.onboardingCompleted),
     getAccessToken: async () => session?.user.is_anonymous ? null : (await activeSession())?.access_token ?? null,
     getDocumentAccessToken: async () => {
-      if (!session || session.user.is_anonymous) return getGuestDocumentToken();
+      if (!session || session.user.is_anonymous) {
+        throw new Error('Create a free StudyBolt account to unlock AI-powered document processing and sync your study packs across devices.');
+      }
       const current = await activeSession();
       if (!current) throw new Error('Your account session expired. Sign in again, then retry your import.');
       return current.access_token;

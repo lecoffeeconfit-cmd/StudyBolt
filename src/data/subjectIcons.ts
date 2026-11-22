@@ -20,7 +20,9 @@ export const SUBJECT_ICONS = [
 export type SubjectIconId = typeof SUBJECT_ICONS[number]['id'];
 
 /** Keep saved emoji choices compatible while upgrading their artwork. */
-export function getSubjectIcon(subject = '', emoji?: string) {
+export function getSubjectIcon(subject = '', emoji?: string, illustration?: SubjectIconId) {
+  const chosen = illustration && SUBJECT_ICONS.find(item => item.id === illustration);
+  if (chosen) return chosen;
   const selected = emoji && SUBJECT_ICONS.find((item) => item.emoji === emoji
     || (item.id !== 'general' && (item.aliases as readonly string[]).includes(emoji)));
   if (selected) return selected;

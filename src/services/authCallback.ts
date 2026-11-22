@@ -13,8 +13,10 @@ export function readAuthCallback(input: string, webRedirect?: string) {
   if (!native && !hosted) return null;
   const query = url.searchParams;
   const fragment = new URLSearchParams(url.hash.slice(1));
+  const flowId = query.get('sb_flow_id');
   return {
     code: query.get('code'),
     rejected: [query, fragment].some(params => params.has('error') || params.has('error_code') || params.has('error_description')),
+    ...(flowId ? { flowId } : {}),
   };
 }

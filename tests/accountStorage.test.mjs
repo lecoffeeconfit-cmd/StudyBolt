@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createAccountStateStorage, studyStateKey, LEGACY_STUDY_STATE_KEY } from '../src/services/accountStorage.ts';
 import { studyBoltLocalAccountKeys } from '../src/services/accountDeletionClient.ts';
+import { nextThemePreference } from '../src/theme.ts';
 
 function fixture(entries = []) {
   const values = new Map(entries);
@@ -72,6 +73,26 @@ test('slow writes retain their captured account through a switch', async () => {
   await Promise.all([a, b, f.state.flush()]);
   assert.equal(await f.state.read('A'), 'A last result');
   assert.equal(await f.state.read('B'), 'B new result');
+});
+
+test('queued appearance taps persist the last choice per workspace across a storage restart', async () => {
+  const state = (theme) => JSON.stringify({ decks: [], theme });
+  const f = fixture([
+    [LEGACY_STUDY_STATE_KEY, state('neon')],
+    [studyStateKey('other'), state('dark')],
+  ]);
+  const original = JSON.parse(await f.state.read('student'));
+  assert.equal(original.theme, 'neon');
+  let preference = original.theme;
+  const writes = Array.from({ length: 7 }, () => {
+    preference = nextThemePreference(preference, 'light');
+    return f.state.write(state(preference), 'student');
+  });
+  await Promise.all(writes);
+  const restarted = createAccountStateStorage(f.storage);
+  assert.equal(JSON.parse(await restarted.read('student')).theme, 'warmNight');
+  assert.equal(JSON.parse(await restarted.read('other')).theme, 'dark');
+  assert.equal(await restarted.readGuest(), null);
 });
 
 test('deletion removes only the requested library and preserves other account queues', () => {

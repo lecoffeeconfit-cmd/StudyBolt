@@ -6,7 +6,7 @@ import { useStudyBolt } from '../StudyBoltContext';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import type { StudyPack } from '../models';
 import { typography } from '../theme';
-import { SubjectIcon } from './SubjectIcon';
+import { PackClassIcon } from './ClassIdentity';
 import { Icon } from './ui';
 
 export function HomeToolPicker({ label, packs, onSelect, onClose }: {
@@ -31,7 +31,7 @@ export function HomeToolPicker({ label, packs, onSelect, onClose }: {
             {packs.map(pack => (
               <Pressable key={pack.id} accessibilityRole="button" onPress={() => onSelect(pack)}
                 style={({ pressed }) => [styles.choice, { backgroundColor: pressed ? colors.primarySoft : colors.background, borderColor: colors.border }]}>
-                <SubjectIcon subject={pack.courseName} emoji={pack.emoji} size={37} animated={false} />
+                <PackClassIcon pack={pack} size={37} />
                 <View style={styles.fill}>
                   <Text style={[typography.cardTitle, { color: colors.text }]}>{pack.title}</Text>
                   <Text style={[typography.caption, { color: colors.textSecondary }]}>{pack.courseName}</Text>

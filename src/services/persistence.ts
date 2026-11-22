@@ -4,6 +4,7 @@ import type { ExamAttempt, FlaggedItem, LibrarySort, QuizQuestionCount, Retentio
 import { initialState } from '../data/mockStudyPacks';
 import { ensureDistinctNoteLayers } from './noteLayers';
 import { createAccountStateStorage } from './accountStorage';
+import { isThemePreference } from '../theme';
 
 const accountStateStorage = createAccountStateStorage(AsyncStorage);
 const QUIZ_COUNTS: QuizQuestionCount[] = [5, 10, 15, 20, 30];
@@ -103,9 +104,7 @@ function parseStudyBoltState(raw: string | null): StudyBoltState {
     return {
       ...initialState,
       ...parsed,
-      theme: parsed.theme === 'system' || parsed.theme === 'light' || parsed.theme === 'dark' || parsed.theme === 'neon'
-        ? parsed.theme
-        : initialState.theme,
+      theme: isThemePreference(parsed.theme) ? parsed.theme : initialState.theme,
       classes,
       decks,
       flaggedItems: Array.isArray(parsed.flaggedItems) ? parsed.flaggedItems.filter(isFlaggedItem) : [],

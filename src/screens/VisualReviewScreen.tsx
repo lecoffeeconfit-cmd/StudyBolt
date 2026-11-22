@@ -12,10 +12,10 @@ import type { AiVisualAnalysis, AiVisualAnalysisRequest, NoteBlock, StudyPack, V
 import { analyzeVisualWithAi, createVisualCardSuggestion } from '../services/aiTutor';
 import { immediateVisualImageUri, resolveStoredVisualImageUri, usefulVisuals } from '../services/visuals';
 
-export function VisualReviewScreen({ deckId, onBack }: { deckId: string; onBack: () => void }) {
+export function VisualReviewScreen({ deckId, onBack, onRequireAuth }: { deckId: string; onBack: () => void; onRequireAuth?: () => void }) {
   const reducedMotion = useReducedMotion();
   const { colors, state, updateDeck } = useStudyBolt();
-  const { getAccessToken } = useAuth();
+  const { getAccessToken, user } = useAuth();
   const insets = useSafeAreaInsets();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [batchBusy, setBatchBusy] = useState(false);
@@ -81,6 +81,10 @@ export function VisualReviewScreen({ deckId, onBack }: { deckId: string; onBack:
   });
 
   const analyze = async (visual: VisualKnowledge): Promise<boolean> => {
+    if (!user) {
+      onRequireAuth?.();
+      return false;
+    }
     if ((!visual.imageDataUrl && !visual.imagePath) || !visual.documentId) {
       updateVisual(visual.id, (current) => ({ ...current, status: 'analysis_failed', aiError: 'This visual preview is unavailable. The rest of your Study Pack is unaffected.' }));
       return false;
@@ -105,6 +109,10 @@ export function VisualReviewScreen({ deckId, onBack }: { deckId: string; onBack:
 
   const analyzeAll = () => {
     if (!reviewVisuals.length) return;
+    if (!user) {
+      onRequireAuth?.();
+      return;
+    }
     Alert.alert('Analyze visuals with AI?', `This will use your existing StudyBolt AI allowance for up to ${reviewVisuals.length} visual${reviewVisuals.length === 1 ? '' : 's'}.`, [
       { text: 'Cancel', style: 'cancel' },
       { text: `Analyze ${reviewVisuals.length}`, onPress: () => {
@@ -126,6 +134,10 @@ export function VisualReviewScreen({ deckId, onBack }: { deckId: string; onBack:
   const skipAnalysis = (visualId: string) => updateVisual(visualId, (visual) => ({ ...visual, status: 'skipped_by_user', aiError: undefined }));
 
   const suggestCard = async (visual: VisualKnowledge) => {
+    if (!user) {
+      onRequireAuth?.();
+      return;
+    }
     setCardVisual(visual);
     setCardBusy(true);
     setCardError(null);

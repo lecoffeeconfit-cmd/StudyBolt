@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, Easing, Platform, View } from 'react-native';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
+import type { TabGlyphColors } from '../theme';
 import { SettingsTabGlyph } from './SettingsTabGlyph';
 import { StudyTabArtwork } from './StudyTabArtwork';
 
@@ -18,6 +19,7 @@ type StudyTabGlyphProps = {
   mode?: 'light' | 'dark';
   interacting?: boolean;
   activation?: number;
+  tones?: TabGlyphColors;
 };
 
 export function StudyTabGlyph(props: StudyTabGlyphProps) {

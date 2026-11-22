@@ -36,13 +36,18 @@ const USE_NATIVE_DRIVER = Platform.OS !== 'web';
 
 export function BottomTabs({ active, onChange }: { active: MainTab; onChange: (tab: MainTab) => void }) {
   const { colors } = useStudyBolt();
-  const neon = colors.neon;
+  const neon = colors.neon?.navigation;
+  const selectedPalette = neon?.tabs[active];
   const insets = useSafeAreaInsets();
   const reducedMotion = useReducedMotion();
   const activeIndex = TABS.findIndex((tab) => tab.id === active);
   const position = useRef(new Animated.Value(activeIndex)).current;
   const [trackWidth, setTrackWidth] = useState(0);
   const tabWidth = trackWidth / TABS.length;
+  // The optional sixth tab needs more room for its label at large text sizes on narrow phones.
+  const labelScaleLimit = COMMUNITY_TABS.length && tabWidth > 0
+    ? Math.min(1.2, Math.max(1, (tabWidth - 2) / 45))
+    : 1.2;
 
   useEffect(() => {
     position.stopAnimation();
@@ -94,12 +99,24 @@ export function BottomTabs({ active, onChange }: { active: MainTab; onChange: (t
           styles.bar,
           {
             backgroundColor: colors.tabBar,
-            borderColor: neon?.edge ?? (colors.mode === 'dark' ? `${colors.primary}26` : colors.border),
+            borderColor: neon?.edge ?? colors.border,
             shadowColor: colors.shadow,
             shadowOpacity: colors.mode === 'dark' ? 0.3 : 0.12,
           },
         ]}
       >
+        {neon ? (
+          <View pointerEvents="none" aria-hidden style={[StyleSheet.absoluteFill, styles.neonSurface]}>
+            <LinearGradient colors={neon.surface} style={StyleSheet.absoluteFill} />
+            <LinearGradient
+              colors={neon.rim}
+              locations={[0, 0.18, 0.5, 0.82, 1]}
+              start={{ x: 0, y: 0.5 }}
+              end={{ x: 1, y: 0.5 }}
+              style={styles.neonRim}
+            />
+          </View>
+        ) : null}
         <View style={styles.track} onLayout={(event) => setTrackWidth(event.nativeEvent.layout.width)}>
           {trackWidth > 0 ? (
             <Animated.View
@@ -111,15 +128,17 @@ export function BottomTabs({ active, onChange }: { active: MainTab; onChange: (t
               style={[styles.selection, { width: tabWidth - 4, transform: [{ translateX }] }]}
             >
               <LinearGradient
-                colors={[colors.primarySoft, neon?.secondarySoft ?? `${colors.primary}12`]}
+                colors={selectedPalette?.selection ?? [colors.primarySoft, `${colors.primary}12`]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
-                style={[styles.selectionFill, { borderColor: neon?.edge ?? `${colors.primary}16` }, neon && { boxShadow: `0px 0px 8px ${neon.glow}24` }]}
-              />
+                style={[styles.selectionFill, { borderColor: selectedPalette?.edge ?? `${colors.primary}16` }]}
+              >
+                {selectedPalette ? <View style={[styles.selectionMarker, { backgroundColor: selectedPalette.active }]} /> : null}
+              </LinearGradient>
             </Animated.View>
           ) : null}
           {TABS.map((tab) => (
-            <TabButton key={tab.id} tab={tab} selected={tab.id === active} reducedMotion={reducedMotion} onChange={onChange} />
+            <TabButton key={tab.id} tab={tab} selected={tab.id === active} reducedMotion={reducedMotion} labelScaleLimit={labelScaleLimit} onChange={onChange} />
           ))}
         </View>
       </View>
@@ -127,13 +146,18 @@ export function BottomTabs({ active, onChange }: { active: MainTab; onChange: (t
   );
 }
 
-function TabButton({ tab, selected, reducedMotion, onChange }: {
+function TabButton({ tab, selected, reducedMotion, labelScaleLimit, onChange }: {
   tab: TabDefinition;
   selected: boolean;
   reducedMotion: boolean;
+  labelScaleLimit: number;
   onChange: (tab: MainTab) => void;
 }) {
   const { colors } = useStudyBolt();
+  const palette = colors.neon?.navigation.tabs[tab.id];
+  const glyphs = palette ?? colors.night?.navigation;
+  const glyph = selected ? glyphs?.activeGlyph : glyphs?.inactiveGlyph;
+  const foreground = selected ? palette?.active ?? colors.primary : palette?.inactive ?? colors.textSecondary;
   const press = useRef(new Animated.Value(0)).current;
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -190,7 +214,7 @@ function TabButton({ tab, selected, reducedMotion, onChange }: {
           styles.interactionSurface,
           {
             backgroundColor: hovered && !selected ? colors.cardStrong : 'transparent',
-            borderColor: focused ? colors.primary : 'transparent',
+            borderColor: focused ? palette?.active ?? colors.primary : 'transparent',
           },
         ]}
       />
@@ -202,12 +226,14 @@ function TabButton({ tab, selected, reducedMotion, onChange }: {
           importantForAccessibility="no-hide-descendants"
           style={styles.icon}
         >
+          {selected && palette ? <View style={[styles.iconHalo, { backgroundColor: palette.halo }]} /> : null}
           <StudyTabGlyph
             name={tab.id}
             size={27}
             active={selected}
-            color={selected ? colors.primary : colors.textSecondary}
-            accent={colors.goldBright}
+            color={foreground}
+            accent={glyph?.detail ?? colors.goldBright}
+            tones={glyph}
             reducedMotion={reducedMotion}
             mode={colors.mode}
             interacting={hovered || focused}
@@ -216,8 +242,8 @@ function TabButton({ tab, selected, reducedMotion, onChange }: {
         </View>
         <Text
           numberOfLines={1}
-          maxFontSizeMultiplier={1.2}
-          style={[styles.label, { color: selected ? colors.primary : colors.textSecondary, fontWeight: selected ? '700' : '500' }]}
+          maxFontSizeMultiplier={labelScaleLimit}
+          style={[styles.label, { color: foreground, fontWeight: selected ? '700' : '500' }]}
         >
           {tab.label}
         </Text>
@@ -247,12 +273,16 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     elevation: 12,
   },
+  neonSurface: { borderRadius: 25, overflow: 'hidden' },
+  neonRim: { position: 'absolute', top: 0, left: 14, right: 14, height: 1 },
   track: { flex: 1, flexDirection: 'row' },
   selection: { position: 'absolute', left: 2, top: 0, bottom: 0 },
   selectionFill: { flex: 1, borderRadius: 19, borderWidth: StyleSheet.hairlineWidth },
+  selectionMarker: { alignSelf: 'center', position: 'absolute', top: 1, width: 13, height: 2, borderRadius: 1 },
   tab: { flex: 1, minHeight: 48, borderRadius: 19, justifyContent: 'center' },
   interactionSurface: { position: 'absolute', left: 2, right: 2, top: 0, bottom: 0, borderRadius: 19, borderWidth: 2 },
   tabContent: { alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 4 },
   icon: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
+  iconHalo: { position: 'absolute', width: 30, height: 30, borderRadius: 15 },
   label: { fontSize: 10, lineHeight: 13, letterSpacing: 0.05 },
 });

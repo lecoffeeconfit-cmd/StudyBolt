@@ -368,6 +368,10 @@ export function ExamModeScreen({ deckId, onBack, onStudyWeakAreas, onUpdateStudy
   };
 
   const openTutor = (item: QuizQuestion) => {
+    if (!user) {
+      onRequireAuth?.();
+      return;
+    }
     setTutorQuestion(item);
     setTutorResponse(undefined);
     setTutorError(undefined);
@@ -402,6 +406,10 @@ export function ExamModeScreen({ deckId, onBack, onStudyWeakAreas, onUpdateStudy
 
   async function runTutor(action: AiTutorAction, request?: string) {
     if (!tutorContext) return;
+    if (!user) {
+      onRequireAuth?.();
+      return;
+    }
     lastTutorRequest.current = { action, ...(request ? { question: request } : {}) };
     setTutorLoading(true);
     setTutorError(undefined);
@@ -428,7 +436,7 @@ export function ExamModeScreen({ deckId, onBack, onStudyWeakAreas, onUpdateStudy
     }
   }
 
-  const provider = tutorResponse?.provider ?? (onDeviceAI.status === 'checking' ? 'checking' : canAttemptOnDeviceAI(onDeviceAI) ? 'on-device' : 'cloud');
+  const provider = tutorResponse?.provider ?? (onDeviceAI.status === 'checking' ? 'checking' : user && canAttemptOnDeviceAI(onDeviceAI) ? 'on-device' : 'cloud');
   const providerDetail = provider === 'on-device' ? 'Private on-device response when this phone supports it.' : provider === 'checking' ? onDeviceAI.reason : 'Secure StudyBolt backend; usage limits are enforced server-side.';
 
   const startTutorFromResults = async () => {
@@ -570,7 +578,7 @@ export function ExamModeScreen({ deckId, onBack, onStudyWeakAreas, onUpdateStudy
   };
 
   const sheetContextReady = Boolean(tutorContext);
-  return <PageEntrance style={[styles.page, { backgroundColor: colors.background, paddingTop: insets.top + 5 }]}><View style={styles.headerWrap}><Header title={view === 'taking' ? 'Exam in progress' : 'Exam Mode'} subtitle={view === 'history' ? 'Saved runs' : view === 'results' ? attempt?.title : 'Adaptive preparation'} onBack={view === 'taking' ? () => { if (build) recordStudyEvent({ type: 'exam-abandoned', examId: build.id, examName: build.title, sourceDeckIds: build.sourceDeckIds, deckId: build.sourceDeckIds[0], assessmentKind: settings.mode === 'targeted' ? 'targeted' : 'adaptive' }); onBack(); } : view === 'setup' ? onBack : () => setView('setup')} right={view !== 'taking' ? <Pill label={view === 'history' ? 'HISTORY' : view === 'results' ? 'RESULTS' : 'ONE SYSTEM'} tone="purple" /> : null} /></View>{view === 'setup' ? renderSetup() : view === 'taking' ? renderTaking() : view === 'review' ? renderReview() : view === 'results' ? renderResults() : renderHistory()}<AskStudyBoltSheet visible={tutorVisible && sheetContextReady} sectionTitle={tutorQuestion?.conceptTitle ?? tutorQuestion?.source.label ?? 'Exam question'} signedIn={Boolean(user) || canAttemptOnDeviceAI(onDeviceAI)} configured={canAttemptOnDeviceAI(onDeviceAI) || isAiTutorConfigured} quota={provider === 'cloud' ? tutorQuota : undefined} loading={tutorLoading} error={tutorError} response={tutorResponse} provider={provider} providerDetail={providerDetail} initialQuestion={lastTutorRequest.current.question} onAsk={(action, request) => void runTutor(action, request)} onRetry={() => void runTutor(lastTutorRequest.current.action, lastTutorRequest.current.question)} onSpeak={(text) => { void Speech.stop().then(async () => Speech.speak(text, await getNarrationSpeechOptions())); }} onResume={() => setTutorVisible(false)} onRequireAuth={onRequireAuth} onClose={() => { void Speech.stop(); setTutorVisible(false); }} onQuizAnswered={(correct) => { if (attempt) recordStudyEvent({ type: 'tutor-quiz', deckId: attempt.sourceDeckIds[0], examId: attempt.examId, examAttemptId: attempt.id, tutorQuizCorrect: correct }); }} /></PageEntrance>;
+  return <PageEntrance style={[styles.page, { backgroundColor: colors.background, paddingTop: insets.top + 5 }]}><View style={styles.headerWrap}><Header title={view === 'taking' ? 'Exam in progress' : 'Exam Mode'} subtitle={view === 'history' ? 'Saved runs' : view === 'results' ? attempt?.title : 'Adaptive preparation'} onBack={view === 'taking' ? () => { if (build) recordStudyEvent({ type: 'exam-abandoned', examId: build.id, examName: build.title, sourceDeckIds: build.sourceDeckIds, deckId: build.sourceDeckIds[0], assessmentKind: settings.mode === 'targeted' ? 'targeted' : 'adaptive' }); onBack(); } : view === 'setup' ? onBack : () => setView('setup')} right={view !== 'taking' ? <Pill label={view === 'history' ? 'HISTORY' : view === 'results' ? 'RESULTS' : 'ONE SYSTEM'} tone="purple" /> : null} /></View>{view === 'setup' ? renderSetup() : view === 'taking' ? renderTaking() : view === 'review' ? renderReview() : view === 'results' ? renderResults() : renderHistory()}<AskStudyBoltSheet visible={tutorVisible && sheetContextReady} sectionTitle={tutorQuestion?.conceptTitle ?? tutorQuestion?.source.label ?? 'Exam question'} signedIn={Boolean(user)} configured={Boolean(user) && (canAttemptOnDeviceAI(onDeviceAI) || isAiTutorConfigured)} quota={provider === 'cloud' ? tutorQuota : undefined} loading={tutorLoading} error={tutorError} response={tutorResponse} provider={provider} providerDetail={providerDetail} initialQuestion={lastTutorRequest.current.question} onAsk={(action, request) => void runTutor(action, request)} onRetry={() => void runTutor(lastTutorRequest.current.action, lastTutorRequest.current.question)} onSpeak={(text) => { void Speech.stop().then(async () => Speech.speak(text, await getNarrationSpeechOptions())); }} onResume={() => setTutorVisible(false)} onRequireAuth={onRequireAuth} onClose={() => { void Speech.stop(); setTutorVisible(false); }} onQuizAnswered={(correct) => { if (attempt) recordStudyEvent({ type: 'tutor-quiz', deckId: attempt.sourceDeckIds[0], examId: attempt.examId, examAttemptId: attempt.id, tutorQuizCorrect: correct }); }} /></PageEntrance>;
 }
 
 function SectionLabel({ title, detail }: { title: string; detail?: string }) {

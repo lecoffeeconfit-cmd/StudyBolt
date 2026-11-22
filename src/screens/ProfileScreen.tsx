@@ -1,6 +1,6 @@
 import { PolishedScreen as Screen, PolishedSectionHeader as SectionHeader } from '../components/PagePresentation';
 import { useReducedMotion } from '../hooks/useReducedMotion';
-import { typography } from '../theme';
+import { themeOptions, typography } from '../theme';
 import React, { useEffect, useState } from 'react';
 import { Linking, Modal, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,10 +8,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Card, Header, Icon, Pill, PrimaryButton } from '../components/ui';
 import type { IconName } from '../components/ui';
 import { useStudyBolt } from '../StudyBoltContext';
-import type { RetentionMode, StudyType, ThemePreference } from '../models';
+import type { RetentionMode, StudyType } from '../models';
 import { learningEvidence } from '../data/learningScience';
 import { useAuth } from '../AuthContext';
 import { NarrationSettingsSheet, narrationLanguageLabel } from '../components/NarrationSettingsSheet';
+import { useGuidance } from '../components/StudyGuidance';
 import { useNarrationPreferences } from '../hooks/useNarrationPreferences';
 import {
   DEFAULT_STUDY_TIMER_SETTINGS,
@@ -23,12 +24,6 @@ import {
   type StudyTimerAlarmMode,
   type StudyTimerSettings,
 } from '../services/studyTimer';
-
-const THEMES: Array<{ id: ThemePreference; label: string; icon: IconName }> = [
-  { id: 'system', label: 'System', icon: 'cellphone' },
-  { id: 'light', label: 'Light', icon: 'weather-sunny' },
-  { id: 'dark', label: 'Dark', icon: 'weather-night' },
-];
 
 const RETENTION_OPTIONS: Array<{ id: RetentionMode; label: string; detail: string; icon: IconName }> = [
   { id: 'standard', label: 'Standard', detail: 'Simple', icon: 'calendar-sync-outline' },
@@ -47,8 +42,9 @@ function retentionLabel(mode: RetentionMode): string {
   return mode === 'standard' ? 'Standard' : mode === 'fsrs' ? 'FSRS' : 'SM-2';
 }
 
-export function ProfileScreen({ onOpenOnboarding, onOpenAuth, onManageAccount, onOpenWidgets, onOpenLegal, onOpenAdmin, onOpenSupport, onOpenPremium, isAdmin = false }: { onOpenOnboarding: () => void; onOpenAuth: () => void; onManageAccount: () => void; onOpenWidgets: () => void; onOpenLegal: () => void; onOpenAdmin: () => void; onOpenSupport: () => void; onOpenPremium: () => void; isAdmin?: boolean }) {
-  const { colors, state, setRetentionMode, setTheme, librarySyncStatus, syncLibraryNow, guestPacksAvailable, saveGuestPacks } = useStudyBolt();
+export function ProfileScreen({ onOpenAuth, onManageAccount, onOpenWidgets, onOpenLegal, onOpenAdmin, onOpenSupport, onOpenPremium, isAdmin = false }: { onOpenAuth: () => void; onManageAccount: () => void; onOpenWidgets: () => void; onOpenLegal: () => void; onOpenAdmin: () => void; onOpenSupport: () => void; onOpenPremium: () => void; isAdmin?: boolean }) {
+  const { colors, state, setRetentionMode, setTheme, setClassDisplayStyle, librarySyncStatus, syncLibraryNow, guestPacksAvailable, saveGuestPacks } = useStudyBolt();
+  const guidance = useGuidance();
   const { user, profile, updateProfile } = useAuth();
   const { preferences: narrationPreferences, voices: narrationVoices, loading: narrationLoading, updatePreferences: saveNarrationPreferences } = useNarrationPreferences();
   const [showSaveGuest, setShowSaveGuest] = useState(false);
@@ -101,7 +97,7 @@ export function ProfileScreen({ onOpenOnboarding, onOpenAuth, onManageAccount, o
   return (
     <Screen>
       <Header title="Settings" right={<Pill label={user ? 'Signed in' : 'Guest'} tone={user ? 'mint' : 'neutral'} />} />
-      <View style={[styles.profileTop, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: StyleSheet.hairlineWidth }]}>
+      <View style={[styles.profileTop, { backgroundColor: colors.card, borderColor: colors.neon?.edge ?? colors.border, borderWidth: StyleSheet.hairlineWidth }]}>
         <View style={[styles.avatar, { backgroundColor: colors.primarySoft }]}><Text style={[styles.avatarText, { color: colors.primary }]}>{initial}</Text></View>
         <Text style={[styles.title, { color: colors.text }]}>{user ? profile?.displayName || 'Account ready' : 'Your StudyBolt'}</Text>
         <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{user?.email ?? 'Studying locally as a guest'}</Text>
@@ -112,7 +108,7 @@ export function ProfileScreen({ onOpenOnboarding, onOpenAuth, onManageAccount, o
           <View style={[styles.syncIcon, { backgroundColor: colors.primary }]}><Icon name="cloud-sync" color={colors.primaryText} size={22} /></View>
           <View style={{ flex: 1 }}>
             <Text style={[styles.syncTitle, { color: colors.text }]}>{user ? 'Account & security' : 'Your study space'}</Text>
-            <Text style={[styles.syncText, { color: colors.textSecondary }]}>{user ? 'Change your email, reset your password, or manage your account.' : 'Build and study on this device as a guest. Sign in to keep your Study Packs in sync across devices.'}</Text>
+            <Text style={[styles.syncText, { color: colors.textSecondary }]}>{user ? 'Change your email, reset your password, or manage your account.' : 'Build and study on this device as a guest. Create a free account to sync your Study Packs across devices and unlock AI study tools.'}</Text>
           </View>
         </View>
         <PrimaryButton label={user ? 'Manage account' : 'Sign in or create account'} icon={user ? 'shield-account-outline' : 'login'} onPress={user ? onManageAccount : onOpenAuth} style={styles.syncButton} />
@@ -199,21 +195,36 @@ export function ProfileScreen({ onOpenOnboarding, onOpenAuth, onManageAccount, o
       <SectionHeader title="Appearance" />
       <Card style={styles.themeCard}>
         <View style={styles.themeOptions}>
-          {THEMES.map((theme) => {
+          {themeOptions.map((theme) => {
             const selected = state.theme === theme.id;
             return (
               <Pressable accessibilityRole="button"
                 key={theme.id}
+                accessibilityState={{ selected }}
                 onPress={() => setTheme(theme.id)}
-                style={[styles.themeOption, { backgroundColor: selected ? colors.primarySoft : colors.card, borderColor: selected ? colors.primary : colors.border }]}
+                style={[styles.themeOption, { backgroundColor: selected ? colors.neon?.indicator.surface ?? colors.primarySoft : colors.card, borderColor: selected ? colors.neon?.indicator.edge ?? colors.primary : colors.border }]}
               >
-                <Icon name={theme.icon} size={20} color={selected ? colors.primary : colors.textMuted} />
+                <Icon name={theme.icon} size={20} color={selected ? colors.neon?.indicator.icon ?? colors.primary : colors.textMuted} />
                 <Text style={[styles.themeLabel, { color: selected ? colors.primary : colors.textSecondary }]}>{theme.label}</Text>
               </Pressable>
             );
           })}
         </View>
-        <Text style={[styles.themeHint, { color: colors.textMuted }]}>System · Matches your device’s Light or Dark setting. Night mode lowers large bright areas and keeps text readable in dim rooms. Match your device brightness to the room; dark mode improves comfort but is not eye or sleep protection.</Text>
+        <Text style={[styles.themeHint, { color: colors.textMuted }]}>System follows your device’s Light or Dark setting. Warm Night uses warmer surfaces, and Neon changes accents with the season.</Text>
+      </Card>
+      <Card style={styles.themeCard}>
+        <Text accessibilityRole="header" style={[styles.narrationTitle, { color: colors.text }]}>Class cards</Text>
+        <View style={styles.themeOptions}>
+          {([{ id: 'icon', label: 'Icon + name' }, { id: 'minimal', label: 'Name only' }] as const).map(option => {
+            const selected = (state.classDisplayStyle ?? 'icon') === option.id;
+            return <Pressable accessibilityRole="radio" aria-checked={selected} accessibilityState={{ checked: selected }} key={option.id}
+              onPress={() => setClassDisplayStyle(option.id)}
+              style={[styles.themeOption, { backgroundColor: selected ? colors.primarySoft : colors.card, borderColor: selected ? colors.neon?.focus ?? colors.primary : colors.border }]}>
+              <Icon name={selected ? 'check-circle' : 'circle-outline'} size={19} color={selected ? colors.primary : colors.textMuted} />
+              <Text style={[styles.themeLabel, { color: colors.text }]}>{option.label}</Text>
+            </Pressable>;
+          })}
+        </View>
       </Card>
 
       <SectionHeader title="Listening" />
@@ -302,13 +313,13 @@ export function ProfileScreen({ onOpenOnboarding, onOpenAuth, onManageAccount, o
       <Card style={styles.settingsCard}>
         <Pressable
           accessibilityRole="button"
-          onPress={onOpenOnboarding}
+          onPress={guidance?.openHelp}
           style={[styles.setting, { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }]}
         >
           <View style={[styles.settingIcon, { backgroundColor: colors.cardStrong }]}><Icon name="compass-outline" size={20} color={colors.primary} /></View>
           <View style={{ flex: 1 }}>
-            <Text style={[styles.settingTitle, { color: colors.text }]}>Quick tour</Text>
-            <Text style={[styles.settingDetail, { color: colors.textMuted }]}>Replay the StudyBolt introduction</Text>
+            <Text style={[styles.settingTitle, { color: colors.text }]}>Help &amp; tutorials</Text>
+            <Text style={[styles.settingDetail, { color: colors.textMuted }]}>Replay a page tour or the StudyBolt introduction</Text>
           </View>
           <Icon name="chevron-right" color={colors.textMuted} />
         </Pressable>
@@ -400,7 +411,7 @@ function StudyTimerSettingsSheet({
     <Modal visible={visible} transparent animationType={reducedMotion ? 'none' : 'slide'} onRequestClose={onClose}>
       <View style={[styles.timerModalRoot, { backgroundColor: colors.mode === 'dark' ? 'rgba(0,0,0,0.72)' : 'rgba(17,28,78,0.34)' }]}>
         <Pressable accessibilityRole="button" accessibilityLabel="Close study timer settings" onPress={onClose} style={StyleSheet.absoluteFill} />
-        <View role="dialog" aria-modal accessibilityViewIsModal accessibilityLabel="Study timer settings" style={[styles.timerSheet, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow, paddingBottom: Math.max(insets.bottom, 20) }]}>
+        <View role="dialog" aria-modal accessibilityViewIsModal accessibilityLabel="Study timer settings" style={[styles.timerSheet, { backgroundColor: colors.card, borderColor: colors.neon?.sheetEdge ?? colors.border, shadowColor: colors.shadow, paddingBottom: Math.max(insets.bottom, 20) }]}>
           <View style={[styles.timerHandle, { backgroundColor: colors.border }]} />
           <View style={styles.timerHeading}>
             <View style={[styles.timerHeadingIcon, { backgroundColor: colors.purpleSoft }]}><Icon name="timer-outline" size={23} color={colors.purple} /></View>
@@ -520,8 +531,8 @@ const styles = StyleSheet.create({
   studyTypeNotice: { fontSize: 14, lineHeight: 21, fontWeight: '700', marginTop: 10 },
   themeCard: { padding: 12 },
   themeOptions: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  themeOption: { flex: 1, borderRadius: 13, borderWidth: 1, alignItems: 'center', paddingVertical: 13, gap: 5, minHeight: 70, minWidth: 84, flexGrow: 1 },
-  themeLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700' },
+  themeOption: { flexBasis: 92, flexGrow: 1, borderRadius: 13, borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6, paddingVertical: 10, gap: 5, minHeight: 70 },
+  themeLabel: { fontSize: 12, lineHeight: 18, fontWeight: '700', textAlign: 'center' },
   themeHint: { fontSize: 12, lineHeight: 19, marginTop: 12, paddingHorizontal: 3 },
   narrationCard: { padding: 13 },
   narrationTop: { flexDirection: 'row', alignItems: 'center', gap: 11 },

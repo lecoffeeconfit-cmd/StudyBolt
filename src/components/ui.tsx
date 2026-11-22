@@ -1,5 +1,6 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
 import type { ReactNode } from 'react';
 import {
@@ -29,42 +30,49 @@ export function Icon({ name, size = 22, color }: { name: IconName; size?: number
   return <MaterialCommunityIcons name={name} size={size} color={color ?? colors.text} accessible={false} aria-hidden accessibilityElementsHidden importantForAccessibility="no-hide-descendants" />;
 }
 
-export function ThemeToggle({ style, size, darkIconColor, reducedMotion }: {
+export function ThemeToggle({ style, size, reducedMotion }: {
   style: StyleProp<ViewStyle>;
   size: number;
-  darkIconColor?: string;
   reducedMotion: boolean;
 }) {
-  const { colors, cycleTheme, themeToggleLabel } = useStudyBolt();
-  const neon = colors.neon;
-  const animate = Boolean(neon) && !reducedMotion;
+  const { colors, cycleTheme, themeToggle } = useStudyBolt();
+  const indicator = colors.neon?.indicator;
+  const animate = Boolean(indicator) && !reducedMotion;
   const reveal = React.useRef(new Animated.Value(1)).current;
 
   React.useEffect(() => {
     if (!animate) return;
-    reveal.setValue(0.65);
+    reveal.setValue(0);
     const animation = Animated.timing(reveal, {
-      toValue: 1, duration: 180, useNativeDriver: Platform.OS !== 'web', isInteraction: false,
+      toValue: 1, duration: 210, easing: Easing.out(Easing.cubic), useNativeDriver: Platform.OS !== 'web', isInteraction: false,
     });
     animation.start();
     return () => animation.stop();
   }, [animate, reveal]);
 
   const icon = <Icon
-    name={neon ? 'creation' : colors.mode === 'dark' ? 'weather-sunny' : 'weather-night'}
+    name={themeToggle.icon}
     size={size}
-    color={neon?.glow ?? (colors.mode === 'dark' ? darkIconColor ?? colors.primary : colors.primary)}
+    color={indicator?.icon ?? colors.primary}
   />;
 
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={themeToggleLabel}
-      accessibilityHint={neon ? 'Seasonal Neon mode is on.' : undefined}
+      accessibilityLabel={themeToggle.label}
+      accessibilityHint={colors.neon ? `${colors.neon.name} seasonal palette.` : undefined}
       onPress={cycleTheme}
-      style={[style, { backgroundColor: neon ? colors.primarySoft : colors.card, borderColor: neon?.edge ?? colors.border }]}
+      style={[style, { backgroundColor: indicator?.surface ?? colors.card, borderColor: indicator?.edge ?? colors.border }]}
     >
-      {animate ? <Animated.View style={{ opacity: reveal }}>{icon}</Animated.View> : icon}
+      {indicator ? (
+        <View pointerEvents="none" aria-hidden style={[styles.sparkleHalo, { width: size + 8, height: size + 8, backgroundColor: indicator.halo }]} />
+      ) : null}
+      {animate ? (
+        <Animated.View style={{
+          opacity: reveal.interpolate({ inputRange: [0, 1], outputRange: [0.64, 1] }),
+          transform: [{ scale: reveal.interpolate({ inputRange: [0, 1], outputRange: [0.88, 1] }) }],
+        }}>{icon}</Animated.View>
+      ) : icon}
     </Pressable>
   );
 }
@@ -158,7 +166,7 @@ export function BoltLogo({ compact = false }: { compact?: boolean }) {
         size={36}
         iconSize={compact ? 21 : 27}
         backgroundColor={colors.neon ? colors.primarySoft : colors.primary}
-        color={colors.neon ? colors.goldBright : colors.mode === 'dark' ? '#FFE68A' : '#FFE04F'}
+        color={colors.neon?.indicator.icon ?? (colors.mode === 'dark' ? '#FFE68A' : '#FFE04F')}
         style={{
           shadowColor: colors.primary,
           shadowOffset: { width: 0, height: 2 },
@@ -215,6 +223,8 @@ export function PrimaryButton({
   style?: StyleProp<ViewStyle>;
 }) {
   const { colors } = useStudyBolt();
+  const buttonStyle = colors.neon ? StyleSheet.flatten(style) : undefined;
+  const actionGradient = buttonStyle?.backgroundColor === undefined ? colors.neon?.action : undefined;
   return (
     <Pressable aria-disabled={disabled || loading} aria-busy={loading}
       accessibilityRole="button"
@@ -231,10 +241,30 @@ export function PrimaryButton({
         style,
       ]}
     >
+      {actionGradient ? (
+        <GradientSurface colors={actionGradient} borderRadius={buttonStyle?.borderRadius ?? radius.md} />
+      ) : null}
       {loading ? <LoadingArtwork compact colors={{ ...colors, primary: colors.primaryText }} /> : icon ? <Icon name={icon} size={20} color={colors.primaryText} /> : null}
       <Text style={[styles.primaryButtonText, { color: colors.primaryText }]}>{label}</Text>
     </Pressable>
   );
+}
+
+export function GradientSurface({ colors, borderRadius }: { colors: readonly [string, string]; borderRadius: ViewStyle['borderRadius'] }) {
+  return (
+    <LinearGradient
+      pointerEvents="none"
+      aria-hidden
+      colors={colors}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={[StyleSheet.absoluteFill, { borderRadius, overflow: 'hidden' }]}
+    />
+  );
+}
+
+export function NeonOutline({ color, borderRadius }: { color: string; borderRadius: number }) {
+  return <View pointerEvents="none" aria-hidden style={[StyleSheet.absoluteFill, { borderWidth: StyleSheet.hairlineWidth, borderColor: color, borderRadius }]} />;
 }
 
 export function SectionHeader({ title, action, onAction }: { title: string; action?: string; onAction?: () => void }) {
@@ -244,7 +274,7 @@ export function SectionHeader({ title, action, onAction }: { title: string; acti
       <Text accessibilityRole="header" style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text>
       {action && onAction ? (
         <Pressable accessibilityRole="button" accessibilityLabel={`${action}: ${title}`} onPress={onAction} hitSlop={6} style={styles.sectionActionTarget}>
-          <Text style={[styles.sectionAction, { color: colors.primary }]}>{action}</Text>
+          <Text style={[styles.sectionAction, { color: colors.neon?.focus ?? colors.primary }]}>{action}</Text>
         </Pressable>
       ) : action ? <Text style={[styles.sectionMetadata, { color: colors.textSecondary }]}>{action}</Text> : null}
     </View>
@@ -301,6 +331,7 @@ export function Pill({ label, tone = 'blue' }: { label: string; tone?: 'blue' | 
   const foreground = tone === 'gold' ? colors.goldText : tone === 'mint' ? colors.mint : tone === 'purple' ? colors.purple : tone === 'neutral' ? colors.textSecondary : colors.primary;
   return (
     <View style={[styles.pill, { backgroundColor: background }]}>
+      {colors.neon ? <NeonOutline color={tone === 'blue' ? colors.neon.edge : colors.border} borderRadius={radius.pill} /> : null}
       <Text style={[styles.pillText, { color: foreground }]}>{label}</Text>
     </View>
   );
@@ -309,18 +340,22 @@ export function Pill({ label, tone = 'blue' }: { label: string; tone?: 'blue' | 
 export function ProgressBar({ progress, color, accessibilityLabel = 'Progress' }: { progress: number; color?: string; accessibilityLabel?: string }) {
   const { colors } = useStudyBolt();
   const safe = Math.max(0, Math.min(100, progress));
-  const fill = color === undefined || color === colors.primary ? colors.neon?.progressFill ?? colors.primary : color;
+  const neon = color === undefined || color === colors.primary ? colors.neon : undefined;
+  const fill = neon?.progressFill ?? color ?? colors.primary;
   const highlight = colors.neon && safe > 0
     ? { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.neon.progressHighlight }
     : undefined;
   return (
     <View aria-valuemin={0} aria-valuemax={100} aria-valuenow={safe} accessible accessibilityRole="progressbar" accessibilityLabel={accessibilityLabel} accessibilityValue={{ min: 0, max: 100, now: safe }} style={[styles.progressTrack, { backgroundColor: colors.neon?.progressTrack ?? colors.border }]}>
-      <View style={[styles.progressFill, { backgroundColor: fill, width: `${safe}%` }, highlight]} />
+      <View style={[styles.progressFill, { backgroundColor: fill, width: `${safe}%` }, highlight]}>
+        {neon && safe > 0 ? <GradientSurface colors={[neon.progressFill, neon.progressEnd]} borderRadius={radius.pill} /> : null}
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  sparkleHalo: { position: 'absolute', borderRadius: radius.pill },
   screen: { flex: 1, paddingHorizontal: 20 },
   scrollContent: { paddingHorizontal: 20, paddingBottom: 120 },
   card: {

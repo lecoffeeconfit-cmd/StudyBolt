@@ -45,6 +45,17 @@ export async function runStudyBoltAI({
   conversation?: AiTutorConversation;
   channel?: AiRequestChannel;
 }): Promise<StudyBoltAIResult> {
+  // Registration gates every AI provider, including on-device models and cached
+  // answers. Guest libraries remain usable through the non-AI study tools.
+  if (!accessToken?.trim()) {
+    return {
+      availability: { status: 'unavailable', reason: 'A free StudyBolt account is required for AI study tools.' },
+      routeUsed: 'none',
+      fallbackReason: 'account-required',
+      error: 'Create a free account to unlock AI study tools and secure cross-device sync.',
+      code: 'account_required',
+    };
+  }
   const cacheEpoch = accountCacheEpoch;
   const cacheable = !question?.trim() && !(conversation?.turns?.length) && ['explain', 'teach', 'quick-answer', 'deep-dive', 'simplify', 'example', 'important', 'confuse'].includes(action);
   const key = cacheable ? cacheKey(action, context) : '';

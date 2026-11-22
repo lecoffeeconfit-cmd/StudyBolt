@@ -10,9 +10,10 @@ import { LoadingArtwork, StudyBoltLoading } from '../components/StudyBoltLoading
 
 import { useAuth } from '../AuthContext';
 import { AskStudyBoltSheet, SpeedPickerSheet, VoicePickerSheet } from '../components/StudyCastSheets';
-import { Card, FlagButton, Header, Icon, Pill, PrimaryButton, ProgressBar, SectionHeader } from '../components/ui';
+import { Card, FlagButton, Header, Icon, NeonOutline, Pill, PrimaryButton, ProgressBar, SectionHeader } from '../components/ui';
 import type { IconName } from '../components/ui';
 import { StudyPackShareSheet } from '../components/StudyPackShareSheet';
+import { GuideAnchor, GuideTip, useGuidanceBlocker } from '../components/StudyGuidance';
 import { StudyCastArtwork } from '../components/StudyCastArtwork';
 import { SubjectIcon } from '../components/SubjectIcon';
 import { useStudyBolt } from '../StudyBoltContext';
@@ -189,6 +190,7 @@ export function StudyPackScreen({
   const [coachSeed, setCoachSeed] = useState('');
   const [shareVisible, setShareVisible] = useState(false);
   const deck = deckOverride ?? state.decks.find((item) => item.id === deckId);
+  useGuidanceBlocker(tool !== 'overview' || shared || shareVisible || !deck);
 
   if (!deck) {
     return (
@@ -229,27 +231,29 @@ export function StudyPackScreen({
             <Text numberOfLines={2} style={[styles.sharedBannerText, { color: colors.textSecondary }]}>{sharedMetadata?.description || `${sharedMetadata?.itemCount ?? deck.notes.length + deck.flashcards.length} study items · Save your own editable copy.`}</Text>
           </View>
           <Pressable accessibilityRole="button" onPress={onSaveShared} style={[styles.sharedSaveButton, { backgroundColor: colors.purple }]}>
-            <Text style={[styles.sharedSaveText, colors.neon && { color: colors.primaryText }]}>Save copy</Text>
+            <Text style={[styles.sharedSaveText, { color: colors.primaryText }]}>Save copy</Text>
           </Pressable>
         </Card>
       ) : null}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabs} style={[styles.tabScroller, { borderBottomColor: colors.border }]}>
+      <GuideAnchor id={shared ? undefined : 'pack-tools'}><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabs} style={[styles.tabScroller, { borderBottomColor: colors.border }]}>
         {TABS.map((tab) => {
           const active = tool === tab.id;
           return (
             <Pressable aria-selected={active} accessibilityRole="tab" accessibilityState={{ selected: active }} key={tab.id} onPress={() => setTool(tab.id)} style={[styles.tab, active && { backgroundColor: colors.primarySoft }]}>
+              {active && colors.neon ? <NeonOutline color={colors.neon.edge} borderRadius={styles.tab.borderRadius} /> : null}
               <Text style={[styles.tabText, { color: active ? colors.primary : colors.textSecondary }]}>{tab.label}</Text>
             </Pressable>
           );
         })}
-      </ScrollView>
+      </ScrollView></GuideAnchor>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <GuideTip id="pack-ready" eligible={tool === 'overview' && !shared && deck.fileType !== 'demo' && deck.flashcards.length > 0 && (!deck.generation || deck.generation.materials.flashcards.status === 'ready')} />
         {tool === 'overview' ? <Overview deck={deck} onTool={setTool} onPlan={() => onPlan(deck.id)} onStartStudy={onStartStudy ? (mode) => onStartStudy(mode, deck.id) : undefined} onOpenSpeedReview={onOpenSpeedReview ? () => onOpenSpeedReview(deck.id) : undefined} onOpenVisualReview={onOpenVisualReview ? () => onOpenVisualReview(deck.id) : undefined} shared={shared} /> : null}
         {tool === 'notes' ? <Notes deck={deck} readOnly={shared} onAskSection={(note) => { setCoachSeed(`Help me understand this section in simpler words: ${note.title}. ${note.summary ?? note.keyIdea ?? note.bullets.join(' ')}`); setTool('coach'); }} /> : null}
-        {tool === 'flashcards' ? <MaterialGate deck={deck} material="flashcards" shared={shared}><Flashcards deck={flashcardIds ? { ...deck, flashcards: flashcardIds.flatMap((id) => deck.flashcards.filter((card) => card.id === id)) } : deck} readOnly={shared} /></MaterialGate> : null}
-        {tool === 'quiz' ? <MaterialGate deck={deck} material="quiz" shared={shared}><Quiz deck={deck} readOnly={shared} onOpenExam={onOpenExam} /></MaterialGate> : null}
-        {tool === 'audio' ? <MaterialGate deck={deck} material="audio" shared={shared}><AudioPlayer deck={deck} readOnly={shared} onRequireAuth={onRequireAuth} /></MaterialGate> : null}
-        {tool === 'coach' ? <StudyCoach deck={deck} onTool={setTool} initialQuestion={coachSeed} onStartStudy={onStartStudy ? (mode) => onStartStudy(mode, deck.id) : undefined} /> : null}
+        {tool === 'flashcards' ? <MaterialGate deck={deck} material="flashcards" shared={shared} onRequireAuth={onRequireAuth}><Flashcards deck={flashcardIds ? { ...deck, flashcards: flashcardIds.flatMap((id) => deck.flashcards.filter((card) => card.id === id)) } : deck} readOnly={shared} /></MaterialGate> : null}
+        {tool === 'quiz' ? <MaterialGate deck={deck} material="quiz" shared={shared} onRequireAuth={onRequireAuth}><Quiz deck={deck} readOnly={shared} onOpenExam={onOpenExam} /></MaterialGate> : null}
+        {tool === 'audio' ? <MaterialGate deck={deck} material="audio" shared={shared} onRequireAuth={onRequireAuth}><AudioPlayer deck={deck} readOnly={shared} onRequireAuth={onRequireAuth} /></MaterialGate> : null}
+        {tool === 'coach' ? <StudyCoach deck={deck} onTool={setTool} initialQuestion={coachSeed} onRequireAuth={onRequireAuth} onStartStudy={onStartStudy ? (mode) => onStartStudy(mode, deck.id) : undefined} /> : null}
       </ScrollView>
       {!shared ? <StudyPackShareSheet deck={deck} visible={shareVisible} onClose={() => setShareVisible(false)} onRequireAuth={onRequireAuth} /> : null}
     </View>
@@ -303,7 +307,7 @@ function Overview({ deck, onTool, onPlan, onStartStudy, onOpenSpeedReview, onOpe
         <ToolCard icon="note-text-outline" title="Layered Notes" detail={materialReady('simpleNotes') || materialReady('detailedNotes') ? 'Simplified + full-detail views' : 'Creating your note layers…'} color={colors.primary} background={colors.primarySoft} onPress={() => onTool('notes')} />
         <ToolCard icon="cards-outline" title="Flashcards" detail={materialReady('flashcards') ? `${deck.flashcards.length} active recall cards` : 'Building flashcards…'} color={colors.purple} background={colors.purpleSoft} onPress={() => onTool('flashcards')} />
         <ToolCard icon="clipboard-text-outline" title="Quiz & Exam" detail={materialReady('quiz') ? 'Practice questions + cumulative test' : 'Preparing your quiz…'} color={colors.mint} background={colors.mintSoft} onPress={() => onTool('quiz')} />
-        <ToolCard icon="headphones" title="StudyCast" detail={materialReady('audio') ? 'Listen and ask about any section' : 'Creating audio summary…'} color={colors.neon ? colors.purple : '#A45FEB'} background={colors.purpleSoft} onPress={() => onTool('audio')} />
+        <ToolCard icon="headphones" title="StudyCast" detail={materialReady('audio') ? 'Listen and ask about any section' : 'Creating audio summary…'} color={colors.mode === 'dark' ? colors.purple : '#A45FEB'} background={colors.purpleSoft} onPress={() => onTool('audio')} />
         {!shared && visualCount > 0 && onOpenVisualReview ? <ToolCard icon="image-multiple-outline" title="Visuals" detail={`${visualCount} saved study visual${visualCount === 1 ? '' : 's'} from your slides`} color={colors.purple} background={colors.purpleSoft} onPress={onOpenVisualReview} /> : null}
       </View>
 
@@ -330,7 +334,7 @@ function Overview({ deck, onTool, onPlan, onStartStudy, onOpenSpeedReview, onOpe
 
       {!shared && onStartStudy ? (
         <View style={styles.deckAdaptiveActions}>
-          <Pressable accessibilityRole="button" onPress={() => onStartStudy('smart')} style={[styles.deckAdaptivePrimary, { backgroundColor: colors.primary }]}><Icon name="lightning-bolt" color={colors.neon ? colors.primaryText : colors.goldBright} /><View><Text style={[styles.deckAdaptiveTitle, { color: colors.primaryText }]}>Study this pack</Text><Text style={[styles.deckAdaptiveText, { color: colors.primaryText }]}>Adaptive mix</Text></View></Pressable>
+          <Pressable accessibilityRole="button" onPress={() => onStartStudy('smart')} style={[styles.deckAdaptivePrimary, { backgroundColor: colors.primary }]}><Icon name="lightning-bolt" color={colors.mode === 'dark' ? colors.primaryText : colors.goldBright} /><View><Text style={[styles.deckAdaptiveTitle, { color: colors.primaryText }]}>Study this pack</Text><Text style={[styles.deckAdaptiveText, { color: colors.primaryText }]}>Adaptive mix</Text></View></Pressable>
           <Pressable accessibilityRole="button" onPress={() => onStartStudy('pretest')} style={[styles.deckAdaptiveSecondary, { backgroundColor: colors.card, borderColor: colors.border }]}><Icon name="radar" color={colors.primary} /><View><Text style={[styles.deckAdaptiveTitle, { color: colors.text }]}>Pre-test</Text><Text style={[styles.deckAdaptiveText, { color: colors.textMuted }]}>Find your baseline</Text></View></Pressable>
         </View>
       ) : null}
@@ -344,7 +348,7 @@ function Overview({ deck, onTool, onPlan, onStartStudy, onOpenSpeedReview, onOpe
 
       {!shared && visualReviewCount > 0 && onOpenVisualReview ? (
         <Card onPress={onOpenVisualReview} style={[styles.visualReviewBanner, styles.flatCard, { backgroundColor: colors.purpleSoft, borderColor: `${colors.purple}44` }]}>
-          <View style={[styles.visualReviewIcon, { backgroundColor: colors.purple }]}><Icon name="image-search-outline" size={22} color={colors.neon ? colors.primaryText : '#FFFFFF'} /></View>
+          <View style={[styles.visualReviewIcon, { backgroundColor: colors.purple }]}><Icon name="image-search-outline" size={22} color={colors.primaryText} /></View>
           <View style={{ flex: 1 }}>
             <Text style={[styles.visualReviewTitle, { color: colors.text }]}>{activeVisualReviewCount ? 'Visuals to review' : 'Review skipped visuals'}</Text>
             <Text style={[styles.visualReviewText, { color: colors.textSecondary }]}>{activeVisualReviewCount ? `${activeVisualReviewCount} visual${activeVisualReviewCount === 1 ? '' : 's'} may contain extra lecture detail. Review them when you’re ready.` : `${skippedVisualReviewCount} skipped visual${skippedVisualReviewCount === 1 ? '' : 's'} remain available if you change your mind.`}</Text>
@@ -960,7 +964,7 @@ function Flashcards({ deck, readOnly = false }: { deck: StudyPack; readOnly?: bo
       <Modal visible={editing} transparent animationType={reducedMotion ? 'none' : 'slide'} onRequestClose={() => setEditing(false)}>
         <View style={styles.editorModalRoot}>
           <Pressable accessibilityRole="button" accessibilityLabel="Close flashcard editor" style={StyleSheet.absoluteFill} onPress={() => setEditing(false)} />
-          <View style={[styles.editorSheet, { backgroundColor: colors.backgroundRaised, borderColor: colors.border }]}>
+          <View style={[styles.editorSheet, { backgroundColor: colors.backgroundRaised, borderColor: colors.neon?.sheetEdge ?? colors.border }]}>
             <View style={[styles.editorHandle, { backgroundColor: colors.border }]} />
             <View style={styles.editorHeader}>
               <View style={{ flex: 1 }}><Text style={[styles.editorTitle, { color: colors.text }]}>Edit flashcard</Text><Text style={[styles.editorSubtitle, { color: colors.textMuted }]}>Changes stay in this Study Pack.</Text></View>
@@ -984,7 +988,7 @@ function EditorField({ label, value, onChangeText, colors, multiline = false }: 
   return (
     <View style={styles.editorField}>
       <Text style={[styles.editorLabel, { color: colors.textMuted }]}>{label}</Text>
-      <TextInput value={value} onChangeText={onChangeText} multiline={multiline} placeholderTextColor={colors.textMuted} style={[styles.editorInput, multiline && styles.editorInputMultiline, { color: colors.text, backgroundColor: colors.card, borderColor: colors.border }]} />
+      <TextInput value={value} onChangeText={onChangeText} multiline={multiline} placeholderTextColor={colors.textMuted} selectionColor={colors.neon?.focus} style={[styles.editorInput, multiline && styles.editorInputMultiline, { color: colors.text, backgroundColor: colors.card, borderColor: colors.border }]} />
     </View>
   );
 }
@@ -1330,9 +1334,9 @@ function Quiz({ deck, readOnly = false, onOpenExam }: { deck: StudyPack; readOnl
 type CoachView = 'ask' | 'teach' | 'recall' | 'connect';
 type CoachAnswer = { title: string; lines: string[] };
 
-function StudyCoach({ deck, onTool, onStartStudy, initialQuestion = '' }: { deck: StudyPack; onTool: (tool: StudyTool) => void; onStartStudy?: (mode: SmartStudyMode) => void; initialQuestion?: string }) {
+function StudyCoach({ deck, onTool, onStartStudy, initialQuestion = '', onRequireAuth }: { deck: StudyPack; onTool: (tool: StudyTool) => void; onStartStudy?: (mode: SmartStudyMode) => void; initialQuestion?: string; onRequireAuth?: () => void }) {
   const { colors } = useStudyBolt();
-  const { getAccessToken } = useAuth();
+  const { getAccessToken, user } = useAuth();
   const [view, setView] = useState<CoachView>('ask');
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState<CoachAnswer>();
@@ -1353,6 +1357,10 @@ function StudyCoach({ deck, onTool, onStartStudy, initialQuestion = '' }: { deck
 
   const answerPrompt = async (kind: 'important' | 'confuse' | 'weak' | 'custom') => {
     if (kind === 'important' || kind === 'confuse' || kind === 'custom') {
+      if (!user) {
+        onRequireAuth?.();
+        return;
+      }
       setCoachNotice(null);
       setCoachLoading(true);
       const accessToken = await getAccessToken();
@@ -1391,6 +1399,10 @@ function StudyCoach({ deck, onTool, onStartStudy, initialQuestion = '' }: { deck
 
   const checkTeaching = async () => {
     if (!note) return;
+    if (!user) {
+      onRequireAuth?.();
+      return;
+    }
     const response = teaching.toLowerCase();
     const ideas = note.bullets.slice(0, 5);
     const matchesIdea = (idea: string) => idea.toLowerCase().split(/\W+/).filter((word) => word.length >= 6).some((word) => response.includes(word));
@@ -1537,7 +1549,7 @@ function StudyCoach({ deck, onTool, onStartStudy, initialQuestion = '' }: { deck
             {deck.notes.map((item, index) => <Pressable accessibilityRole="button" key={item.id} onPress={() => setNoteIndex(index)} style={[styles.topicChip, { backgroundColor: index === noteIndex ? colors.purple : colors.card, borderColor: index === noteIndex ? colors.purple : colors.border }]}><Text style={[styles.topicChipText, { color: index === noteIndex ? colors.primaryText : colors.textSecondary }]}>{item.title}</Text></Pressable>)}
           </ScrollView>
           <View style={styles.mapWrap}>
-            <View style={[styles.mapNode, styles.mapNodeCenter, { backgroundColor: colors.primary, shadowColor: colors.shadow }]}><Icon name="hexagon-multiple-outline" color={colors.primaryText} /><Text style={[styles.mapCenterTitle, colors.neon && { color: colors.primaryText }]}>{note.title}</Text></View>
+            <View style={[styles.mapNode, styles.mapNodeCenter, { backgroundColor: colors.primary, shadowColor: colors.shadow }]}><Icon name="hexagon-multiple-outline" color={colors.primaryText} /><Text style={[styles.mapCenterTitle, { color: colors.primaryText }]}>{note.title}</Text></View>
             <View style={[styles.mapLine, { backgroundColor: colors.border }]} />
             <View style={styles.connectionList}>
               {(note.connections?.length ? note.connections : [note.keyIdea ?? note.summary ?? note.bullets[0]]).slice(0, 4).map((connection, index) => (
@@ -1928,6 +1940,10 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
     if (result.quota) setTutorQuota(result.quota);
   };
   const runTutor = async (action: AiTutorAction, question?: string, channel: AiRequestChannel = 'text'): Promise<AiTutorResponse | undefined> => {
+    if (!user) {
+      onRequireAuth?.();
+      return undefined;
+    }
     lastTutorRequestRef.current = { action, ...(question ? { question } : {}) };
     setTutorLoading(true);
     setTutorError(undefined);
@@ -1972,6 +1988,10 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
     }
   };
   const openAsk = async (action?: AiTutorAction) => {
+    if (!user) {
+      onRequireAuth?.();
+      return;
+    }
     const currentPosition = position;
     askResumePositionRef.current = currentPosition;
     if (playing) await stopAt(currentPosition);
@@ -1999,11 +2019,19 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
       setVoiceSessionState('idle');
       return;
     }
+    if (!user) {
+      onRequireAuth?.();
+      return;
+    }
     setInteractiveMode(true);
     setVoiceSessionState('paused');
     if (playing) await stopAt(position);
   };
   const openDriveMode = async () => {
+    if (!user) {
+      onRequireAuth?.();
+      return;
+    }
     if (playing) await stopAt(position);
     driveModeActiveRef.current = true;
     voiceAutoListenRef.current = true;
@@ -2200,7 +2228,7 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
   const canSlowDown = rateIndex > 0;
   const canSpeedUp = rateIndex >= 0 && rateIndex < PLAYBACK_RATES.length - 1;
   const formattedRate = `${Number.isInteger(rate) ? rate.toFixed(1) : rate.toString()}×`;
-  const onDeviceTutorPossible = canAttemptOnDeviceAI(onDeviceAI);
+  const onDeviceTutorPossible = Boolean(user) && canAttemptOnDeviceAI(onDeviceAI);
   const tutorProvider = tutorResponse?.provider
     ?? (onDeviceAI.status === 'checking' ? 'checking' : onDeviceTutorPossible ? 'on-device' : 'cloud');
   const tutorProviderDetail = tutorProvider === 'on-device'
@@ -2240,11 +2268,9 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
           );
         })}
       </View>
-      <Card style={[styles.player, { borderColor: colors.neon?.edge ?? (colors.mode === 'dark' ? '#344A56' : '#D9E7F8') }]}>
+      <Card style={[styles.player, { borderColor: colors.neon?.edge ?? (colors.night ? colors.border : '#D9E7F8') }]}>
         <LinearGradient
-          colors={colors.neon
-            ? [colors.primarySoft, colors.neon.secondarySoft, colors.card]
-            : colors.mode === 'dark' ? ['#1A2B42', '#192934', '#272F32'] : ['#EFF6FF', '#F7FCFC', '#FFFCF2']}
+          colors={colors.neon?.hero ?? colors.night?.hero ?? ['#EFF6FF', '#F7FCFC', '#FFFCF2']}
           start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.playerWash}
         />
         <StudyCastArtwork playing={playing} colors={colors} visible={!driveModeVisible} />
@@ -2252,8 +2278,8 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
         <Text style={[styles.audioTitle, { color: colors.text }]}>{deck.title}</Text>
         <Text style={[styles.audioCourse, { color: colors.textSecondary }]}>{deck.courseName} · About {remainingMinutes || '< 1'} min remaining</Text>
         <View style={[styles.currentSection, {
-          backgroundColor: colors.neon ? colors.cardStrong : colors.mode === 'dark' ? '#213441' : '#FFFFFFB3',
-          borderColor: colors.neon ? colors.border : colors.mode === 'dark' ? '#344B57' : '#E5EDF3',
+          backgroundColor: colors.mode === 'dark' ? colors.cardStrong : '#FFFFFFB3',
+          borderColor: colors.mode === 'dark' ? colors.border : '#E5EDF3',
         }]}><Text style={[styles.currentSectionLabel, { color: colors.textSecondary }]}>CURRENT SECTION</Text><Text numberOfLines={2} style={[styles.currentSectionTitle, { color: colors.text }]}>{tutorContext.currentChunk.title}</Text></View>
         <View style={styles.audioProgress}><SeekProgress progress={progress} color={colors.primary} onSeek={seekToProgress} currentPosition={position} total={words.length} /></View>
         <View style={styles.timeRow}>
@@ -2261,9 +2287,9 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
           <Text style={[styles.timeText, { color: colors.textSecondary }]}>−{Math.floor((words.length - position) / (2.25 * rate) / 60)}:{Math.floor(((words.length - position) / (2.25 * rate)) % 60).toString().padStart(2, '0')}</Text>
         </View>
         <View style={styles.controls}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Skip back 15 seconds" onPress={() => void skip(-15)} style={[styles.smallControl, { backgroundColor: colors.neon ? colors.cardStrong : colors.mode === 'dark' ? '#253A49' : '#FFFFFFB3' }]}><Icon name="rewind-15" color={colors.textSecondary} size={25} /></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Skip back 15 seconds" onPress={() => void skip(-15)} style={[styles.smallControl, { backgroundColor: colors.mode === 'dark' ? colors.cardStrong : '#FFFFFFB3' }]}><Icon name="rewind-15" color={colors.textSecondary} size={25} /></Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel={playing ? 'Pause audio' : 'Play audio'} onPress={() => void togglePlay()} style={({ pressed }) => [styles.playButton, { backgroundColor: colors.primary, opacity: pressed ? 0.88 : 1 }]}><Icon name={playing ? 'pause' : 'play'} color={colors.primaryText} size={25} /><Text numberOfLines={1} style={[styles.playButtonLabel, { color: colors.primaryText }]}>{playing ? 'Pause' : words.length > 0 && position >= words.length ? 'Listen again' : position > 0 ? 'Continue' : 'Listen now'}</Text></Pressable>
-          <Pressable accessibilityRole="button" accessibilityLabel="Skip forward 15 seconds" onPress={() => void skip(15)} style={[styles.smallControl, { backgroundColor: colors.neon ? colors.cardStrong : colors.mode === 'dark' ? '#253A49' : '#FFFFFFB3' }]}><Icon name="fast-forward-15" color={colors.textSecondary} size={25} /></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Skip forward 15 seconds" onPress={() => void skip(15)} style={[styles.smallControl, { backgroundColor: colors.mode === 'dark' ? colors.cardStrong : '#FFFFFFB3' }]}><Icon name="fast-forward-15" color={colors.textSecondary} size={25} /></Pressable>
         </View>
         <Pressable accessibilityRole="button" onPress={() => void openAsk()} style={[styles.askStudyBoltButton, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={[styles.askStudyBoltIcon, { backgroundColor: colors.mintSoft }]}><Icon name="creation" size={20} color={colors.mint} /></View>
@@ -2308,8 +2334,8 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
       <AskStudyBoltSheet
         visible={askVisible}
         sectionTitle={tutorContext.currentChunk.title}
-        signedIn={onDeviceTutorPossible || Boolean(user)}
-        configured={onDeviceTutorPossible || isAiTutorConfigured}
+        signedIn={Boolean(user)}
+        configured={Boolean(user) && (onDeviceTutorPossible || isAiTutorConfigured)}
         quota={tutorProvider === 'cloud' ? tutorQuota : undefined}
         loading={tutorLoading}
         error={tutorError}
@@ -2324,20 +2350,20 @@ function AudioPlayer({ deck, readOnly = false, onRequireAuth }: { deck: StudyPac
         onClose={closeAsk}
         onQuizAnswered={(correct) => { if (!readOnly) recordStudyEvent({ type: 'tutor-quiz', deckId: deck.id, courseId: deck.courseId, tutorQuizCorrect: correct }); }}
       />
-      <Modal visible={driveModeVisible} animationType={reducedMotion ? 'none' : 'fade'} onRequestClose={() => void closeDriveMode()}>
-        <View style={[styles.driveRoot, { backgroundColor: colors.mode === 'dark' ? '#09111B' : '#11162F' }]}>
-          <View style={styles.driveTop}><View><Text style={styles.driveEyebrow}>STUDYBOLT DRIVE MODE</Text><Text style={styles.driveTitle}>{deck.title}</Text></View><Pressable accessibilityRole="button" accessibilityLabel="Exit Drive mode" onPress={() => void closeDriveMode()} style={styles.driveClose}><Icon name="close" color="#E8E9F7" size={23} /></Pressable></View>
+      <Modal visible={driveModeVisible} backdropColor={colors.mode === 'dark' ? colors.background : '#11162F'} animationType={reducedMotion ? 'none' : 'fade'} onRequestClose={() => void closeDriveMode()}>
+        <View style={[styles.driveRoot, { backgroundColor: colors.mode === 'dark' ? colors.background : '#11162F' }]}>
+          <View style={styles.driveTop}><View><Text style={styles.driveEyebrow}>STUDYBOLT DRIVE MODE</Text><Text style={[styles.driveTitle, colors.night && { color: colors.text }]}>{deck.title}</Text></View><Pressable accessibilityRole="button" accessibilityLabel="Exit Drive mode" onPress={() => void closeDriveMode()} style={styles.driveClose}><Icon name="close" color="#E8E9F7" size={23} /></Pressable></View>
           <View style={styles.driveCenter}>
             <View style={[styles.driveOrb, { backgroundColor: colors.purple }]}>{voiceSessionState === 'processing' || tutorLoading ? <LoadingArtwork variant="aiTutorThinking" colors={{ ...colors, primary: colors.primaryText }} /> : <Icon name={playing || voiceSessionState === 'speaking' ? 'volume-high' : voiceSessionState === 'listening' || voiceSessionState === 'interrupted' ? 'microphone' : 'pause'} color={colors.primaryText} size={44} />}</View>
-            <Text style={styles.driveState}>{playing ? 'StudyCast is playing' : interactionStateLabel(voiceSessionState)}</Text>
-            <Text style={styles.driveSection}>{tutorContext.currentChunk.title}</Text>
+            <Text style={[styles.driveState, colors.night && { color: colors.text }]}>{playing ? 'StudyCast is playing' : interactionStateLabel(voiceSessionState)}</Text>
+            <Text style={[styles.driveSection, colors.night && { color: colors.textSecondary }]}>{tutorContext.currentChunk.title}</Text>
             <View style={styles.driveProgress}><ProgressBar progress={progress} color={colors.purple} /></View>
-            {voiceTranscript ? <View style={styles.driveTranscript}><Text style={styles.driveMessageLabel}>YOU</Text><Text numberOfLines={2} style={styles.driveTranscriptText}>{voiceTranscript}</Text></View> : null}
-            {voiceReply ? <View style={styles.driveReply}><Text style={styles.driveMessageLabel}>STUDYBOLT</Text><Text numberOfLines={5} style={styles.driveReplyText}>{voiceReply}</Text></View> : null}
-            {voiceError ? <Text style={styles.driveError}>{voiceError}</Text> : <Text style={styles.driveHint}>{voiceRecognizerAvailable === false ? 'Text fallback is active. Answers still use your device voice unless muted.' : 'Ask about this section, say “quiz me,” or say pause, repeat, back, skip, continue, or exit.'}</Text>}
+            {voiceTranscript ? <View style={[styles.driveTranscript, colors.night && { backgroundColor: colors.card }]}><Text style={[styles.driveMessageLabel, colors.night && { color: colors.primary }]}>YOU</Text><Text numberOfLines={2} style={styles.driveTranscriptText}>{voiceTranscript}</Text></View> : null}
+            {voiceReply ? <View style={[styles.driveReply, colors.night && { backgroundColor: colors.primarySoft }]}><Text style={[styles.driveMessageLabel, colors.night && { color: colors.primary }]}>STUDYBOLT</Text><Text numberOfLines={5} style={styles.driveReplyText}>{voiceReply}</Text></View> : null}
+            {voiceError ? <Text style={styles.driveError}>{voiceError}</Text> : <Text style={[styles.driveHint, colors.night && { color: colors.textMuted }]}>{voiceRecognizerAvailable === false ? 'Text fallback is active. Answers still use your device voice unless muted.' : 'Ask about this section, say “quiz me,” or say pause, repeat, back, skip, continue, or exit.'}</Text>}
             {!user && !onDeviceTutorPossible && onRequireAuth ? <Pressable accessibilityRole="button" onPress={onRequireAuth} style={styles.driveSignIn}><Icon name="account-lock-outline" color="#C8B5FF" /><Text style={styles.driveSignInText}>Sign in for secure cloud answers</Text></Pressable> : null}
           </View>
-          <View style={styles.driveInputRow}><TextInput accessibilityLabel="Type a voice tutor question" value={voiceTextInput} onChangeText={setVoiceTextInput} onSubmitEditing={submitVoiceText} returnKeyType="send" placeholder="Type if speech input is unavailable…" placeholderTextColor="#7F819E" style={styles.driveInput} /><Pressable accessibilityRole="button" accessibilityLabel="Send typed tutor question" disabled={!voiceTextInput.trim() || voiceSessionState === 'processing'} onPress={submitVoiceText} style={[styles.driveSend, (!voiceTextInput.trim() || voiceSessionState === 'processing') && styles.driveControlDisabled]}><Icon name="arrow-up" color="#FFFFFF" size={20} /></Pressable></View>
+          <View style={[styles.driveInputRow, colors.night && { backgroundColor: colors.cardStrong }]}><TextInput accessibilityLabel="Type a voice tutor question" value={voiceTextInput} onChangeText={setVoiceTextInput} onSubmitEditing={submitVoiceText} returnKeyType="send" placeholder="Type if speech input is unavailable…" placeholderTextColor={colors.night ? colors.textMuted : '#7F819E'} style={[styles.driveInput, colors.night && { color: colors.text }]} /><Pressable accessibilityRole="button" accessibilityLabel="Send typed tutor question" disabled={!voiceTextInput.trim() || voiceSessionState === 'processing'} onPress={submitVoiceText} style={[styles.driveSend, (!voiceTextInput.trim() || voiceSessionState === 'processing') && styles.driveControlDisabled]}><Icon name="arrow-up" color="#FFFFFF" size={20} /></Pressable></View>
           <View style={styles.driveControls}><Pressable accessibilityRole="button" onPress={() => voiceSessionState === 'paused' || voiceSessionState === 'error' ? startVoiceInput() : void pauseVoiceSession()} style={styles.driveControl}><Icon name={voiceSessionState === 'paused' || voiceSessionState === 'error' ? 'play' : 'pause'} color="#E8E9F7" size={28} /><Text style={styles.driveControlText}>{voiceSessionState === 'paused' || voiceSessionState === 'error' ? 'Resume' : 'Pause'}</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel={voiceSessionState === 'speaking' ? 'Interrupt StudyBolt and speak' : 'Start listening'} onPress={() => voiceSessionState === 'speaking' ? void interruptVoice() : startVoiceInput()} style={[styles.drivePlay, { backgroundColor: colors.purple }]}><Icon name={voiceSessionState === 'speaking' ? 'hand-back-right-outline' : 'microphone'} color={colors.primaryText} size={35} /></Pressable><Pressable accessibilityRole="button" onPress={() => { const nextMuted = !voiceMuted; setVoiceMuted(nextMuted); if (nextMuted && voiceSessionState === 'speaking') void interruptVoice(); }} style={styles.driveControl}><Icon name={voiceMuted ? 'volume-off' : 'volume-high'} color="#E8E9F7" size={27} /><Text style={styles.driveControlText}>{voiceMuted ? 'Unmute' : 'Mute'}</Text></Pressable></View>
         </View>
       </Modal>
@@ -2356,13 +2382,14 @@ function EmptyTool({ icon, title, message }: { icon: IconName; title: string; me
   );
 }
 
-function MaterialGate({ deck, material, shared, children }: { deck: StudyPack; material: StudyPackMaterial; shared?: boolean; children: React.ReactNode }) {
+function MaterialGate({ deck, material, shared, children, onRequireAuth }: { deck: StudyPack; material: StudyPackMaterial; shared?: boolean; children: React.ReactNode; onRequireAuth?: () => void }) {
   if (shared || !deck.generation || deck.generation.materials[material].status === 'ready') return <>{children}</>;
-  return <MaterialUnavailable deck={deck} material={material} />;
+  return <MaterialUnavailable deck={deck} material={material} onRequireAuth={onRequireAuth} />;
 }
 
-function MaterialUnavailable({ deck, material }: { deck: StudyPack; material: StudyPackMaterial }) {
+function MaterialUnavailable({ deck, material, onRequireAuth }: { deck: StudyPack; material: StudyPackMaterial; onRequireAuth?: () => void }) {
   const { colors, retryStudyPackMaterial } = useStudyBolt();
+  const { user } = useAuth();
   const state = deck.generation?.materials[material];
   const failed = state?.status === 'failed';
   const generating = state?.status === 'generating';
@@ -2393,7 +2420,7 @@ function MaterialUnavailable({ deck, material }: { deck: StudyPack; material: St
       </Text>
       <Text style={[styles.emptyText, { color: colors.textSecondary }]}>{failed ? state?.error || 'This item failed without affecting the rest of your Study Pack.' : 'Waiting for the other study tools. You can start with anything that is ready.'}</Text>
       </>}
-      {failed ? <PrimaryButton label={`Retry ${label}`} icon="refresh" onPress={() => retryStudyPackMaterial(deck.id, material)} style={styles.materialRetry} /> : null}
+      {!user ? <PrimaryButton label="Create a free account to finish" icon="account-lock-outline" onPress={() => onRequireAuth?.()} style={styles.materialRetry} /> : failed ? <PrimaryButton label={`Retry ${label}`} icon="refresh" onPress={() => retryStudyPackMaterial(deck.id, material)} style={styles.materialRetry} /> : null}
     </View>
   );
 }

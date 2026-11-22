@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient, type User } from 'npm:@supabase/supabase-js@2';
 import { effectiveStudyBoltPlan } from './adminPolicy.ts';
 import { studyBoltLegalDocumentsApproved, studyBoltPrivacyPolicyUrl } from './legal.ts';
+import { requireRegisteredStudyBoltAccount } from './registeredAccount.ts';
 
 type PlanTier = 'free' | 'premium';
 type CloudConfig = {
@@ -38,6 +39,8 @@ export async function authenticateDocumentRequest(request: Request): Promise<{ c
   const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
   const { data: { user }, error } = await admin.auth.getUser(token);
   if (error || !user) return { response: json({ error: 'Your study session expired. Reopen StudyBolt and try again.', code: 'authentication_required' }, 401) };
+  const accountRequired = requireRegisteredStudyBoltAccount(user.is_anonymous);
+  if (accountRequired) return { response: accountRequired };
 
   if (!studyBoltPrivacyPolicyUrl() || !studyBoltLegalDocumentsApproved()) {
     return { response: json({ error: 'Secure AI processing is paused until the StudyBolt privacy policy is complete and approved.', code: 'privacy_policy_required' }, 503) };
@@ -56,7 +59,7 @@ export async function authenticateDocumentRequest(request: Request): Promise<{ c
     premiumLimit: Math.max(1, Math.round(numberValue(row.premium_interaction_limit, 250))),
     softWarningRatio: Math.min(0.98, Math.max(0.5, numberValue(row.soft_warning_ratio, 0.8))),
   };
-  const plan = user.is_anonymous ? 'free' : effectiveStudyBoltPlan(user.app_metadata);
+  const plan = effectiveStudyBoltPlan(user.app_metadata);
   return { context: { admin, user, plan, period: monthlyPeriod(user, now), config } };
 }
 

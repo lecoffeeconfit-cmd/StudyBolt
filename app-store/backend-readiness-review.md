@@ -62,3 +62,32 @@ These observations do not explain a prior repeated-restart incident. Keep the po
 - Pooler health and port readiness checks: passed at the time of inspection.
 - Published Privacy Policy and Terms URLs: HTTP 200; live content matched the reviewed GitHub source byte-for-byte.
 - Not run: live account-deletion flow, native Apple/Google sandbox sign-in and purchase, document processing, study-material generation, AI Tutor, database access-control tests on a staging backend, or Expo Doctor. No staging backend was available, no RevenueCat deletion key was configured, and Expo Doctor is not installed in the workspace.
+
+## Guest access and AI registration gate — 22 November 2026
+
+This addendum records the StudyBolt-only guest access change. The October review above remains a snapshot of that review date.
+
+### Audit findings and implementation
+
+- Guest mode uses the device library and does not require an Auth account. The app continues to open into guest use; it does not require immediate registration. Guests can browse, organize courses, create manual packs and flashcards, and use non-AI study tools.
+- The prior document-import client created a second Supabase client and called `signInAnonymously` to obtain a document-processing token. That path is removed. Guest document imports now show the registration prompt before processing. The app also blocks retries of queued AI study-pack materials until the guest registers.
+- `runStudyBoltAI` now gates before cache lookup or on-device inference, and the StudyCast, Coach, Exam Tutor, visual analysis, and document-import actions route guests to the existing sign-up choices. Existing Apple, Google, and email Auth flows remain in use.
+- Both AI Edge Function paths verify the bearer token with Supabase Auth and reject `user.is_anonymous` with HTTP 403 and `account_required` before reading AI configuration, reserving usage, or calling an AI provider. Missing or invalid credentials continue to fail with HTTP 401. The document-processing guard covers upload/extraction and follow-up material-generation requests.
+- On account hydration, StudyBolt merges non-demo guest packs and guest-created courses into the permanent account library before sync starts. Pack fields and manual flashcards are copied; the original guest library remains on the device. Demo-only courses are excluded.
+- Registered-user plan selection still uses verified Supabase `app_metadata` through `effectiveStudyBoltPlan`, which is where the StudyBolt-scoped RevenueCat entitlement is applied. The existing atomic reservation/reconciliation ledger remains the usage authority. Guests are rejected before that ledger is touched.
+- The audit found no other AI provider entry point in the current app or Edge Function set. Deterministic exam-building and saved study tools remain available to guests. Existing RevenueCat identity and subscription sync paths are unchanged.
+
+### Shared production Auth scope
+
+StudyBolt no longer calls anonymous sign-in to process a guest document. The shared production Auth anonymous-user setting is currently restored to `false`; this implementation does not require enabling it. A prior, separately authorized operation briefly toggled the shared setting to `true`, then restored it to `false` when this product decision arrived. No anonymous test user was created and no WordWiz-specific setting or data was changed. Because the Auth project is shared, future changes to its configuration must be reviewed as cross-app changes.
+
+No production database migration, Edge Function deployment, app build, RevenueCat configuration change, or secret change is part of this implementation. The new backend guard is code-only and uses the existing verified JWT user record.
+
+### Validation and remaining release work
+
+- `npm test`: 222 passing tests. Added checks cover the client gate before cached/on-device/cloud AI, the backend `is_anonymous` response and Edge Function guard ordering, RevenueCat free/premium plan selection, and guest library conversion. Existing RevenueCat and auth-callback tests also pass.
+- `npm run typecheck`: passed after these changes.
+- Added `supabase/tests/ai_cloud_ledger.sql` to exercise in-flight monthly quota reservations, reconciliation, and the premium quota path in an isolated database. It has not been run because this workspace has no isolated staging database or database test runner configured.
+- No live anonymous JWT, direct production Edge Function, registered-account, Apple/Google/email provider, concurrent database quota, or paid-user request was sent. Those require a separate StudyBolt staging Auth/database/function stack and sandbox provider/store credentials. Production was not used for smoke tests.
+- Before release, deploy the updated `studybolt-ai-tutor`, `studybolt-process-document`, and `_shared/registeredAccount.ts` / `_shared/documentUsage.ts` Edge Function sources to StudyBolt staging, run the SQL fixture there, and verify guest 403, missing-token 401, registered free/premium quota behavior, conversion, and provider sign-in. Then ship a new Expo build and obtain approval before any production Edge Function deployment. No schema migration is currently required.
+- Do not enable anonymous sign-ins on the shared production Auth project for this feature. Local guest access does not depend on it.

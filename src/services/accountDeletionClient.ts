@@ -1,3 +1,5 @@
+import { GUIDANCE_STORAGE_PREFIX, guideStateKey } from './studyGuidance.ts';
+
 export type AccountDeletionResult = { error?: string; message?: string; deletionPending?: boolean; sessionCleanupFailed?: boolean };
 
 /** Only explicit completed/accepted server acknowledgements can clear a local session. */
@@ -37,6 +39,7 @@ export function studyBoltLocalAccountKeys(keys: readonly string[], userId?: stri
       return legacyOwner === `@studybolt/state/v2/account/${encodeURIComponent(userId)}`;
     }
     if (key.startsWith('@studybolt/state/v2/')) return key === `@studybolt/state/v2/account/${encodeURIComponent(userId)}`;
+    if (key.startsWith(GUIDANCE_STORAGE_PREFIX)) return key === guideStateKey(userId);
     if (key.startsWith('@studybolt/admin-activity/')) return key === `@studybolt/admin-activity/${userId}`;
     if (key.startsWith('@studybolt/deleting-account/')) return key === `@studybolt/deleting-account/${userId}`;
     return true;

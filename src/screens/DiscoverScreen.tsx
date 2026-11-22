@@ -5,7 +5,8 @@ import { LoadingArtwork, StudyBoltLoading } from '../components/StudyBoltLoading
 
 import { CommunitySetCard } from '../components/CommunitySetCard';
 import { SubjectIcon } from '../components/SubjectIcon';
-import { Card, Header, Icon, Pill } from '../components/ui';
+import { GuideAnchor, useGuidanceBlocker } from '../components/StudyGuidance';
+import { Card, Header, Icon, NeonOutline, Pill } from '../components/ui';
 import type { CommunityClass, DiscoverSort, DiscoverStudySet, StudyPack } from '../models';
 import { useStudyBolt } from '../StudyBoltContext';
 import { isCommunityConfigured, listCommunityClasses, listPublicStudySets } from '../services/community';
@@ -37,6 +38,7 @@ export function DiscoverScreen({
   const { colors, state } = useStudyBolt();
   const [tab, setTab] = useState<DiscoverTab>('for-you');
   const [query, setQuery] = useState('');
+  useGuidanceBlocker(Boolean(query.trim()));
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [sort, setSort] = useState<DiscoverSort>('newest');
   const [sets, setSets] = useState<DiscoverStudySet[]>([]);
@@ -91,7 +93,7 @@ export function DiscoverScreen({
         <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Find useful study material from other students.</Text>
       </View>
 
-      <View style={[styles.search, { backgroundColor: colors.cardStrong }]}> 
+      <GuideAnchor id="discover-search" style={[styles.search, { backgroundColor: colors.cardStrong }]}>
         <Icon name="magnify" size={21} color={colors.textMuted} />
         <TextInput
           accessibilityLabel="Search Discover"
@@ -99,11 +101,12 @@ export function DiscoverScreen({
           onChangeText={setQuery}
           placeholder="Search classes, subjects, or study sets"
           placeholderTextColor={colors.textMuted}
+          selectionColor={colors.neon?.focus}
           returnKeyType="search"
           style={[styles.searchInput, { color: colors.text }]}
         />
         {query ? <Pressable accessibilityRole="button" accessibilityLabel="Clear search" onPress={() => setQuery('')} hitSlop={8}><Icon name="close-circle" size={19} color={colors.textMuted} /></Pressable> : null}
-      </View>
+      </GuideAnchor>
 
       <View style={styles.tabs} accessibilityRole="tablist">
         {TABS.map((item) => {
@@ -116,6 +119,7 @@ export function DiscoverScreen({
               onPress={() => setTab(item.id)}
               style={[styles.tab, { backgroundColor: selected ? colors.primarySoft : 'transparent' }]}
             >
+              {selected && colors.neon ? <NeonOutline color={colors.neon.edge} borderRadius={styles.tab.borderRadius} /> : null}
               <Text style={[styles.tabText, { color: selected ? colors.primary : colors.textMuted }]}>{item.label}</Text>
             </Pressable>
           );

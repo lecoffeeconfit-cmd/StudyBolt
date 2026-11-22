@@ -153,17 +153,19 @@ function Character({ kind }: { kind: SubjectIconId }) {
 export const SubjectIcon = memo(function SubjectIcon({
   subject,
   emoji,
+  illustration,
   size = 48,
   animated = true,
 }: {
   subject?: string;
   emoji?: string;
+  illustration?: SubjectIconId;
   size?: number;
   animated?: boolean;
 }) {
   const { colors } = useStudyBolt();
   const reducedMotion = useReducedMotion();
-  const icon = getSubjectIcon(subject, emoji);
+  const icon = getSubjectIcon(subject, emoji, illustration);
   const bounce = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {

@@ -29,6 +29,23 @@ test('account change clears private Tutor answers even with matching study conte
   assert.equal((await r.runStudyBoltAI(args)).response.answer, 'private answer 2');
 });
 
+test('guest requests are blocked before cached, on-device, or cloud AI can run', async (t) => {
+  let localCalls = 0;
+  let cloudCalls = 0;
+  const r = await router(t, {
+    local: async () => { localCalls++; return { ...unavailable, response: { answer: 'private device answer' } }; },
+    cloud: async () => { cloudCalls++; return { response: { answer: 'private cloud answer' } }; },
+  });
+  assert.equal((await r.runStudyBoltAI(args)).routeUsed, 'on-device');
+  const guestResult = await r.runStudyBoltAI({ ...args, accessToken: null });
+  assert.equal(guestResult.code, 'account_required');
+  assert.equal(guestResult.fallbackReason, 'account-required');
+  assert.equal(guestResult.routeUsed, 'none');
+  assert.match(guestResult.error, /free account/i);
+  assert.equal(localCalls, 1);
+  assert.equal(cloudCalls, 0);
+});
+
 test('late cloud completion cannot repopulate the next account cache', async (t) => {
   let complete;
   let started;

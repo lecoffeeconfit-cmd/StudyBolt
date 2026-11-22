@@ -1,4 +1,6 @@
 import { PolishedSectionHeader as SectionHeader } from '../components/PagePresentation';
+import { PlannerRouteCard } from '../components/PlannerRouteCard';
+import { GuideAnchor, GuideTip, useGuidanceBlocker, useGuidanceScroll } from '../components/StudyGuidance';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import { typography } from '../theme';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -7,7 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { bottomTabBarTop } from '../components/BottomTabs';
 
 import { Card, Header, Icon, Pill, PrimaryButton, ProgressBar } from '../components/ui';
-import { SubjectIcon } from '../components/SubjectIcon';
+import { ClassIdentity, PackClassIcon } from '../components/ClassIdentity';
 import type { IconName } from '../components/ui';
 import { useStudyBolt } from '../StudyBoltContext';
 import type { StudyModality, StudyPack, StudyPlan, StudyScope } from '../models';
@@ -84,10 +86,14 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
   const [notice, setNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
   const [examDate, setExamDate] = useState(() => toDateInputValue(state.plan.targetDate));
   const [examTitle, setExamTitle] = useState(() => state.plan.exam?.title ?? '');
+  const [focusedField, setFocusedField] = useState<'title' | 'date' | null>(null);
   const [examNotice, setExamNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
   const [editingPlan, setEditingPlan] = useState(false);
   const [showStudyOptions, setShowStudyOptions] = useState(false);
   const [showTimer, setShowTimer] = useState(false);
+  const unsavedTest = examDate !== toDateInputValue(state.plan.targetDate) || examTitle.trim() !== (state.plan.exam?.title ?? '');
+  useGuidanceBlocker(editingPlan || unsavedTest);
+  const guideScroll = useGuidanceScroll();
   const dateField = useRef<TextInput>(null);
   const appliedFocus = useRef<string | undefined>(undefined);
   const entrance = useRef(new Animated.Value(1)).current;
@@ -278,10 +284,15 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
             : `${new Date(`${examDate}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} · ${examDateOffset + 1} plan day${examDateOffset === 0 ? '' : 's'} · about ${Math.max(1, Math.ceil(previewTotalMinutes / previewActiveDays))} min per study day`;
   const packCount = `${selectedDecks.length} Study Pack${selectedDecks.length === 1 ? '' : 's'}`;
   const sampleRoute = selectedDecks.length > 0 && selectedDecks.every(deck => deck.fileType === 'demo');
-  const routeStatus = remainingPlanDays === null ? 'No test date' : `${remainingPlanDays}-day window`;
+  const routeWindow = remainingPlanDays === null ? null : `${remainingPlanDays}-day window`;
+  const savedTestDate = state.plan.exam ? formatPlanDayDate(`${state.plan.exam.date}T12:00:00`) : null;
+  // The displayed percentage is rounded, so verify every block before celebrating.
+  const routeComplete = planProgress === 100 && selectedDecks.length > 0 && !sampleRoute
+    && state.plan.days.every(day => day.blocks.every(block => block.complete));
 
   return (
     <ScrollView
+      {...guideScroll}
       style={{ backgroundColor: colors.background }}
       contentContainerStyle={{
         paddingTop: insets.top + 8,
@@ -305,36 +316,23 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
         <Header title="Planner" />
         <Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>Study plan</Text>
 
-        <Card style={[styles.majorCard, styles.planSummary, { backgroundColor: colors.primarySoft, borderColor: colors.mode === 'dark' ? colors.border : '#CBDCF4' }]}>
-          <View style={styles.summaryTop}>
-            <View style={styles.routeLabel}>
-              <View style={[styles.routeIcon, { backgroundColor: colors.card }]}>
-                <Icon name="map-marker-path" size={19} color={colors.primary} />
-              </View>
-              <Text style={[styles.summaryEyebrow, { color: colors.primary }]}>{sampleRoute ? 'Sample route' : 'Your route'}</Text>
-            </View>
-            <Pill label={routeStatus} tone={remainingPlanDays === null ? 'neutral' : 'blue'} />
-          </View>
-          <Text accessibilityRole="header" style={[styles.summaryTitle, { color: colors.text }]}>
-            {selectedDecks.length ? subject : 'No study material selected'}
-          </Text>
-          <Text style={[styles.summaryDetail, { color: colors.textSecondary }]}>{packCount}</Text>
-
-          <View style={[styles.summaryMetrics, largeText && styles.stacked, { borderColor: colors.border }]}>
-            <RouteMetric label="Estimated total" value={formatMinutes(totalMinutes)} stacked={largeText} />
-            <RouteMetric label="Per study day" value={`≈ ${formatMinutes(Math.ceil(totalMinutes / activeDayCount))}`} stacked={largeText} />
-            <RouteMetric label="Study estimate" value={`${mastery}%`} stacked={largeText} />
-          </View>
-
-          <View style={styles.progressHeading}>
-            <Text style={[styles.progressLabel, { color: colors.textSecondary }]}>Plan completion</Text>
-            <Text style={[styles.progressValue, { color: planProgress > 0 ? colors.mint : colors.text }]}>{planProgress}%</Text>
-          </View>
-          <PlanCompletion progress={planProgress} reducedMotion={reducedMotion} />
-        </Card>
+        <GuideAnchor id="planner-route"><PlannerRouteCard
+          colors={colors}
+          sample={sampleRoute}
+          title={selectedDecks.length ? subject : 'No study material selected'}
+          packCount={packCount}
+          windowLabel={routeWindow}
+          testDate={savedTestDate}
+          totalTime={formatMinutes(totalMinutes)}
+          dailyTime={`≈ ${formatMinutes(Math.ceil(totalMinutes / activeDayCount))}`}
+          mastery={mastery}
+          progress={planProgress}
+          complete={routeComplete}
+          reducedMotion={reducedMotion}
+        /></GuideAnchor>
 
         <Card style={[styles.majorCard, styles.testCard, { borderColor: colors.mode === 'dark' ? colors.border : '#D7E1F0' }]}>
-          <View style={styles.examModeHeading}>
+          <GuideAnchor id="planner-test" style={styles.examModeHeading}>
             <View style={[styles.examModeIcon, { backgroundColor: colors.goldSoft }]}>
               <Icon name="school-outline" size={21} color={colors.goldText} />
             </View>
@@ -342,9 +340,9 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
               <Text accessibilityRole="header" style={[styles.examModeTitle, { color: colors.text }]}>Study toward a test</Text>
               <Text style={[styles.examModeText, { color: colors.textSecondary }]}>Pace your material through test day.</Text>
             </View>
-          </View>
+          </GuideAnchor>
 
-          <View style={[styles.examSelection, { backgroundColor: colors.cardStrong }]}>
+          <View style={[styles.examSelection, { backgroundColor: colors.cardStrong, borderColor: colors.border }]}>
             <Text style={[styles.selectionTitle, { color: colors.text }]}>{selectedDecks.length ? subject : 'Choose a Study Pack'}</Text>
             <View style={styles.selectionHeader}>
               <Text style={[styles.selectionDetail, { color: colors.textSecondary }]}>
@@ -385,7 +383,7 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
                 const selected = state.plan.scope.id === id;
                 return (
                   <Pressable accessibilityRole="radio" aria-checked={selected} accessibilityState={{ checked: selected }} key={id} onPress={() => applyPlan({ type: state.plan.scope.type, id })} style={[styles.scopeChoice, { backgroundColor: selected ? colors.primarySoft : colors.card, borderColor: selected ? colors.primary : colors.border }]}>
-                    <SubjectIcon subject={'courseName' in item ? item.courseName : item.name} emoji={item.emoji} size={40} />
+                    {'courseName' in item ? <PackClassIcon pack={item} size={40} /> : <ClassIdentity course={item} size={40} />}
                     <View style={styles.flexCopy}>
                       <Text style={[styles.scopeTitle, { color: colors.text }]}>{label}</Text>
                       <Text style={[styles.scopeDetail, { color: colors.textMuted }]}>{detail}</Text>
@@ -406,18 +404,21 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
                 accessibilityLabel="Test name, optional"
                 value={examTitle}
                 onChangeText={setExamTitle}
+                onFocus={() => setFocusedField('title')}
+                onBlur={() => setFocusedField(null)}
                 placeholder="e.g. Midterm"
                 placeholderTextColor={colors.textMuted}
+                selectionColor={colors.neon?.focus}
                 maxLength={80}
                 returnKeyType="next"
                 submitBehavior="submit"
                 onSubmitEditing={() => dateField.current?.focus()}
-                style={[styles.fieldInput, styles.fieldSurface, { color: colors.text, backgroundColor: colors.card, borderColor: colors.border }]}
+                style={[styles.fieldInput, styles.fieldSurface, { color: colors.text, backgroundColor: colors.card, borderColor: (focusedField === 'title' ? colors.neon?.focus : undefined) ?? colors.border }]}
               />
             </View>
             <View style={styles.field}>
               <Text style={[styles.dateFieldLabel, { color: colors.text }]}>Test date</Text>
-              <View style={[styles.dateInputWrap, styles.fieldSurface, { borderColor: invalidDate ? colors.danger : colors.border, backgroundColor: colors.card }]}>
+              <View style={[styles.dateInputWrap, styles.fieldSurface, { borderColor: invalidDate ? colors.danger : (focusedField === 'date' ? colors.neon?.focus : undefined) ?? colors.border, backgroundColor: colors.card }]}>
                 <Icon name="calendar-month-outline" size={18} color={colors.primary} />
                 <TextInput
                   ref={dateField}
@@ -425,8 +426,11 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
                   accessibilityHint="Enter the date as four-digit year, month, and day."
                   value={examDate}
                   onChangeText={(value) => { setExamDate(value); setExamNotice(null); }}
+                  onFocus={() => setFocusedField('date')}
+                  onBlur={() => setFocusedField(null)}
                   placeholder="YYYY-MM-DD"
                   placeholderTextColor={colors.textMuted}
+                  selectionColor={colors.neon?.focus}
                   keyboardType="numbers-and-punctuation"
                   returnKeyType="done"
                   maxLength={10}
@@ -462,6 +466,7 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
               <Text style={[styles.examNoticeText, { color: colors.text }]}>{examNotice.text}</Text>
             </View>
           ) : null}
+          <GuideTip id="test-plan-saved" eligible={examNotice?.tone === 'success' && state.plan.exam != null && selectedDecks.some(deck => deck.fileType !== 'demo')} />
         </Card>
 
         <Pressable
@@ -593,50 +598,12 @@ export function PlannerScreen({ focusDeckId, onFocusApplied }: { focusDeckId?: s
   );
 }
 
-function RouteMetric({ label, value, stacked }: { label: string; value: string; stacked: boolean }) {
-  const { colors } = useStudyBolt();
-  return (
-    <View accessible accessibilityLabel={`${label}, ${value}`} style={[styles.routeMetric, stacked && styles.routeMetricStacked]}>
-      <Text style={[styles.metricValue, { color: colors.text }]}>{value}</Text>
-      <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>{label}</Text>
-    </View>
-  );
-}
-
-function PlanCompletion({ progress, reducedMotion }: { progress: number; reducedMotion: boolean }) {
-  const { colors } = useStudyBolt();
-  const fill = useRef(new Animated.Value(progress / 100)).current;
-  useEffect(() => {
-    if (reducedMotion) { fill.setValue(progress / 100); return; }
-    const animation = Animated.timing(fill, {
-      toValue: progress / 100,
-      duration: 260,
-      useNativeDriver: Platform.OS !== 'web',
-    });
-    animation.start();
-    return () => animation.stop();
-  }, [fill, progress, reducedMotion]);
-  return (
-    <View
-      accessible
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-valuenow={progress}
-      accessibilityRole="progressbar"
-      accessibilityLabel="Plan completion"
-      accessibilityValue={{ min: 0, max: 100, now: progress }}
-      style={[styles.planTrack, { backgroundColor: colors.border }]}
-    >
-      <Animated.View style={[styles.planFill, { backgroundColor: colors.mint, transform: [{ scaleX: fill }] }]} />
-    </View>
-  );
-}
-
 function FocusTimer({ focusMinutes, onRecord }: { focusMinutes: number; onRecord: (minutes: number) => void }) {
   const { colors } = useStudyBolt();
   const [mode, setMode] = useState<'focus' | 'break'>('focus');
   const [secondsLeft, setSecondsLeft] = useState(25 * 60);
   const [running, setRunning] = useState(false);
+  useGuidanceBlocker(running);
   const hasRecorded = useRef(false);
   const totalSeconds = mode === 'focus' ? 25 * 60 : 5 * 60;
 
@@ -699,30 +666,13 @@ const styles = StyleSheet.create({
   flexCopy: { flex: 1, minWidth: 0 },
   title: { ...typography.pageTitle, marginTop: 12 },
   majorCard: { padding: 16, borderRadius: 22, borderWidth: 1, shadowOpacity: 0.045, shadowRadius: 10 },
-  planSummary: { marginTop: 12 },
-  summaryTop: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  routeLabel: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 },
-  routeIcon: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  summaryEyebrow: { ...typography.caption, fontWeight: '700', flexShrink: 1 },
-  summaryTitle: { ...typography.sectionTitle, marginTop: 8 },
-  summaryDetail: { ...typography.caption, marginTop: 2 },
-  summaryMetrics: { flexDirection: 'row', gap: 8, marginTop: 12, paddingVertical: 12, borderTopWidth: 1, borderBottomWidth: 1 },
-  routeMetric: { flex: 1, minWidth: 0, gap: 2 },
-  routeMetricStacked: { flexGrow: 0, flexShrink: 0, flexBasis: 'auto', flexDirection: 'row-reverse', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 },
-  metricValue: { fontSize: 16, lineHeight: 22, fontWeight: '700', fontVariant: ['tabular-nums'] },
-  metricLabel: { ...typography.caption, flexShrink: 1 },
-  progressHeading: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginTop: 10, marginBottom: 6 },
-  progressLabel: { ...typography.caption, fontWeight: '600' },
-  progressValue: { ...typography.caption, fontWeight: '700', fontVariant: ['tabular-nums'] },
-  planTrack: { height: 6, borderRadius: 3, overflow: 'hidden' },
-  planFill: { height: '100%', width: '100%', borderRadius: 3, transformOrigin: 'left center' },
   testCard: { marginTop: 16 },
   examModeHeading: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   examModeIcon: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   examModeTitle: { ...typography.sectionTitle },
   examModeText: { ...typography.secondary, marginTop: 2 },
-  examSelection: { borderRadius: 14, padding: 12, marginTop: 16 },
-  selectionHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 4, marginTop: 4 },
+  examSelection: { borderRadius: 14, borderWidth: 1, padding: 12, marginTop: 14 },
+  selectionHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 6, marginTop: 4 },
   selectionTitle: { ...typography.cardTitle },
   selectionDetail: { ...typography.caption, flexShrink: 1 },
   changeSelection: { minHeight: 44, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, flexDirection: 'row', alignItems: 'center', gap: 2 },

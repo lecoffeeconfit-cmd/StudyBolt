@@ -20,7 +20,20 @@ test('guest save copies only personal packs and does not duplicate an existing a
   assert.deepEqual(copied.classes.map(item => item.id), ['course']);
   assert.equal(guest.decks.length, 2);
   assert.equal(guestPacksToSave(guest, copied).length, 0);
+  assert.deepEqual(copied.decks[0].flashcards, pack.flashcards);
+  assert.deepEqual(copied.decks[0].visuals, pack.visuals);
   assert.equal(copyGuestLibrary(copied, guest), copied);
+});
+
+test('account conversion keeps empty guest-created courses and excludes demo-only courses', () => {
+  const emptyCourse = { ...course, id: 'empty-course', name: 'Chemistry' };
+  const demoCourse = { ...course, id: 'demo-course', name: 'Sample Biology' };
+  const guest = state([
+    { ...pack, id: 'sample', fileType: 'demo', courseId: demoCourse.id },
+  ], [emptyCourse, demoCourse]);
+  const converted = copyGuestLibrary(state(), guest);
+  assert.deepEqual(converted.decks, []);
+  assert.deepEqual(converted.classes.map(item => item.id), ['empty-course']);
 });
 
 test('sync projects portable content and excludes device progress, samples and pending jobs', () => {

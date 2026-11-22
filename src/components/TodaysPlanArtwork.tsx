@@ -2,10 +2,16 @@ import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect, useRef } from 'react';
 import { Animated, Easing, Platform, StyleSheet, View } from 'react-native';
 
+import { useStudyBolt } from '../StudyBoltContext';
 import { Icon } from './ui';
 
 /** A small stack of study cards, with a single lift as the plan appears. */
 export function TodaysPlanArtwork({ still, size }: { still: boolean; size: 'small' | 'medium' | 'large' }) {
+  const { colors } = useStudyBolt();
+  const neon = colors.neon;
+  const night = colors.night;
+  const darkArtwork = neon || night;
+  const artworkEdge = neon?.sheetEdge ?? colors.border;
   const lift = useRef(new Animated.Value(1)).current;
   useEffect(() => {
     lift.setValue(still ? 1 : 0);
@@ -24,18 +30,18 @@ export function TodaysPlanArtwork({ still, size }: { still: boolean; size: 'smal
         { scale: size === 'large' ? 1.35 : size === 'small' ? 0.55 : 0.86 },
         { translateY: lift.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) },
       ] }]}>
-        <View style={styles.orbit} />
-        <View style={styles.backCard} />
-        <LinearGradient colors={['#FFFFFF', '#C8DFFF']} style={styles.frontCard}>
-          <View style={styles.cardBolt}><Icon name="lightning-bolt" size={23} color="#16489C" /></View>
-          <View style={styles.line} />
-          <View style={[styles.line, styles.shortLine]} />
+        <View style={[styles.orbit, darkArtwork && { borderColor: neon?.edge ?? colors.border, backgroundColor: neon?.secondarySoft ?? colors.backgroundRaised }]} />
+        <View style={[styles.backCard, darkArtwork && { borderColor: artworkEdge, backgroundColor: night?.artwork.shade ?? colors.backgroundRaised }]} />
+        <LinearGradient colors={darkArtwork ? [colors.cardStrong, neon?.secondarySoft ?? colors.card] : ['#FFFFFF', '#C8DFFF']} style={[styles.frontCard, darkArtwork && { borderColor: neon?.focus ?? artworkEdge }]}>
+          <View style={[styles.cardBolt, darkArtwork && { backgroundColor: colors.primarySoft }]}><Icon name="lightning-bolt" size={23} color={neon?.indicator.icon ?? (night ? colors.primary : '#16489C')} /></View>
+          <View style={[styles.line, darkArtwork && { backgroundColor: artworkEdge }]} />
+          <View style={[styles.line, styles.shortLine, darkArtwork && { backgroundColor: artworkEdge }]} />
         </LinearGradient>
-        <LinearGradient colors={['#FFF3B0', '#FFC641']} style={styles.check}>
-          <Icon name="check" color="#573400" size={19} />
+        <LinearGradient colors={neon?.action ?? (night ? [colors.goldBright, colors.gold] : ['#FFF3B0', '#FFC641'])} style={styles.check}>
+          <Icon name="check" color={neon ? colors.primaryText : night ? colors.onGold : '#573400'} size={19} />
         </LinearGradient>
-        <View style={styles.spark}><Icon name="star-four-points" color="#FFE184" size={16} /></View>
-        <View style={styles.smallSpark}><Icon name="star-four-points" color="#ADCAFF" size={9} /></View>
+        <View style={styles.spark}><Icon name="star-four-points" color={neon?.season.highlight ?? '#FFE184'} size={16} /></View>
+        <View style={styles.smallSpark}><Icon name="star-four-points" color={neon?.season.secondary ?? (night ? colors.primary : '#ADCAFF')} size={9} /></View>
       </Animated.View>
     </View>
   );

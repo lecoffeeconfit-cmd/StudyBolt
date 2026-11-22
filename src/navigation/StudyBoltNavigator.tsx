@@ -7,6 +7,7 @@ import { useAuth } from '../AuthContext';
 import { initialState } from '../data/mockStudyPacks';
 import { BottomTabs } from '../components/BottomTabs';
 import { StudyPackGenerationProgress } from '../components/StudyPackGenerationProgress';
+import { StudyGuidanceProvider } from '../components/StudyGuidance';
 import type { MainTab } from '../components/BottomTabs';
 import { useStudyBolt } from '../StudyBoltContext';
 import { isCommunitySharingEnabled } from '../config/community';
@@ -32,6 +33,7 @@ import { PremiumScreen } from '../screens/PremiumScreen';
 import { ProcessingScreen } from '../screens/ProcessingScreen';
 import { ProfileScreen } from '../screens/ProfileScreen';
 import { ResetPasswordScreen } from '../screens/ResetPasswordScreen';
+import { RegistrationPromptScreen, type RegistrationReason } from '../screens/RegistrationPromptScreen';
 import { StatsScreen } from '../screens/StatsScreen';
 import { StudyPackScreen } from '../screens/StudyPackScreen';
 import { VisualReviewScreen } from '../screens/VisualReviewScreen';
@@ -43,6 +45,7 @@ import { combineStudyPacks } from '../services/studyPack';
 import { parseShareToken } from '../services/sharing';
 import { syncRevenueCatUser } from '../services/subscriptions';
 import { findOnboardingSample, resolveOnboardingSample } from '../services/onboarding';
+import type { GuidePage } from '../services/studyGuidance';
 import type { ImportAsset, StudyPack, StudyTool, StudyType } from '../models';
 import type { Route } from './routes';
 
@@ -53,8 +56,9 @@ export function StudyBoltNavigator() {
   const [route, setRoute] = useState<Route>({ type: 'main' });
   const [plannerFocusDeckId, setPlannerFocusDeckId] = useState<string>();
   const [planClassId, setPlanClassId] = useState<string>();
-  const [pendingSharedToken, setPendingSharedToken] = useState<string | null>(null);
   const [pendingRoute, setPendingRoute] = useState<Route | null>(null);
+  const [initialAuthMode, setInitialAuthMode] = useState<'signin' | 'signup'>('signin');
+  const [newGuidanceAccount, setNewGuidanceAccount] = useState<string>();
   const isAdmin = useAdminAccess(user?.id);
   const trackedScreen = route.type === 'main' ? tab : route.type === 'deck' ? 'study-pack' : route.type === 'visual-review' ? 'visuals'
     : ['exam', 'smart-study', 'speed-review', 'shared', 'community-class', 'processing', 'flagged', 'mistakes'].includes(route.type) ? route.type : null;
@@ -93,27 +97,46 @@ export function StudyBoltNavigator() {
     setRoute({ type: 'main' });
   }, [completeOnboarding]);
 
+  const openDocumentProcessing = useCallback((assets: ImportAsset[], courseId?: string, courseName?: string) => {
+    if (!user) {
+      setPendingRoute({ type: 'main' });
+      setRoute({ type: 'registration-prompt', reason: 'ai' });
+      return;
+    }
+    setRoute({ type: 'processing', assets, courseId, courseName });
+  }, [user]);
+
   const importFromOnboarding = useCallback((assets: ImportAsset[]) => {
     completeOnboarding();
-    setRoute({ type: 'processing', assets });
-  }, [completeOnboarding]);
+    openDocumentProcessing(assets);
+  }, [completeOnboarding, openDocumentProcessing]);
 
   const signInFromOnboarding = useCallback(() => {
     completeOnboarding();
     setRoute({ type: 'auth' });
   }, [completeOnboarding]);
 
-  const postAuthRoute = useCallback((): Route => pendingRoute ?? (pendingSharedToken ? { type: 'shared', token: pendingSharedToken } : { type: 'main' }), [pendingRoute, pendingSharedToken]);
+  const postAuthRoute = useCallback((): Route => pendingRoute ?? { type: 'main' }, [pendingRoute]);
+
+  const requestRegistration = useCallback((reason: RegistrationReason) => {
+    setPendingRoute(route);
+    setRoute({ type: 'registration-prompt', reason });
+  }, [route]);
+
+  const dismissRegistration = useCallback(() => {
+    setRoute(pendingRoute ?? { type: 'main' });
+    setPendingRoute(null);
+  }, [pendingRoute]);
 
   const finishAccountOnboarding = useCallback(async (studyType?: StudyType) => {
     const result = await updateProfile({ ...(studyType ? { studyType } : {}), onboardingCompleted: true, onboardingRequired: false });
     if (!result.error) {
+      if (user) setNewGuidanceAccount(user.id);
       setRoute(postAuthRoute());
-      setPendingSharedToken(null);
       setPendingRoute(null);
     }
     return result;
-  }, [postAuthRoute, updateProfile]);
+  }, [postAuthRoute, updateProfile, user]);
 
   const trySampleFromOnboarding = useCallback(() => {
     completeOnboarding();
@@ -163,7 +186,6 @@ export function StudyBoltNavigator() {
     }
     if (route.type === 'auth') {
       setRoute(postAuthRoute());
-      setPendingSharedToken(null);
       setPendingRoute(null);
     }
   }, [needsStudyOnboarding, postAuthRoute, recoveryMode, route.type, user]);
@@ -175,7 +197,7 @@ export function StudyBoltNavigator() {
           onOpenDeck={openDeck}
           onCreateReview={createReview}
           onOpenFlagged={openFlagged}
-          onImport={(assets, studyClass) => setRoute({ type: 'processing', assets, courseId: studyClass.id, courseName: studyClass.name })}
+          onImport={(assets, studyClass) => openDocumentProcessing(assets, studyClass.id, studyClass.name)}
         />
       );
     }
@@ -189,12 +211,11 @@ export function StudyBoltNavigator() {
         />
       );
     }
-    if (tab === 'stats') return <StatsScreen onOpenDeck={openDeck} onAddMaterial={(assets, course) => setRoute({ type: 'processing', assets, courseId: course?.id, courseName: course?.name })} />;
+    if (tab === 'stats') return <StatsScreen onOpenDeck={openDeck} onAddMaterial={(assets, course) => openDocumentProcessing(assets, course?.id, course?.name)} />;
     if (tab === 'profile') {
       return (
         <ProfileScreen
-          onOpenOnboarding={() => setRoute({ type: 'onboarding' })}
-          onOpenAuth={() => setRoute({ type: 'auth' })}
+          onOpenAuth={() => requestRegistration('sync')}
           onManageAccount={() => setRoute({ type: 'account' })}
           onOpenWidgets={() => setRoute({ type: 'widgets' })}
           onOpenLegal={() => setRoute({ type: 'legal' })}
@@ -208,7 +229,7 @@ export function StudyBoltNavigator() {
     return (
       <HomeScreen
         onOpenDeck={openDeck}
-        onImport={(assets, course) => setRoute({ type: 'processing', assets, courseId: course?.id, courseName: course?.name })}
+        onImport={(assets, course) => openDocumentProcessing(assets, course?.id, course?.name)}
         planClassId={planClassId}
         onSelectPlanClass={setPlanClassId}
         onStartStudy={(mode, focus) => setRoute({ type: 'smart-study', mode, ...focus })}
@@ -221,7 +242,7 @@ export function StudyBoltNavigator() {
         onOpenPlanner={() => setTab('planner')}
       />
     );
-  }, [createReview, isAdmin, openDeck, openFlagged, openSpeedReview, planClassId, plannerFocusDeckId, tab, user]);
+  }, [createReview, isAdmin, openDeck, openDocumentProcessing, openFlagged, openSpeedReview, planClassId, plannerFocusDeckId, requestRegistration, tab, user]);
 
   if (!hydrated || authLoading) {
     return (
@@ -235,20 +256,31 @@ export function StudyBoltNavigator() {
   const showAccountOnboarding = !recoveryMode && Boolean(user && needsStudyOnboarding);
   const showOnboarding = !recoveryMode && !showAccountOnboarding && (route.type === 'onboarding' || (!user && route.type === 'main' && !callbackError && !state.hasCompletedOnboarding));
   const showWideHome = Platform.OS === 'web' && route.type === 'main' && tab === 'home' && !showAccountOnboarding;
+  const guidancePage: GuidePage | null = showOnboarding || showAccountOnboarding || recoveryMode ? null
+    : route.type === 'deck' ? 'pack'
+      : route.type === 'main' && tab !== 'profile' && (tab !== 'discover' || isCommunitySharingEnabled) ? tab : null;
 
-  return (
+  const app = (
     <View style={[styles.app, (showOnboarding || showWideHome) && styles.fullWidthApp, { backgroundColor: colors.background }]}>
       <StatusBar style={colors.mode === 'dark' ? 'light' : 'dark'} />
       {showAccountOnboarding ? <AccountOnboardingScreen onComplete={finishAccountOnboarding} /> : null}
       {!showOnboarding && !showAccountOnboarding && route.type === 'auth' ? (
         <LoginScreen
+          initialMode={initialAuthMode}
           onContinueAsGuest={() => {
             clearCallbackError();
             completeOnboarding();
             setRoute(pendingRoute?.type === 'processing' ? { type: 'main' } : postAuthRoute());
-            setPendingSharedToken(null);
             setPendingRoute(null);
           }}
+        />
+      ) : null}
+      {!showOnboarding && !showAccountOnboarding && route.type === 'registration-prompt' ? (
+        <RegistrationPromptScreen
+          reason={route.reason}
+          onCreateAccount={() => { setInitialAuthMode('signup'); setRoute({ type: 'auth' }); }}
+          onSignIn={() => { setInitialAuthMode('signin'); setRoute({ type: 'auth' }); }}
+          onNotNow={dismissRegistration}
         />
       ) : null}
       {!showOnboarding && !showAccountOnboarding && route.type === 'account' ? (
@@ -286,10 +318,7 @@ export function StudyBoltNavigator() {
           setTab('planner');
           setRoute({ type: 'main' });
         }}
-        onRequireAuth={() => {
-          setPendingRoute(route);
-          setRoute({ type: 'auth' });
-        }}
+        onRequireAuth={() => requestRegistration('ai')}
       /> : null}
       {!showOnboarding && !showAccountOnboarding && route.type === 'mistakes' ? (
         <MistakeNotebookScreen
@@ -325,26 +354,21 @@ export function StudyBoltNavigator() {
           onOpenSpeedReview={(deckId) => openSpeedReview({ deckId, returnDeckId: deckId })}
           onOpenExam={(deckId) => setRoute({ type: 'exam', deckId })}
           onOpenVisualReview={(deckId) => setRoute({ type: 'visual-review', deckId })}
-          onRequireAuth={() => {
-            setPendingRoute(route);
-            setRoute({ type: 'auth' });
-          }}
+          onRequireAuth={() => requestRegistration('ai')}
         />
       ) : null}
       {!showOnboarding && !showAccountOnboarding && route.type === 'visual-review' ? (
         <VisualReviewScreen
           deckId={route.deckId}
           onBack={() => setRoute({ type: 'deck', deckId: route.deckId })}
+          onRequireAuth={() => requestRegistration('ai')}
         />
       ) : null}
       {isCommunitySharingEnabled && !showOnboarding && !showAccountOnboarding && route.type === 'shared' ? (
         <SharedStudyPackScreen
           token={route.token}
           onBack={() => setRoute({ type: 'main' })}
-          onRequireAuth={() => {
-            setPendingSharedToken(route.token);
-            setRoute({ type: 'auth' });
-          }}
+          onRequireAuth={() => requestRegistration('sync')}
           onOpenSavedDeck={(deckId) => setRoute({ type: 'deck', deckId })}
         />
       ) : null}
@@ -356,10 +380,7 @@ export function StudyBoltNavigator() {
             setRoute({ type: 'main' });
           }}
           onPreviewSet={(token) => setRoute({ type: 'shared', token })}
-          onRequireAuth={() => {
-            setPendingRoute(route);
-            setRoute({ type: 'auth' });
-          }}
+          onRequireAuth={() => requestRegistration('sync')}
         />
       ) : null}
       {!showOnboarding && !showAccountOnboarding && route.type === 'processing' ? (
@@ -372,8 +393,30 @@ export function StudyBoltNavigator() {
           onTrySample={openSample}
         />
       ) : null}
-      {!showOnboarding && !showAccountOnboarding && route.type !== 'processing' && route.type !== 'auth' && route.type !== 'widgets' ? <StudyPackGenerationProgress aboveNavigation={route.type === 'main'} /> : null}
+      {!showOnboarding && !showAccountOnboarding && route.type !== 'processing' && route.type !== 'auth' && route.type !== 'registration-prompt' && route.type !== 'widgets' ? <StudyPackGenerationProgress aboveNavigation={route.type === 'main'} onRequireAuth={() => requestRegistration('ai')} /> : null}
     </View>
+  );
+
+  return (
+    <StudyGuidanceProvider
+      page={guidancePage}
+      pageKey={route.type === 'deck' ? `pack:${route.deckId}` : `${route.type}:${tab}`}
+      newAccountId={newGuidanceAccount}
+      onReplayIntro={() => setRoute({ type: 'onboarding' })}
+      onReplayPage={page => {
+        if (page === 'pack') {
+          const pack = state.decks.find(item => item.fileType !== 'demo') ?? state.decks[0];
+          if (!pack) return false;
+          openDeck(pack, 'overview');
+        } else {
+          setTab(page);
+          setRoute({ type: 'main' });
+        }
+        return true;
+      }}
+    >
+      {app}
+    </StudyGuidanceProvider>
   );
 }
 

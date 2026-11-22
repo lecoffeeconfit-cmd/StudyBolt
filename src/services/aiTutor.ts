@@ -24,21 +24,21 @@ export interface TutorCallResult {
   response?: AiTutorResponse;
   quota?: AiTutorQuota;
   error?: string;
-  code?: 'monthly_limit' | 'cloud_budget' | 'rate_limit';
+  code?: 'monthly_limit' | 'cloud_budget' | 'rate_limit' | 'account_required';
 }
 
 export interface VisualAnalysisCallResult {
   analysis?: AiVisualAnalysis;
   quota?: AiTutorQuota;
   error?: string;
-  code?: 'monthly_limit' | 'cloud_budget' | 'rate_limit';
+  code?: 'monthly_limit' | 'cloud_budget' | 'rate_limit' | 'account_required';
 }
 
 export interface VisualCardCallResult {
   suggestion?: AiVisualCardSuggestion;
   quota?: AiTutorQuota;
   error?: string;
-  code?: 'monthly_limit' | 'cloud_budget' | 'rate_limit';
+  code?: 'monthly_limit' | 'cloud_budget' | 'rate_limit' | 'account_required';
 }
 
 function noteText(note: NoteBlock): string {

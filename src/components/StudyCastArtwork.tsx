@@ -26,6 +26,8 @@ export const StudyCastArtwork = React.memo(function StudyCastArtwork({ playing, 
   const id = useId().replace(/[^a-zA-Z0-9_-]/g, '');
   const moving = visible && foreground && !reducedMotion;
   const dark = colors.mode === 'dark';
+  const artwork = colors.night?.artwork;
+  const aura = artwork?.cover ?? (dark ? '#4F8F88' : '#C7F1E4');
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => setForeground(state === 'active'));
@@ -68,12 +70,12 @@ export const StudyCastArtwork = React.memo(function StudyCastArtwork({ playing, 
       <Svg style={styles.layer} width="100%" height="100%" viewBox="0 0 280 200" fill="none">
         <Defs>
           <RadialGradient id={`${id}-aura`} cx="50%" cy="50%" rx="50%" ry="50%">
-            <Stop stopColor={dark ? '#4F8F88' : '#C7F1E4'} stopOpacity={dark ? '0.35' : '0.7'} />
-            <Stop offset="1" stopColor={dark ? '#4F8F88' : '#C7F1E4'} stopOpacity="0" />
+            <Stop stopColor={aura} stopOpacity={dark ? '0.35' : '0.7'} />
+            <Stop offset="1" stopColor={aura} stopOpacity="0" />
           </RadialGradient>
         </Defs>
         <Ellipse cx="140" cy="110" rx="126" ry="85" fill={`url(#${id}-aura)`} />
-        <Path d="M76 69c13-32 53-44 85-30 27 12 50 39 48 70-2 39-37 62-74 58-42-5-75-58-59-98Z" fill={dark ? '#294758' : '#E0EEFF'} />
+        <Path d="M76 69c13-32 53-44 85-30 27 12 50 39 48 70-2 39-37 62-74 58-42-5-75-58-59-98Z" fill={artwork?.shade ?? (dark ? '#294758' : '#E0EEFF')} />
         <Circle cx="201" cy="57" r="17" fill={dark ? '#66562D' : '#FFF0B7'} />
         <Ellipse cx="140" cy="177" rx="66" ry="6" fill={colors.primary} opacity={dark ? '0.12' : '0.08'} />
         <Path d="M71 43v7m-3.5-3.5h7" stroke={colors.gold} strokeWidth="2" strokeLinecap="round" />
@@ -97,13 +99,13 @@ export const StudyCastArtwork = React.memo(function StudyCastArtwork({ playing, 
         <Svg width="100%" height="100%" viewBox="0 0 280 200" fill="none">
           <Defs>
             <LinearGradient id={`${id}-blue`} x1="98" y1="49" x2="180" y2="145" gradientUnits="userSpaceOnUse">
-              <Stop stopColor="#8FC6FF" /><Stop offset="0.5" stopColor="#4D9AF1" /><Stop offset="1" stopColor="#3275CC" />
+              <Stop stopColor={artwork ? colors.primary : '#8FC6FF'} /><Stop offset="0.5" stopColor={artwork?.cover ?? '#4D9AF1'} /><Stop offset="1" stopColor={artwork?.shade ?? '#3275CC'} />
             </LinearGradient>
             <LinearGradient id={`${id}-cover`} x1="91" y1="122" x2="196" y2="173" gradientUnits="userSpaceOnUse">
-              <Stop stopColor="#75B5FF" /><Stop offset="1" stopColor="#377EE0" />
+              <Stop stopColor={artwork?.cover ?? '#75B5FF'} /><Stop offset="1" stopColor={artwork?.shade ?? '#377EE0'} />
             </LinearGradient>
             <LinearGradient id={`${id}-paper`} x1="93" y1="116" x2="147" y2="167" gradientUnits="userSpaceOnUse">
-              <Stop stopColor="#FFFEF7" /><Stop offset="1" stopColor="#F4EBD3" />
+              <Stop stopColor={artwork?.cover ?? '#FFFEF7'} /><Stop offset="1" stopColor={artwork?.shade ?? '#F4EBD3'} />
             </LinearGradient>
             <LinearGradient id={`${id}-gold`} x1="130" y1="69" x2="151" y2="124" gradientUnits="userSpaceOnUse">
               <Stop stopColor="#FFE989" /><Stop offset="0.55" stopColor="#FFD052" /><Stop offset="1" stopColor="#F3AF34" />
@@ -122,9 +124,9 @@ export const StudyCastArtwork = React.memo(function StudyCastArtwork({ playing, 
           <Path d="m149 70-25 34q-2 3 2 3h14l-5 22q-1 4 2 1l25-34q2-3-2-3h-15l6-22q1-4-2-1Z" fill={`url(#${id}-gold)`} stroke="#E6AD37" strokeWidth="0.8" strokeLinejoin="round" />
           <Path d="m146 78-18 25h15" stroke="#FFF4BD" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
           <Path d="M75 121c25-7 47-2 65 9 18-11 40-16 65-9v45c-25-5-46-1-65 10-19-11-40-15-65-10v-45Z" fill={`url(#${id}-cover)`} />
-          <Path d="M80 119c23-5 44-1 60 11 16-12 37-16 60-11v42c-23-4-44 0-60 11-16-11-37-15-60-11v-42Z" fill="#D3E4F6" />
+          <Path d="M80 119c23-5 44-1 60 11 16-12 37-16 60-11v42c-23-4-44 0-60 11-16-11-37-15-60-11v-42Z" fill={artwork ? colors.cardStrong : '#D3E4F6'} />
           <Path d="M81 115c22-4 43 0 59 12v41c-17-11-37-15-59-10v-43Z" fill={`url(#${id}-paper)`} />
-          <Path d="M140 127c16-12 37-16 59-12v43c-22-5-42-1-59 10v-41Z" fill="#FFFEF7" />
+          <Path d="M140 127c16-12 37-16 59-12v43c-22-5-42-1-59 10v-41Z" fill={artwork?.cover ?? '#FFFEF7'} />
           <Path d="M140 129v37" stroke="#E8DCC3" strokeWidth="1.3" strokeLinecap="round" />
           <Path d="M92 128c12-1 24 2 35 7m-35 3c12-1 24 2 35 7m-35 3c8-1 17 1 24 4m38-17c11-5 23-8 35-7m-35 17c11-5 23-8 35-7m-35 17c8-4 17-6 25-6" stroke="#D6CBAE" strokeWidth="2.8" strokeLinecap="round" opacity="0.65" />
           <Path d="M164 119v17l5-4 5 1v-17" fill={dark ? '#87D6BE' : '#7BD4B3'} />

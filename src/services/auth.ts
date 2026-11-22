@@ -17,7 +17,58 @@ const nativeAuth = Platform.OS === 'ios' ? requireOptionalNativeModule<{
   open(url: string): Promise<{ type: 'success'; url: string } | { type: 'cancel' | 'error' }>;
 }>('StudyBoltAuthSession') : null;
 const OAUTH_STARTED_AT_KEY = '@studybolt/auth/oauth-started-at';
+const OAUTH_FLOW_STATE_KEY = '@studybolt/auth/oauth-flow-state';
 const OAUTH_NEW_USER_GRACE_MS = 60_000;
+const OAUTH_FLOW_MAX_AGE_MS = 15 * 60_000;
+
+interface PendingOAuthFlowState {
+  flowId: string | null;
+  startedAt: number;
+}
+
+async function savePendingOAuthFlow(flowId: string | null): Promise<PendingOAuthFlowState> {
+  const state = { flowId, startedAt: Date.now() };
+  await AsyncStorage.setItem(OAUTH_FLOW_STATE_KEY, JSON.stringify(state));
+  // Kept for compatibility with any older callback already in progress.
+  await AsyncStorage.setItem(OAUTH_STARTED_AT_KEY, String(state.startedAt));
+  return state;
+}
+
+async function readPendingOAuthFlow(): Promise<PendingOAuthFlowState | null> {
+  try {
+    const raw = await AsyncStorage.getItem(OAUTH_FLOW_STATE_KEY);
+    let startedAt: number;
+    let flowId: string | null;
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<PendingOAuthFlowState>;
+      startedAt = Number(parsed.startedAt);
+      flowId = typeof parsed.flowId === 'string' ? parsed.flowId : null;
+    } else {
+      // An OAuth session may have started just before an app update, when only
+      // the timestamp key existed and the legacy verifier slot was in use.
+      startedAt = Number(await AsyncStorage.getItem(OAUTH_STARTED_AT_KEY));
+      flowId = null;
+      if (!startedAt) return null;
+    }
+    const age = Date.now() - startedAt;
+    if (!Number.isFinite(startedAt) || age < 0 || age > OAUTH_FLOW_MAX_AGE_MS) {
+      await AsyncStorage.multiRemove([OAUTH_FLOW_STATE_KEY, OAUTH_STARTED_AT_KEY]);
+      return null;
+    }
+    return { flowId, startedAt };
+  } catch {
+    await AsyncStorage.multiRemove([OAUTH_FLOW_STATE_KEY, OAUTH_STARTED_AT_KEY]).catch(() => undefined);
+    return null;
+  }
+}
+
+async function clearPendingOAuthFlow(state?: PendingOAuthFlowState | null): Promise<void> {
+  if (state) {
+    const current = await readPendingOAuthFlow();
+    if (!current || current.startedAt !== state.startedAt || current.flowId !== state.flowId) return;
+  }
+  await AsyncStorage.multiRemove([OAUTH_FLOW_STATE_KEY, OAUTH_STARTED_AT_KEY]);
+}
 
 export type AuthProviderName = 'google' | 'apple';
 export type AuthUser = User;
@@ -128,6 +179,7 @@ export async function clearAuthSession(): Promise<void> {
   }
   latestExchange = undefined;
   if (authStorageKey) await AsyncStorage.multiRemove([authStorageKey, authStorageKey + '-code-verifier', authStorageKey + '-user']);
+  await clearPendingOAuthFlow();
 }
 
 export async function loadAuthSession(): Promise<AuthSession | null> {
@@ -264,6 +316,7 @@ export async function updateAccountPassword(_session: AuthSession, password: str
 
 export async function openProviderSignIn(provider: AuthProviderName): Promise<AuthResult> {
   if (!supabase) return configurationError();
+  let pendingFlow: PendingOAuthFlowState | null = null;
   try {
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider,
@@ -274,37 +327,30 @@ export async function openProviderSignIn(provider: AuthProviderName): Promise<Au
     });
     if (error) return { error: errorMessage(error) };
     if (!data.url) return { error: 'Could not open sign-in. Please try again.' };
-    await AsyncStorage.setItem(OAUTH_STARTED_AT_KEY, String(Date.now()));
+    pendingFlow = await savePendingOAuthFlow(data.flowId ?? null);
     if (nativeAuth) {
       const result = await nativeAuth.open(data.url);
       if (result.type === 'cancel') {
-        await AsyncStorage.removeItem(OAUTH_STARTED_AT_KEY);
+        await clearPendingOAuthFlow(pendingFlow);
         return {};
       }
       if (result.type === 'success') {
-        return await consumeAuthCallback(result.url) ?? { error: 'StudyBolt did not receive a valid sign-in response. Please try again.' };
+        return await consumeAuthCallback(result.url, data.flowId ?? undefined) ?? { error: 'StudyBolt did not receive a valid sign-in response. Please try again.' };
       }
+      await clearPendingOAuthFlow(pendingFlow);
       return { error: 'Could not open the secure sign-in window. Please try again.' };
     }
     if (Platform.OS === 'web' && typeof window !== 'undefined') window.location.assign(data.url);
     else await Linking.openURL(data.url);
     return { awaitingCallback: true };
   } catch {
+    await clearPendingOAuthFlow(pendingFlow).catch(() => undefined);
     return { error: `Could not open ${provider === 'google' ? 'Google' : 'Apple'} sign-in.` };
   }
 }
 
-async function markNewProviderUser(session: AuthSession): Promise<AuthSession> {
-  if (!supabase) return session;
-  let startedAt = 0;
-  try {
-    const value = await AsyncStorage.getItem(OAUTH_STARTED_AT_KEY);
-    await AsyncStorage.removeItem(OAUTH_STARTED_AT_KEY);
-    startedAt = Number(value);
-  } catch {
-    return session;
-  }
-  if (!startedAt) return session;
+async function markNewProviderUser(session: AuthSession, startedAt: number): Promise<AuthSession> {
+  if (!supabase || !startedAt) return session;
   const createdAt = Date.parse(session.user.created_at);
   if (!Number.isFinite(startedAt) || !Number.isFinite(createdAt)) return session;
   if (createdAt < startedAt - OAUTH_NEW_USER_GRACE_MS || createdAt > Date.now() + OAUTH_NEW_USER_GRACE_MS) return session;
@@ -330,14 +376,19 @@ async function markNewProviderUser(session: AuthSession): Promise<AuthSession> {
 
 let latestExchange: { code: string; pending?: Promise<AuthResult> } | undefined;
 
-export async function consumeAuthCallback(url: string): Promise<AuthResult | null> {
+export async function consumeAuthCallback(url: string, flowId?: string | null): Promise<AuthResult | null> {
   const callback = readAuthCallback(url, Platform.OS === 'web' ? authRedirectUrl() : undefined);
   if (!callback || !supabase) return null;
   if (callback.rejected || !callback.code) {
+    const pendingFlow = await readPendingOAuthFlow();
+    const returnedFlowId = flowId ?? callback.flowId;
+    if (pendingFlow && (!returnedFlowId || returnedFlowId === pendingFlow.flowId)) {
+      await clearPendingOAuthFlow(pendingFlow);
+    }
     return { error: 'Sign-in could not be completed. Try again or use email.' };
   }
   if (latestExchange?.code === callback.code) return latestExchange.pending ?? {};
-  const pending = finishCodeExchange(supabase, callback.code);
+  const pending = finishCodeExchange(supabase, callback.code, flowId ?? callback.flowId);
   const exchange: NonNullable<typeof latestExchange> = { code: callback.code, pending };
   latestExchange = exchange;
   try {
@@ -347,50 +398,23 @@ export async function consumeAuthCallback(url: string): Promise<AuthResult | nul
   }
 }
 
-async function finishCodeExchange(client: NonNullable<typeof supabase>, code: string): Promise<AuthResult> {
+async function finishCodeExchange(client: NonNullable<typeof supabase>, code: string, callbackFlowId?: string | null): Promise<AuthResult> {
+  const pendingFlow = await readPendingOAuthFlow();
+  const flowId = callbackFlowId ?? pendingFlow?.flowId ?? undefined;
+  const startedAt = pendingFlow && pendingFlow.flowId === flowId ? pendingFlow.startedAt : 0;
   try {
-    const { data, error } = await client.auth.exchangeCodeForSession(code);
+    const { data, error } = await client.auth.exchangeCodeForSession(code, flowId ? { flowId } : undefined);
     if (error || !data.session) return { error: 'This sign-in link could not be verified. Start sign-in again in StudyBolt.' };
     const recovery = 'redirectType' in data && data.redirectType === 'recovery';
-    const session = recovery ? data.session : await markNewProviderUser(data.session);
+    const session = recovery ? data.session : await markNewProviderUser(data.session, startedAt);
     return { session, user: session.user, recovery };
   } catch {
     return { error: 'Could not finish authentication. Check your connection and try again.' };
+  } finally {
+    if (pendingFlow && (flowId === pendingFlow.flowId || !flowId)) {
+      await clearPendingOAuthFlow(pendingFlow).catch(() => undefined);
+    }
   }
-}
-
-// Keep document-only guest credentials separate from the account session and its PKCE verifier.
-const guestAuth = isAuthConfigured ? createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    storage: AsyncStorage,
-    storageKey: authStorageKey + '-studybolt-guest',
-    autoRefreshToken: false,
-    persistSession: true,
-    detectSessionInUrl: false,
-  },
-}).auth : null;
-let guestTokenRequest: Promise<string> | null = null;
-
-export function getGuestDocumentToken(): Promise<string> {
-  if (guestTokenRequest) return guestTokenRequest;
-  guestTokenRequest = (async () => {
-    if (!guestAuth) throw new Error('Secure document processing is unavailable in this build.');
-    const current = await guestAuth.getSession();
-    if (current.data.session?.user.is_anonymous) return current.data.session.access_token;
-    if (current.error && current.error.code !== 'refresh_token_not_found'
-      && current.error.code !== 'refresh_token_already_used' && current.error.code !== 'session_not_found'
-      && current.error.name !== 'AuthSessionMissingError') {
-      throw new Error('Could not reconnect your guest study session. Check your connection and try again.');
-    }
-    const { data, error } = await guestAuth.signInAnonymously();
-    if (error?.code === 'over_request_rate_limit') throw new Error('Guest study is busy. Wait a moment and try again.');
-    if (error?.code === 'anonymous_provider_disabled') throw new Error('Guest processing is temporarily unavailable. You can retry or sign in to build this pack.');
-    if (error || !data.session?.user.is_anonymous) {
-      throw new Error('Could not start a guest study session. Check your connection and try again.');
-    }
-    return data.session.access_token;
-  })().finally(() => { guestTokenRequest = null; });
-  return guestTokenRequest;
 }
 
 export async function signOutAccount(session: AuthSession | null): Promise<void> {

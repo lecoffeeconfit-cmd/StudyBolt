@@ -26,7 +26,7 @@ export function HomeImportSheet({ colors, reducedMotion, choosingFiles, courseNa
   return <Modal visible transparent animationType={reducedMotion ? 'none' : 'slide'} onRequestClose={close}>
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={[styles.backdrop, { paddingTop: top + 12 }]}>
       {!editing ? <Pressable accessible={false} importantForAccessibility="no" onPress={close} style={StyleSheet.absoluteFill} /> : null}
-      <View role="dialog" aria-modal accessibilityViewIsModal onAccessibilityEscape={close} style={[styles.sheet, { backgroundColor: colors.card, borderColor: colors.border, paddingBottom: Math.max(bottom, 14) }]}>
+      <View role="dialog" aria-modal accessibilityViewIsModal onAccessibilityEscape={close} style={[styles.sheet, { backgroundColor: colors.card, borderColor: colors.neon?.sheetEdge ?? colors.border, paddingBottom: Math.max(bottom, 14) }]}>
         <View style={styles.heading}>
           <Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>{editing ? 'Paste or type notes' : 'Add study material'}</Text>
           <Pressable accessibilityRole="button" accessibilityLabel={editing ? 'Close notes editor' : 'Close import options'} disabled={choosingFiles} onPress={close} style={[styles.close, { backgroundColor: colors.cardStrong }]}>

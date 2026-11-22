@@ -1,6 +1,7 @@
 import React, { memo, useEffect, useId, useRef } from 'react';
 import { Animated, Easing, Platform, StyleSheet, View } from 'react-native';
 import Svg, { Circle, Defs, Ellipse, G, LinearGradient, Path, Rect, Stop } from 'react-native-svg';
+import type { TabGlyphColors } from '../theme';
 
 export type StudyTabArtworkName = 'home' | 'library' | 'planner' | 'stats';
 
@@ -11,6 +12,7 @@ type Props = {
   accent: string;
   size?: number;
   mode?: 'light' | 'dark';
+  tones?: TabGlyphColors;
 };
 
 const NATIVE = Platform.OS !== 'web';
@@ -34,14 +36,20 @@ type Palette = ReturnType<typeof artworkPalette>;
 
 // All art uses the Settings icon's 32-unit grid and the existing 27-point slot.
 export const StudyTabArtwork = memo(function StudyTabArtwork({
-  name, active, reducedMotion, accent, size = 27, mode = 'light',
+  name, active, reducedMotion, accent, size = 27, mode = 'light', tones,
 }: Props) {
   const id = useId().replace(/[^a-zA-Z0-9_-]/g, '');
   const bodyId = 'study-tab-body-' + id;
   const paperId = 'study-tab-paper-' + id;
   const body = 'url(#' + bodyId + ')';
   const paper = 'url(#' + paperId + ')';
-  const palette = artworkPalette(active, mode === 'dark', accent);
+  const palette = tones ? {
+    ...tones,
+    gold: tones.detail,
+    goldEdge: tones.shade,
+    highlight: tones.ink,
+    shadow: tones.shade,
+  } : artworkPalette(active, mode === 'dark', accent);
   const progress = useRef(new Animated.Value(1)).current;
   const wasActive = useRef(active);
 

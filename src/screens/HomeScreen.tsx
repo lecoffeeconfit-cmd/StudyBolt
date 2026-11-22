@@ -16,7 +16,7 @@ import {
   subscribeToStudyTimerSettings,
   type StudyTimerSettings,
 } from '../services/studyTimer';
-import { BoltMark, Icon, ThemeToggle } from '../components/ui';
+import { BoltMark, Icon, NeonOutline, GradientSurface, ThemeToggle } from '../components/ui';
 import { bottomTabBarTop } from '../components/BottomTabs';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import { findHomeAudioResume } from '../services/homeStudy';
@@ -37,8 +37,8 @@ import { planToolReady } from '../components/todaysPlanPresentation';
 import { isHomeToolReady, type HomeTool } from '../services/homeTools';
 import { buildStudyMaterialHistory } from '../services/studyMaterialHistory';
 import { typography } from '../theme';
-
-const POMODORO_STORAGE_KEY = '@studybolt/pomodoro-timer/v1';
+import { GuideAnchor, useGuidance, useGuidanceBlocker, useGuidanceScroll } from '../components/StudyGuidance';
+import { POMODORO_STORAGE_KEY } from '../services/studyGuidance';
 
 type PomodoroPhase = 'focus' | 'break';
 type PomodoroSession = {
@@ -138,6 +138,8 @@ export function HomeScreen({
   const [priority, setPriority] = useState<HomePriority | null>(null);
   const [now, setNow] = useState(() => new Date());
   const { opening: choosingFiles, error: importError, chooseFiles, acceptAssets, isOpening } = useStudyMaterialPicker(onImport);
+  useGuidanceBlocker(importSheetOpen || choosingFiles || historyOpen || Boolean(toolPicker || priority));
+  const guideScroll = useGuidanceScroll();
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 60_000);
@@ -189,6 +191,7 @@ export function HomeScreen({
 
   return (
     <ScrollView
+      {...guideScroll}
       style={{ backgroundColor: colors.background }}
       contentContainerStyle={{
         paddingTop: insets.top + 8,
@@ -202,11 +205,11 @@ export function HomeScreen({
       <View style={styles.content}>
         <View style={styles.brandRow}>
           <View style={styles.brand}>
-            <BoltMark size={34} iconSize={24} backgroundColor={colors.goldBright} color={colors.onGold} />
+            <BoltMark size={34} iconSize={24} backgroundColor={colors.neon?.indicator.icon ?? colors.goldBright} color={colors.neon ? colors.primaryText : colors.onGold} />
             <Text style={[styles.brandText, { color: colors.text }]}>StudyBolt</Text>
           </View>
           <View style={styles.headerActions}>
-            <ThemeToggle style={styles.roundButton} size={19} darkIconColor={colors.warning} reducedMotion={reducedMotion} />
+            <ThemeToggle style={styles.roundButton} size={19} reducedMotion={reducedMotion} />
             <Pressable accessibilityRole="button" accessibilityLabel="Open profile and settings" onPress={onOpenProfile}
               style={({ pressed }) => [styles.roundButton, { borderColor: colors.border, backgroundColor: pressed ? colors.cardStrong : colors.primarySoft }]}>
               {initials ? <Text style={[styles.avatarText, { color: colors.primary }]}>{initials}</Text> : <Icon name="account-outline" size={21} color={colors.primary} />}
@@ -231,10 +234,10 @@ export function HomeScreen({
             <AddStudyMaterialCard colors={colors} onPress={() => showUpload()}
               onDropAssets={assets => !isOpening() && acceptAssets(assets)} opening={choosingFiles} featuredInPlan={!hasPacks}
               error={importSheetOpen ? null : importError} status={uploadStatus} onOpenPack={onOpenDeck} />
-            {hasPacks ? (
+            {hasPacks ? <GuideAnchor id="home-tools">
               <StudyTools available={available} onTool={openTool} onPractice={practicePack ? practice : undefined}
                 onCram={cramPack ? () => onStartStudy('cram', { deckId: cramPack.id }) : undefined} onOpenFlagged={onOpenFlagged} />
-            ) : null}
+            </GuideAnchor> : null}
             <View>
               <Text accessibilityRole="header" style={[typography.sectionTitle, { color: colors.text }]}>Focus timer</Text>
               <PomodoroTimerCard />
@@ -276,6 +279,11 @@ function PomodoroTimerCard() {
   const [ready, setReady] = useState(false);
   const [settingsReady, setSettingsReady] = useState(false);
   const [starting, setStarting] = useState(false);
+  const setGuideTimer = useGuidance()?.setFocusTimer;
+  useGuidanceBlocker(starting);
+  useEffect(() => {
+    if (ready) setGuideTimer?.(session?.status === 'running' ? session.endAt ?? 0 : 0);
+  }, [ready, session?.endAt, session?.status, setGuideTimer]);
   const remainingSeconds = session?.status === 'running' && session.endAt
     ? Math.max(0, Math.ceil((session.endAt - clock) / 1000))
     : session?.remainingSeconds ?? timerSettings.focusMinutes * 60;
@@ -471,11 +479,14 @@ function PomodoroTimerCard() {
   const actionIcon = !session || session.status === 'paused' || session.status === 'complete' ? 'play' : 'pause';
   const shortAction = !session ? 'Start focus' : session.status === 'running' ? 'Pause' : session.status === 'paused' ? 'Resume'
     : session.phase === 'focus' ? 'Start break' : 'Start focus';
+  const timerAccent = colors.neon?.chart ?? colors.purple;
+  const timerAccentSurface = colors.neon?.secondarySoft ?? colors.purpleSoft;
 
   return (
-    <View style={[styles.pomodoroCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+    <View style={[styles.pomodoroCard, { backgroundColor: colors.card, borderColor: colors.neon?.edge ?? colors.border }]}>
+      {colors.neon ? <GradientSurface colors={colors.neon.hero} borderRadius={styles.pomodoroCard.borderRadius} /> : null}
       <View style={styles.pomodoroHeading}>
-        <View style={[styles.pomodoroIcon, { backgroundColor: colors.purpleSoft }]}><Icon name={session?.phase === 'break' ? 'coffee-outline' : 'timer-outline'} size={20} color={colors.purple} /></View>
+        <View style={[styles.pomodoroIcon, { backgroundColor: timerAccentSurface }]}><Icon name={session?.phase === 'break' ? 'coffee-outline' : 'timer-outline'} size={20} color={timerAccent} /></View>
         <View style={styles.pomodoroCopy}>
           <Text style={[styles.pomodoroTitle, { color: colors.text }]}>{session?.methodLabel ?? studyTimerMethodLabel(timerSettings)}</Text>
           <Text style={[styles.pomodoroDetail, { color: colors.textSecondary }]}>{detail}</Text>
@@ -483,9 +494,11 @@ function PomodoroTimerCard() {
         <Text accessibilityLabel={session?.status === 'complete' ? 'Timer complete' : `Time remaining ${timeLabel}`}
           style={[styles.pomodoroTime, { color: session?.status === 'complete' ? colors.mint : colors.text }]}>{session?.status === 'complete' ? '00:00' : timeLabel}</Text>
       </View>
-      {session ? <View accessible={false} aria-hidden style={[styles.pomodoroTrack, { backgroundColor: colors.purpleSoft }]}>
-        <Animated.View style={[styles.pomodoroFill, { backgroundColor: colors.purple,
-          width: progress.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }) }]} />
+      {session ? <View accessible={false} aria-hidden style={[styles.pomodoroTrack, { backgroundColor: colors.neon?.progressTrack ?? colors.purpleSoft }]}>
+        <Animated.View style={[styles.pomodoroFill, { backgroundColor: timerAccent,
+          width: progress.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }) }]}>
+          {colors.neon ? <GradientSurface colors={[timerAccent, colors.neon.progressEnd]} borderRadius={4} /> : null}
+        </Animated.View>
       </View> : null}
       <View style={styles.pomodoroControls}>
         {session ? (
@@ -493,9 +506,10 @@ function PomodoroTimerCard() {
             <Icon name="stop" size={16} color={colors.textMuted} />
           </Pressable>
         ) : null}
-        <Pressable accessibilityRole="button" accessibilityLabel={actionLabel} accessibilityState={{ busy: starting, disabled: !ready || !settingsReady || starting }} disabled={!ready || !settingsReady || starting} onPress={primaryAction} style={({ pressed }) => [styles.pomodoroAction, { backgroundColor: colors.purpleSoft, opacity: !ready || !settingsReady || starting ? 0.5 : pressed ? 0.75 : 1 }]}>
-          <Icon name={starting ? 'timer-sand' : actionIcon} size={18} color={colors.purple} />
-          <Text style={[styles.pomodoroActionText, { color: colors.purple }]}>{starting ? 'Starting…' : shortAction}</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel={actionLabel} accessibilityState={{ busy: starting, disabled: !ready || !settingsReady || starting }} disabled={!ready || !settingsReady || starting} onPress={primaryAction} style={({ pressed }) => [styles.pomodoroAction, { backgroundColor: timerAccentSurface, opacity: !ready || !settingsReady || starting ? 0.5 : pressed ? 0.75 : 1 }]}>
+          {colors.neon ? <NeonOutline color={colors.neon.edge} borderRadius={styles.pomodoroAction.borderRadius} /> : null}
+          <Icon name={starting ? 'timer-sand' : actionIcon} size={18} color={timerAccent} />
+          <Text style={[styles.pomodoroActionText, { color: timerAccent }]}>{starting ? 'Starting…' : shortAction}</Text>
         </Pressable>
       </View>
     </View>

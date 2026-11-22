@@ -197,17 +197,17 @@ export function SpeedReviewScreen({
       </View>
       <ProgressBar progress={((index + 1) / Math.max(1, items.length)) * 100} color={colors.purple} />
 
-      <Card style={[styles.playerCard, { backgroundColor: colors.mode === 'dark' ? '#17152A' : '#17142F' }]}>
+      <Card style={[styles.playerCard, { backgroundColor: colors.mode === 'dark' ? colors.card : '#17142F' }]}>
         <View style={styles.playerTop}>
           <Pill label="QUICK REVIEW" tone="purple" />
-          <Text style={styles.playerPosition}>{formatMinutes(current.words, rate)}</Text>
+          <Text style={[styles.playerPosition, colors.night && { color: colors.textSecondary }]}>{formatMinutes(current.words, rate)}</Text>
         </View>
-        <View style={styles.playerIcon}><Icon name="headphones" size={36} color="#D9CCFF" /></View>
-        <Text style={styles.playerTitle}>{current.deck.title}</Text>
-        <Text style={styles.playerSubtitle}>{current.deck.courseName} · {current.deck.pageCount} {current.deck.fileType === 'pdf' ? 'pages' : 'slides'}</Text>
-        <View style={styles.summaryPreview}>
-          <Text style={styles.summaryLabel}>YOU’LL HEAR</Text>
-          <Text numberOfLines={4} style={styles.summaryText}>{current.text}</Text>
+        <View style={[styles.playerIcon, colors.night && { backgroundColor: colors.primarySoft }]}><Icon name="headphones" size={36} color={colors.night ? colors.primary : '#D9CCFF'} /></View>
+        <Text style={[styles.playerTitle, colors.night && { color: colors.text }]}>{current.deck.title}</Text>
+        <Text style={[styles.playerSubtitle, colors.night && { color: colors.textSecondary }]}>{current.deck.courseName} · {current.deck.pageCount} {current.deck.fileType === 'pdf' ? 'pages' : 'slides'}</Text>
+        <View style={[styles.summaryPreview, colors.night && { backgroundColor: colors.backgroundRaised }]}>
+          <Text style={[styles.summaryLabel, colors.night && { color: colors.primary }]}>YOU’LL HEAR</Text>
+          <Text numberOfLines={4} style={[styles.summaryText, colors.night && { color: colors.text }]}>{current.text}</Text>
         </View>
         <View style={styles.controls}>
           <Pressable accessibilityRole="button" accessibilityLabel="Previous Study Pack" onPress={() => jump(-1)} style={styles.skipButton}><Icon name="skip-previous" size={27} color="#D9DCF0" /></Pressable>

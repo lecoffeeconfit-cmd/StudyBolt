@@ -48,10 +48,10 @@ export function SmartStudyScreen({ initialMode = 'smart', focusDeckId, focusSect
   const item = brief.items[index];
   const introPalette = mode === 'smart'
     ? colors.mode === 'dark'
-      ? { background: '#17243A', eyebrow: colors.goldText, title: '#F8FBFF', body: '#C1CDDD', estimate: '#D7E1EE', icon: colors.gold }
+      ? { background: colors.cardStrong, eyebrow: colors.goldText, title: colors.text, body: colors.textSecondary, estimate: colors.textSecondary, icon: colors.gold }
       : { background: '#EDF4FF', eyebrow: colors.goldText, title: colors.text, body: colors.textSecondary, estimate: colors.textSecondary, icon: colors.goldText }
     : colors.mode === 'dark'
-      ? { background: '#151D31', eyebrow: '#8FB6F5', title: '#F6F8FF', body: '#BAC5DD', estimate: '#DDE7FA', icon: '#9EC2FF' }
+      ? { background: colors.card, eyebrow: colors.primary, title: colors.text, body: colors.textSecondary, estimate: colors.textSecondary, icon: colors.primary }
       : { background: '#EEF4FF', eyebrow: colors.primary, title: colors.text, body: colors.textSecondary, estimate: colors.textSecondary, icon: colors.primary };
 
   const resetQuestion = () => {
@@ -342,7 +342,7 @@ export function SmartStudyScreen({ initialMode = 'smart', focusDeckId, focusSect
               return (
                 <Pressable accessibilityRole="button" key={`${option}-${optionIndex}`} disabled={revealed} onPress={() => chooseOption(optionIndex)} style={[styles.option, { backgroundColor: isCorrect ? colors.mintSoft : isWrong ? `${colors.danger}12` : colors.card, borderColor: isCorrect ? colors.mint : isWrong ? colors.danger : colors.border }]}>
                   <View style={[styles.optionLetter, { backgroundColor: isCorrect ? colors.mint : isWrong ? colors.danger : colors.cardStrong }]}>
-                    {isCorrect || isWrong ? <Icon name={isCorrect ? 'check' : 'close'} size={14} color={colors.neon ? colors.primaryText : '#FFFFFF'} /> : <Text style={[styles.optionLetterText, { color: colors.textSecondary }]}>{String.fromCharCode(65 + optionIndex)}</Text>}
+                    {isCorrect || isWrong ? <Icon name={isCorrect ? 'check' : 'close'} size={14} color={colors.primaryText} /> : <Text style={[styles.optionLetterText, { color: colors.textSecondary }]}>{String.fromCharCode(65 + optionIndex)}</Text>}
                   </View>
                   <Text style={[styles.optionText, { color: colors.text }]}>{option}</Text>
                 </Pressable>

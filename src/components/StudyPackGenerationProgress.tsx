@@ -5,12 +5,15 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { StudyPackMaterial } from '../models';
 import { AUTOMATIC_STUDY_PACK_MATERIALS, STUDY_PACK_MATERIAL_LABELS } from '../services/documentProcessor';
 import { useStudyBolt } from '../StudyBoltContext';
+import { useAuth } from '../AuthContext';
 import { bottomTabBarTop } from './BottomTabs';
 import { Icon } from './ui';
 import { LoadingArtwork } from './StudyBoltLoading';
+import { useGuidanceBlocker } from './StudyGuidance';
 
-export function StudyPackGenerationProgress({ aboveNavigation = false }: { aboveNavigation?: boolean }) {
+export function StudyPackGenerationProgress({ aboveNavigation = false, onRequireAuth }: { aboveNavigation?: boolean; onRequireAuth?: () => void }) {
   const { colors, state, retryStudyPackMaterial } = useStudyBolt();
+  const { user } = useAuth();
   const insets = useSafeAreaInsets();
   const navigationSpacing = aboveNavigation ? { bottom: bottomTabBarTop(insets.bottom) + 12 } : undefined;
   const [expanded, setExpanded] = useState(false);
@@ -23,6 +26,7 @@ export function StudyPackGenerationProgress({ aboveNavigation = false }: { above
   const totalMaterials = AUTOMATIC_STUDY_PACK_MATERIALS.length;
   const remaining = totalMaterials - ready;
   const complete = Boolean(materials && ready === totalMaterials);
+  useGuidanceBlocker(Boolean(materials && !complete && (expanded || AUTOMATIC_STUDY_PACK_MATERIALS.some(item => ['queued', 'generating'].includes(materials[item].status)))));
   const generationStartedAt = useMemo(() => {
     if (!materials) return null;
     const timestamps = AUTOMATIC_STUDY_PACK_MATERIALS
@@ -88,19 +92,18 @@ export function StudyPackGenerationProgress({ aboveNavigation = false }: { above
       </View>
       <View style={styles.rows}>
         {AUTOMATIC_STUDY_PACK_MATERIALS.map((material) => (
-          <MaterialRow key={material} material={material} deckId={deck.id} status={materials[material]} onRetry={retryStudyPackMaterial} />
+          <MaterialRow key={material} material={material} status={materials[material]} onRetry={() => user ? retryStudyPackMaterial(deck.id, material) : onRequireAuth?.()} />
         ))}
       </View>
-      <Text style={[styles.hint, { color: colors.textMuted }]}>Start with what’s ready; add the other study tools whenever you need them.</Text>
+      {!user ? <Pressable accessibilityRole="button" onPress={onRequireAuth} style={[styles.hintAction, { backgroundColor: colors.primarySoft }]}><Icon name="account-lock-outline" size={17} color={colors.primary} /><Text style={[styles.hintActionText, { color: colors.primary }]}>Create a free account to finish AI study tools</Text></Pressable> : <Text style={[styles.hint, { color: colors.textMuted }]}>Start with what’s ready; add the other study tools whenever you need them.</Text>}
     </View>
   );
 }
 
-function MaterialRow({ material, deckId, status, onRetry }: {
+function MaterialRow({ material, status, onRetry }: {
   material: StudyPackMaterial;
-  deckId: string;
   status: NonNullable<import('../models').StudyPack['generation']>['materials'][StudyPackMaterial];
-  onRetry: (deckId: string, material: StudyPackMaterial) => void;
+  onRetry: () => void;
 }) {
   const { colors } = useStudyBolt();
   const ready = status.status === 'ready';
@@ -113,7 +116,7 @@ function MaterialRow({ material, deckId, status, onRetry }: {
       </View>
       <Text style={[styles.label, { color: colors.text }]}>{STUDY_PACK_MATERIAL_LABELS[material]}</Text>
       {failed ? (
-        <Pressable accessibilityRole="button" accessibilityLabel={`Retry ${STUDY_PACK_MATERIAL_LABELS[material]}`} onPress={() => onRetry(deckId, material)} style={[styles.retry, { backgroundColor: colors.goldSoft }]}>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Retry ${STUDY_PACK_MATERIAL_LABELS[material]}`} onPress={onRetry} style={[styles.retry, { backgroundColor: colors.goldSoft }]}>
           <Icon name="creation" size={13} color={colors.goldText} />
           <Text style={[styles.retryText, { color: colors.goldText }]}>Retry</Text>
         </Pressable>
@@ -144,6 +147,8 @@ const styles = StyleSheet.create({
   retry: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 6, borderRadius: 9 },
   retryText: { fontSize: 14, lineHeight: 21, fontWeight: '700' },
   hint: { marginTop: 11, fontSize: 14, lineHeight: 21, textAlign: 'center' },
+  hintAction: { minHeight: 42, marginTop: 12, borderRadius: 13, paddingHorizontal: 11, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  hintActionText: { fontSize: 13, lineHeight: 18, fontWeight: '800', textAlign: 'center' },
 });
 
 function formatElapsed(seconds: number): string {

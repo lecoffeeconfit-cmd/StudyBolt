@@ -1,5 +1,5 @@
 import { LoadingArtwork } from './StudyBoltLoading';
-import { SubjectIcon } from './SubjectIcon';
+import { ClassIdentity } from './ClassIdentity';
 import React, { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Animated, FlatList, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import Svg, { Circle, type CircleProps } from 'react-native-svg';
@@ -47,6 +47,8 @@ export function LearningMasteryHero({ groups, selectedId, onSelect, onExplore, o
   const ids = groups.map(group => group.id).join('|');
   const selectedIndex = Math.max(0, groups.findIndex(group => group.id === selectedId));
   const selected = groups[selectedIndex]!;
+  const accent = colors.mode === 'light' ? '#0E5FC9' : colors.primary;
+  const edge = colors.neon?.edge ?? (colors.mode === 'light' ? '#D5E3F6' : colors.border);
 
   const select = (index: number, announce = false) => {
     const group = groups[index];
@@ -72,10 +74,10 @@ export function LearningMasteryHero({ groups, selectedId, onSelect, onExplore, o
     list.current?.scrollToOffset({ offset: index * width, animated: !reducedMotion });
   };
   if (!hydrated) return <Card style={styles.card}><View accessibilityState={{ busy: true }} style={styles.loading}><LoadingArtwork colors={colors} /><Text style={[styles.copy, { color: colors.textSecondary }]}>Loading your course progress…</Text></View></Card>;
-  return <Card style={styles.card}>
+  return <Card style={[styles.card, { borderColor: edge }]}>
     <View style={styles.topRow}>
       <View style={styles.heading}>
-        <Text style={[styles.eyebrow, { color: colors.primary }]}>Class knowledge</Text>
+        <Text accessibilityRole="header" style={[styles.eyebrow, { color: accent }]}>Class knowledge</Text>
         {groups.length > 1 ? <Text style={[styles.smallCopy, { color: colors.textSecondary }]}>{selectedIndex + 1} of {groups.length} · Swipe to change class</Text> : null}
       </View>
       {groups.length > 1 ? <View style={styles.arrows}><ClassArrow direction="left" disabled={selectedIndex === 0} onPress={() => navigate(selectedIndex - 1)} /><ClassArrow direction="right" disabled={selectedIndex === groups.length - 1} onPress={() => navigate(selectedIndex + 1)} /></View> : null}
@@ -99,10 +101,18 @@ export function LearningMasteryHero({ groups, selectedId, onSelect, onExplore, o
         <PrimaryButton label="Add study material" icon="plus" onPress={onAddMaterial} style={styles.primaryAction} />
       </View>
     ) : null}
-    <Pressable accessibilityRole="button" onPress={() => onExplore(classKnowledgeDetail(selected))} style={({ pressed }) => [styles.evidenceLink, { opacity: pressed ? 0.65 : 1 }]}>
-      <Icon name="information-outline" size={16} color={colors.primary} />
-      <Text style={[styles.linkText, { color: colors.primary }]}>Evidence and material details</Text>
-      <Icon name="chevron-right" size={17} color={colors.primary} />
+    <Pressable
+      accessibilityRole="button"
+      accessibilityHint={compact ? 'See how readiness is measured.' : undefined}
+      onPress={() => onExplore(classKnowledgeDetail(selected))}
+      style={({ pressed }) => [styles.evidenceLink, { borderColor: edge, backgroundColor: pressed ? colors.primarySoft : colors.cardStrong }]}
+    >
+      <Icon name="file-chart-outline" size={17} color={accent} />
+      <View style={styles.evidenceCopy}>
+        <Text style={[styles.linkText, { color: accent }]}>Evidence and material details</Text>
+        {!compact ? <Text style={[styles.smallCopy, { color: colors.textSecondary }]}>See how readiness is measured</Text> : null}
+      </View>
+      <Icon name="chevron-right" size={18} color={accent} />
     </Pressable>
   </Card>;
 }
@@ -119,11 +129,18 @@ function CoursePage({ group, width, active, compact }: { group: LearningMasteryG
   const hasPacks = group.packs.length > 0;
   return (
     <View aria-hidden={!active} accessibilityElementsHidden={!active} importantForAccessibility={active ? 'auto' : 'no-hide-descendants'} style={{ width }}>
-      <View style={styles.courseRow}>
-        <SubjectIcon subject={group.name} emoji={course?.emoji} size={36} animated={false} />
+      <View style={[styles.courseRow, { backgroundColor: colors.primarySoft }]}>
+        <ClassIdentity course={course ?? { name: group.name }} size={36} />
         <View style={styles.heading}>
           <Text accessibilityRole="header" style={[styles.courseName, { color: colors.text }]}>{group.name}</Text>
-          {hasPacks ? <Text style={[styles.smallCopy, { color: colors.textSecondary }]}>{materialSummary(group) || plural(group.packs.length, 'Study Pack')}</Text> : null}
+          <Text style={[styles.smallCopy, { color: colors.textSecondary }]}>
+            {hasPacks ? materialSummary(group) || plural(group.packs.length, 'Study Pack') : 'No Study Packs yet'}
+          </Text>
+          {compact && hasPacks ? (
+            <Text style={[styles.compactReadiness, { color: colors.text }]}>
+              {group.mastery === null ? 'Readiness not assessed yet' : `${group.mastery}% knowledge readiness`}
+            </Text>
+          ) : null}
         </View>
       </View>
       {!compact && hasPacks ? (
@@ -179,14 +196,15 @@ function RecallRing({ value }: { value: number }) {
 }
 
 const styles = StyleSheet.create({
-  card: { padding: spacing.lg, overflow: 'hidden' },
-  topRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md },
+  card: { padding: spacing.md, borderWidth: 1, overflow: 'hidden' },
+  topRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
   heading: { flex: 1, minWidth: 0, gap: spacing.xs },
-  eyebrow: { ...typography.caption, fontWeight: '700' },
+  eyebrow: { ...typography.secondary, fontWeight: '800' },
   arrows: { flexDirection: 'row', gap: spacing.xs },
   arrow: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill },
-  courseRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  courseName: { ...typography.sectionTitle },
+  courseRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md, borderRadius: radius.md },
+  courseName: { ...typography.sectionTitle, fontWeight: '800' },
+  compactReadiness: { ...typography.caption, fontWeight: '700', fontVariant: ['tabular-nums'] },
   copy: { ...typography.secondary },
   smallCopy: { ...typography.caption },
   courseDetails: { gap: spacing.sm, marginTop: spacing.md },
@@ -198,7 +216,8 @@ const styles = StyleSheet.create({
   empty: { borderRadius: radius.md, padding: spacing.md, marginTop: spacing.md, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: spacing.sm },
   emptyIcon: { width: 40, height: 40, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center' },
   primaryAction: { width: '100%', minHeight: 46, marginTop: spacing.xs },
-  evidenceLink: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingTop: spacing.xs, marginTop: spacing.xs },
-  linkText: { ...typography.caption, fontWeight: '700', flexShrink: 1 },
+  evidenceLink: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, marginTop: spacing.sm, borderWidth: 1, borderRadius: radius.sm },
+  evidenceCopy: { flex: 1, minWidth: 0 },
+  linkText: { ...typography.caption, fontWeight: '700' },
   loading: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.xxl },
 });

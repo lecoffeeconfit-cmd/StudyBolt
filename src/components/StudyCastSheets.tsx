@@ -45,7 +45,7 @@ function SheetFrame({
     <Modal visible={visible} transparent animationType={reducedMotion ? 'none' : 'slide'} onRequestClose={onClose}>
       <View style={[styles.modalRoot, { backgroundColor: colors.mode === 'dark' ? 'rgba(0,0,0,0.72)' : 'rgba(17,28,78,0.34)' }]}>
         <Pressable accessibilityRole="button" accessibilityLabel={`Close ${title}`} onPress={onClose} style={StyleSheet.absoluteFill} />
-        <View role="dialog" aria-modal accessibilityViewIsModal accessibilityLabel={title} style={[styles.sheet, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow, paddingBottom: Math.max(insets.bottom, 18) }]}>
+        <View role="dialog" aria-modal accessibilityViewIsModal accessibilityLabel={title} style={[styles.sheet, { backgroundColor: colors.card, borderColor: colors.neon?.sheetEdge ?? colors.border, shadowColor: colors.shadow, paddingBottom: Math.max(insets.bottom, 18) }]}>
           <View style={[styles.handle, { backgroundColor: colors.border }]} />
           <View style={styles.headingRow}>
             <View style={[styles.headingIcon, { backgroundColor: colors.primarySoft }]}><Icon name={icon} size={22} color={colors.primary} /></View>
@@ -239,7 +239,7 @@ export function AskStudyBoltSheet({
     <Modal visible={visible} transparent animationType={reducedMotion ? 'none' : 'slide'} onRequestClose={onClose}>
       <KeyboardAvoidingView style={[styles.modalRoot, { backgroundColor: colors.mode === 'dark' ? 'rgba(0,0,0,0.72)' : 'rgba(17,28,78,0.34)' }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <Pressable accessibilityRole="button" accessibilityLabel="Close Ask StudyBolt" onPress={onClose} style={StyleSheet.absoluteFill} />
-        <View role="dialog" aria-modal accessibilityViewIsModal accessibilityLabel="Ask StudyBolt" style={[styles.askSheet, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow }]}>
+        <View role="dialog" aria-modal accessibilityViewIsModal accessibilityLabel="Ask StudyBolt" style={[styles.askSheet, { backgroundColor: colors.card, borderColor: colors.neon?.sheetEdge ?? colors.border, shadowColor: colors.shadow }]}>
           <View style={[styles.handle, { backgroundColor: colors.border }]} />
           <View style={styles.headingRow}>
             <View style={[styles.askIcon, { backgroundColor: colors.purpleSoft }]}><Icon name="creation" size={24} color={colors.purple} /></View>
@@ -266,9 +266,9 @@ export function AskStudyBoltSheet({
             {!signedIn || !configured ? (
               <View style={[styles.tutorState, { backgroundColor: colors.primarySoft }]}>
                 <Icon name={!signedIn ? 'account-lock-outline' : 'cloud-alert-outline'} size={26} color={colors.primary} />
-                <Text style={[styles.tutorStateTitle, { color: colors.text }]}>{!signedIn ? 'Sign in to ask StudyBolt' : 'StudyBolt AI isn’t connected yet'}</Text>
-                <Text style={[styles.tutorStateText, { color: colors.textSecondary }]}>{!signedIn ? 'Your normal device-voice StudyCast remains available without an account.' : 'Add the secure backend configuration to enable contextual questions. Listening still works offline.'}</Text>
-                {!signedIn && onRequireAuth ? <Pressable accessibilityRole="button" onPress={onRequireAuth} style={[styles.signInButton, { backgroundColor: colors.card }]}><Text style={[styles.signInText, { color: colors.primary }]}>Sign in</Text><Icon name="arrow-right" size={17} color={colors.primary} /></Pressable> : null}
+                <Text style={[styles.tutorStateTitle, { color: colors.text }]}>{!signedIn ? 'Unlock AI study help' : 'StudyBolt AI isn’t connected yet'}</Text>
+                <Text style={[styles.tutorStateText, { color: colors.textSecondary }]}>{!signedIn ? 'Create a free account to use AI Tutor and sync your Study Packs across devices. Your guest study tools remain available.' : 'Add the secure backend configuration to enable contextual questions. Listening still works offline.'}</Text>
+                {!signedIn && onRequireAuth ? <Pressable accessibilityRole="button" onPress={onRequireAuth} style={[styles.signInButton, { backgroundColor: colors.card }]}><Text style={[styles.signInText, { color: colors.primary }]}>Create free account</Text><Icon name="arrow-right" size={17} color={colors.primary} /></Pressable> : null}
               </View>
             ) : null}
 
@@ -301,7 +301,7 @@ export function AskStudyBoltSheet({
 
             {response?.kind === 'answer' ? (
               <View style={[styles.answerBox, { backgroundColor: colors.purpleSoft }]}>
-                <View style={styles.answerHeading}><View style={[styles.answerAvatar, { backgroundColor: colors.purple }]}><Icon name="lightning-bolt" size={17} color={colors.neon ? colors.primaryText : '#FFFFFF'} /></View><Text style={[styles.answerLabel, { color: colors.purple }]}>STUDYBOLT</Text></View>
+                <View style={styles.answerHeading}><View style={[styles.answerAvatar, { backgroundColor: colors.purple }]}><Icon name="lightning-bolt" size={17} color={colors.primaryText} /></View><Text style={[styles.answerLabel, { color: colors.purple }]}>STUDYBOLT</Text></View>
                 <Text selectable accessibilityLiveRegion="polite" style={[styles.answerText, { color: colors.text }]}>{response.answer}</Text>
                 <Pressable accessibilityRole="button" onPress={() => onSpeak(response.answer)} style={[styles.speakButton, { backgroundColor: colors.card }]}><Icon name="volume-high" size={18} color={colors.purple} /><Text style={[styles.speakText, { color: colors.purple }]}>Read answer aloud</Text></Pressable>
               </View>

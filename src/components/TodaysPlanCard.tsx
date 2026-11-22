@@ -12,8 +12,10 @@ import type { HomeDashboard, HomeTodayProgress } from '../services/homeDashboard
 import { buildLearningMastery } from '../services/learningMastery';
 import { typography } from '../theme';
 import { TodaysPlanArtwork } from './TodaysPlanArtwork';
+import { ClassIdentity } from './ClassIdentity';
 import { todaysPlanCourse, type TodaysPlanAction } from './todaysPlanPresentation';
-import { Icon } from './ui';
+import { Icon, GradientSurface } from './ui';
+import { GuideAnchor, useGuidanceBlocker } from './StudyGuidance';
 
 export type HomePriority = 'due' | 'weak' | 'mistakes';
 type Props = {
@@ -48,6 +50,7 @@ export function TodaysPlanCard({
   const reducedMotion = useReducedMotion();
   const [width, setWidth] = useState(0);
   const [classPickerOpen, setClassPickerOpen] = useState(false);
+  useGuidanceBlocker(classPickerOpen);
   const [more, setMore] = useState(false);
   const groups = useMemo(() => buildLearningMastery(state, now), [state, now]);
   const choices = groups.filter(group => group.kind !== 'overview');
@@ -86,38 +89,37 @@ export function TodaysPlanCard({
   // Secondary tools already have a home below. Keep this drawer for review evidence.
   const priorities = priorityLinks.filter(item => counts[item.id] > 0
     && !(item.id === 'mistakes' && action.kind === 'mistakes' && action.itemIds.length === counts.mistakes));
-  const heroColors = colors.neon
-    ? [colors.primarySoft, colors.card, colors.neon.secondarySoft] as const
-    : colors.mode === 'dark' ? ['#203D71', '#172D53', '#172131'] as const
-      : ['#15316E', '#1748A5', '#2058BD'] as const;
-  const heroText = colors.neon ? colors.text : '#FFFFFF';
-  const heroDetail = colors.neon ? colors.textSecondary : '#E2EBFF';
+  const heroColors = colors.neon?.hero ?? colors.night?.hero ?? ['#15316E', '#1748A5', '#2058BD'];
+  const heroText = colors.mode === 'dark' ? colors.text : '#FFFFFF';
+  const heroDetail = colors.mode === 'dark' ? colors.textSecondary : '#E2EBFF';
+  const kickerColor = colors.neon?.season.primary ?? colors.goldBright;
+  const actionText = colors.neon ? colors.primaryText : colors.onGold;
   const showArt = width >= 260 && fontScale < 1.25;
 
   return (
     <View>
-      <View style={styles.heading}>
+      <GuideAnchor id="home-plan" style={styles.heading}>
         <Text accessibilityRole="header" style={[typography.sectionTitle, styles.headingText, { color: colors.text }]}>Today’s Learning Plan</Text>
         {choices.length ? (
           <Pressable accessibilityRole="button" accessibilityLabel={`Choose class for today’s plan. ${selected?.name ?? 'All classes'} selected`}
             accessibilityState={{ expanded: classPickerOpen }} onPress={() => setClassPickerOpen(true)}
             style={({ pressed }) => [styles.classButton, { backgroundColor: pressed ? colors.primarySoft : colors.card, borderColor: colors.border }]}>
-            <Icon name="school-outline" size={16} color={colors.primary} />
-            <Text numberOfLines={1} style={[styles.classLabel, { color: colors.text }]}>{selected?.name ?? 'All classes'}</Text>
+            {course ? <ClassIdentity course={course} size={25} /> : <Icon name="school-outline" size={16} color={colors.primary} />}
+            <Text numberOfLines={2} style={[styles.classLabel, { color: colors.text }]}>{selected?.name ?? 'All classes'}</Text>
             <Icon name="chevron-down" size={16} color={colors.textSecondary} />
           </Pressable>
         ) : null}
-      </View>
+      </GuideAnchor>
       <LinearGradient
         onLayout={event => setWidth(event.nativeEvent.layout.width)}
         colors={heroColors} start={{ x: 0, y: 0.15 }} end={{ x: 1, y: 0.9 }}
-        style={[styles.hero, { borderColor: colors.neon?.edge ?? heroColors[1] }]}
+        style={[styles.hero, { borderColor: colors.neon?.edge ?? (colors.night ? colors.border : heroColors[1]) }]}
       >
         <View style={styles.heroRow}>
           <View style={styles.fill}>
             {examLabel || !isEmpty ? <View style={styles.kicker}>
-              <Icon name={examLabel ? 'calendar-outline' : 'lightning-bolt'} color={colors.goldBright} size={16} />
-              <Text style={[styles.kickerLabel, { color: colors.goldBright }]}>{examLabel ?? 'Up next'}</Text>
+              <Icon name={examLabel ? 'calendar-outline' : 'lightning-bolt'} color={kickerColor} size={16} />
+              <Text style={[styles.kickerLabel, { color: kickerColor }]}>{examLabel ?? 'Up next'}</Text>
             </View> : null}
             <Text accessibilityRole="header" style={[styles.taskTitle, width >= 510 && styles.taskTitleWide, { color: heroText }]}>{title}</Text>
             {source && !isEmpty ? <Text style={[styles.source, { color: heroDetail }]}>{source}</Text> : null}
@@ -125,12 +127,16 @@ export function TodaysPlanCard({
           {showArt ? <TodaysPlanArtwork still={reducedMotion} size={width >= 510 ? 'large' : width >= 304 ? 'medium' : 'small'} /> : null}
         </View>
         <Text style={[styles.reason, { color: heroDetail }]}>{detail}</Text>
+        <GuideAnchor id={action.kind === 'materials' && !dashboard.decks.length && Platform.OS !== 'web' ? 'home-import' : undefined}
+          onActivate={() => start(action)} actionLabel="Add material">
         <Pressable accessibilityRole="button" accessibilityHint={source ? `For ${source}` : undefined} onPress={() => start(action)}
-          style={({ pressed }) => [styles.primary, { backgroundColor: colors.goldBright, opacity: pressed ? 0.88 : 1 }, pressed && !reducedMotion && styles.pressed]}>
-          <Icon name={isEmpty ? 'plus' : isAudio ? 'headphones' : 'play'} color={colors.onGold} size={22} />
-          <Text style={[styles.primaryText, { color: colors.onGold }]}>{label}</Text>
-          <Icon name="arrow-right" color={colors.onGold} size={20} />
+          style={({ pressed }) => [styles.primary, { backgroundColor: colors.neon ? colors.primary : colors.goldBright, opacity: pressed ? 0.88 : 1 }, pressed && !reducedMotion && styles.pressed]}>
+          {colors.neon ? <GradientSurface colors={colors.neon.action} borderRadius={styles.primary.borderRadius} /> : null}
+          <Icon name={isEmpty ? 'plus' : isAudio ? 'headphones' : 'play'} color={actionText} size={22} />
+          <Text style={[styles.primaryText, { color: actionText }]}>{label}</Text>
+          <Icon name="arrow-right" color={actionText} size={20} />
         </Pressable>
+        </GuideAnchor>
       </LinearGradient>
       {!isEmpty || dashboard.today.planTotal > 0 || dashboard.today.focusSessions > 0 ? (
         <PlanProgress today={dashboard.today} onOpenStats={onOpenStats} onOpenPlan={onOpenPlan} />
@@ -169,9 +175,11 @@ export function TodaysPlanCard({
               <ScrollView keyboardShouldPersistTaps="handled" style={{ flexGrow: 0 }}>
                 {[{ id: undefined, name: 'All classes' }, ...choices].map(option => {
                   const active = selected?.id === option.id;
-                  return <Pressable key={option.id ?? 'all'} accessibilityRole="radio" accessibilityState={{ checked: active }}
+                  const optionCourse = state.classes.find(item => option.id === `class:${item.id}`);
+                  return <Pressable key={option.id ?? 'all'} accessibilityRole="radio" accessibilityLabel={option.name} accessibilityState={{ checked: active }}
                     onPress={() => { onSelectClass(option.id); setClassPickerOpen(false); }}
                     style={({ pressed }) => [styles.choice, { backgroundColor: active || pressed ? colors.primarySoft : 'transparent' }]}>
+                    {option.id ? <ClassIdentity course={optionCourse ?? { name: option.name }} size={32} /> : null}
                     <Text style={[typography.body, styles.fill, { color: colors.text }]}>{option.name}</Text>
                     {active ? <Icon name="check" size={20} color={colors.primary} /> : null}
                   </Pressable>;

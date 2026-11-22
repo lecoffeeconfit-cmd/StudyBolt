@@ -1,4 +1,4 @@
-export type ThemePreference = 'system' | 'light' | 'dark' | 'neon';
+export type ThemePreference = 'system' | 'light' | 'dark' | 'warmNight' | 'neon';
 export type RetentionMode = 'standard' | 'fsrs' | 'sm2';
 export type StudyType = 'college' | 'graduate_school' | 'professional' | 'other';
 export type FlashcardConfidence = 'new' | 'learning' | 'known';
@@ -535,11 +535,14 @@ export interface ConceptMasteryRecord {
   lastQuestionType: QuizQuestionType;
 }
 
+export type ClassDisplayStyle = 'icon' | 'minimal';
+
 export interface StudyClass {
   libraryModifiedAt?: string;
   id: string;
   name: string;
   emoji: string;
+  iconId?: string;
   color: string;
   createdAt: string;
 }
@@ -578,6 +581,8 @@ export interface StudyBoltState {
   decks: StudyPack[];
   flaggedItems: FlaggedItem[];
   librarySort: LibrarySort;
+  classDisplayStyle?: ClassDisplayStyle;
+  recentClassIconIds?: string[];
   theme: ThemePreference;
   retentionMode: RetentionMode;
   hasCompletedOnboarding: boolean;

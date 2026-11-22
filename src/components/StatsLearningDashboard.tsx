@@ -149,6 +149,8 @@ function GrowthChart({ results, onDetail }: { results: StatsResult[]; onDetail: 
   const x = (point: StatsResult) => shown.length < 2 ? (left + right) / 2 : left + (+new Date(point.at) - +new Date(first!.at)) / Math.max(1, +new Date(last!.at) - +new Date(first!.at)) * (right - left);
   const y = (score: number) => 10 + (100 - score) / 100 * (h - 20);
   const path = shown.map((point, index) => `${index ? 'L' : 'M'}${x(point)},${y(point.score)}`).join(' ');
+  const chartColor = colors.neon?.chart ?? colors.primary;
+  const latestColor = colors.neon?.season.highlight ?? colors.goldBright;
   const showHistory = () => onDetail(makeStatDetail('Practice results over time', `${all.length} recorded results`, `${range === 'all' ? 'All time' : `Last ${range} calendar days`} · ${all.length > 60 ? 'Latest 60 plotted' : 'All points plotted'}`, {
     description: 'Actual saved quiz and test scores at their recorded completion dates. This is a history of practice performance, not historical whole-course knowledge.',
     calculation: 'Only dated, finite scores from 0–100 are plotted. Undated legacy attempts are not placed on a timeline. Completed exams already represented by a linked quiz event are not counted twice.',
@@ -161,8 +163,8 @@ function GrowthChart({ results, onDetail }: { results: StatsResult[]; onDetail: 
     {shown.length ? <Pressable accessibilityRole="button" accessibilityLabel={`Practice history. ${all.length} recorded results. Latest ${last!.score} percent. Tap for dates, materials, and scores.`} onPress={showHistory} onLayout={event => setWidth(event.nativeEvent.layout.width)} style={styles.chart}>
       {width > 0 ? <Svg width={width} height={h} {...(Platform.OS === 'web' ? { 'aria-hidden': true, focusable: false } : { accessible: false })}>
         {[0, 50, 100].map(value => <Line key={value} x1={left} y1={y(value)} x2={right} y2={y(value)} stroke={colors.border} strokeWidth={1} strokeDasharray="3 5" />)}
-        {shown.length > 1 ? <><Path d={`${path} L${x(last!)},${h - 10} L${x(first!)},${h - 10} Z`} fill={colors.primarySoft} opacity={0.8} /><Path d={path} fill="none" stroke={colors.primary} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" /></> : null}
-        {shown.map((point, index) => <Circle key={point.id} cx={x(point)} cy={y(point.score)} r={index === shown.length - 1 ? 5 : 3} fill={index === shown.length - 1 ? colors.goldBright : colors.primary} stroke={colors.card} strokeWidth={1.5} />)}
+        {shown.length > 1 ? <><Path d={`${path} L${x(last!)},${h - 10} L${x(first!)},${h - 10} Z`} fill={colors.neon?.secondarySoft ?? colors.primarySoft} opacity={0.8} /><Path d={path} fill="none" stroke={chartColor} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" /></> : null}
+        {shown.map((point, index) => <Circle key={point.id} cx={x(point)} cy={y(point.score)} r={index === shown.length - 1 ? 5 : 3} fill={index === shown.length - 1 ? latestColor : chartColor} stroke={colors.card} strokeWidth={1.5} />)}
       </Svg> : null}
       <Text accessible={false} style={[styles.axisTop, { color: colors.textMuted }]}>100</Text><Text accessible={false} style={[styles.axisBottom, { color: colors.textMuted }]}>0</Text>
       <View style={styles.row}><Text style={[styles.caption, { color: colors.textMuted }]}>{dateLabel(first!.at)}</Text><View style={styles.flex} /><Text style={[styles.caption, { color: colors.textMuted }]}>{shown.length > 1 ? dateLabel(last!.at) : 'First saved result'}</Text></View>

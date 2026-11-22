@@ -1,15 +1,14 @@
 import React, { useEffect, useRef } from 'react';
-import { AccessibilityInfo, Animated, Platform, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { AccessibilityInfo, Animated, Platform, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
 import { useReducedMotion } from '../hooks/useReducedMotion';
-import { resolveColors } from '../theme';
+import type { AppColors } from '../theme';
 import { AnimatedStudyBoltLogo, LAUNCH_LOGO_HEIGHT, LAUNCH_LOGO_SIZE } from './StudyBoltBrand';
 import { LoadingArtwork } from './StudyBoltLoading';
 
 /** A single cold-launch overlay. Readiness can interrupt every entrance effect. */
-export function StudyBoltLaunch({ ready, onFinished }: { ready: boolean; onFinished: () => void }) {
-  const colors = resolveColors('system', useColorScheme());
+export function StudyBoltLaunch({ ready, colors, onFinished }: { ready: boolean; colors: AppColors; onFinished: () => void }) {
   const reducedMotion = useReducedMotion();
   const opacity = useRef(new Animated.Value(1)).current;
   const title = useRef(new Animated.Value(0)).current;

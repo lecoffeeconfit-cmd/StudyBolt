@@ -148,7 +148,7 @@ export function StudyPackShareSheet({ deck, visible, onClose, onRequireAuth }: {
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={[styles.modalRoot, { backgroundColor: colors.mode === 'dark' ? 'rgba(0,0,0,0.72)' : 'rgba(17,28,78,0.34)' }]}>
         <Pressable accessibilityLabel="Close share dialog" onPress={onClose} style={StyleSheet.absoluteFill} />
-        <View style={[styles.sheet, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow, paddingBottom: Math.max(insets.bottom, 18) }]}>
+        <View style={[styles.sheet, { backgroundColor: colors.card, borderColor: colors.neon?.sheetEdge ?? colors.border, shadowColor: colors.shadow, paddingBottom: Math.max(insets.bottom, 18) }]}>
           <View style={[styles.handle, { backgroundColor: colors.border }]} />
           <View style={styles.headingRow}>
             <View style={[styles.headingIcon, { backgroundColor: colors.primarySoft }]}><Icon name="share-variant" size={23} color={colors.primary} /></View>

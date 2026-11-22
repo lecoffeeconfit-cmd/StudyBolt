@@ -155,7 +155,7 @@ function Benefit({ icon, label }: { icon: IconName; label: string }) {
 function StudyToolkitVisual({ compact }: { compact: boolean }) {
   const { colors } = useStudyBolt();
   return (
-    <LinearGradient aria-hidden accessible={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" colors={colors.mode === 'dark' ? ['#182A41', '#202538', '#28223B'] : ['#E7F1FF', '#EDF0FF', '#F0E9FF']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.toolkitVisual, compact && styles.toolkitCompact, { borderColor: colors.border }]}>
+    <LinearGradient aria-hidden accessible={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" colors={colors.neon?.hero ?? colors.night?.hero ?? ['#E7F1FF', '#EDF0FF', '#F0E9FF']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.toolkitVisual, compact && styles.toolkitCompact, { borderColor: colors.border }]}>
       <View style={[styles.orb, { backgroundColor: `${colors.primary}12` }]} />
       <Text style={[styles.visualEyebrow, { color: colors.textSecondary }]}>HOW IT WORKS</Text>
       <View style={[styles.lectureCard, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow }]}>
@@ -163,7 +163,7 @@ function StudyToolkitVisual({ compact }: { compact: boolean }) {
         <View style={{ flex: 1 }}><Text style={[styles.lectureTitle, { color: colors.text }]}>Your lecture</Text><Text style={[styles.lectureSubtitle, { color: colors.textSecondary }]}>Start with your course material</Text></View>
         <Icon name="cloud-upload-outline" size={23} color={colors.primary} />
       </View>
-      <View style={styles.connectingLine}><View style={[styles.line, { backgroundColor: colors.mode === 'dark' ? '#5B6884' : '#BDC8E6' }]} /><View style={[styles.boltCircle, { backgroundColor: colors.purpleSoft }]}><Icon name="lightning-bolt" size={22} color={colors.purple} /></View><View style={[styles.line, { backgroundColor: colors.mode === 'dark' ? '#5B6884' : '#BDC8E6' }]} /></View>
+      <View style={styles.connectingLine}><View style={[styles.line, { backgroundColor: colors.mode === 'dark' ? colors.border : '#BDC8E6' }]} /><View style={[styles.boltCircle, { backgroundColor: colors.purpleSoft }]}><Icon name="lightning-bolt" size={22} color={colors.purple} /></View><View style={[styles.line, { backgroundColor: colors.mode === 'dark' ? colors.border : '#BDC8E6' }]} /></View>
       <View style={styles.toolRow}>
         {([{ label: 'Notes', icon: 'text-box-outline', color: colors.primary, background: colors.primarySoft }, { label: 'Flashcards', icon: 'cards-outline', color: colors.purple, background: colors.purpleSoft }, { label: 'Practice', icon: 'help-circle-outline', color: colors.mode === 'dark' ? colors.mint : '#12775E', background: colors.mintSoft }] satisfies Array<{ label: string; icon: IconName; color: string; background: string }>).map((tool) => <View key={tool.label} style={[styles.tool, { backgroundColor: colors.card, borderColor: colors.border }]}><View style={[styles.toolIcon, { backgroundColor: tool.background }]}><Icon name={tool.icon} size={25} color={tool.color} /></View><Text style={[styles.toolLabel, { color: colors.text }]}>{tool.label}</Text></View>)}
       </View>
